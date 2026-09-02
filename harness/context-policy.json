@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "always_include": ["AGENTS.md","AI_POLICY.md","harness/manifest.yaml"],
+  "exclude_dirs": [".git",".worktrees",".harness/runs","node_modules","dist","build",".venv","venv"],
+  "exclude_globs": [".env",".env.*","*.pem","*.key","*.p12","*.pfx","secrets.*","*.lock"],
+  "max_file_bytes": 120000,
+  "max_total_bytes": 600000,
+  "max_total_tokens_estimate": 120000,
+  "max_files": 40,
+  "graph_neighbor_depth": 2,
+  "graph_neighbor_bonus": 350,
+  "max_memory_items": 5,
+  "text_extensions": [".py",".js",".ts",".tsx",".jsx",".go",".rs",".java",".kt",".cs",".rb",".php",".swift",".md",".json",".yaml",".yml",".toml",".sh",".sql",".graphql",".proto"]
+}

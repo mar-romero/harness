@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Controlled harness evolution proposal",
+  "type": "object",
+  "required": ["schema_version", "proposal_id", "created_at", "mode", "status", "baseline_runs", "candidate_run", "findings", "proposals", "approval"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "proposal_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "mode": {"const": "proposal-only"},
+    "status": {"type": "string", "enum": ["NO_CHANGE", "HUMAN_REVIEW_REQUIRED", "BLOCKED_REGRESSION", "INSUFFICIENT_BASELINE"]},
+    "baseline_runs": {"type": "array", "items": {"type": "string"}},
+    "candidate_run": {"type": "string"},
+    "findings": {"type": "array", "items": {"type": "object"}},
+    "proposals": {"type": "array", "items": {"type": "object"}},
+    "approval": {
+      "type": "object",
+      "required": ["required", "auto_apply_allowed"],
+      "properties": {
+        "required": {"const": true},
+        "auto_apply_allowed": {"const": false}
+      }
+    }
+  },
+  "additionalProperties": true
+}

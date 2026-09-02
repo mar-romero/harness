@@ -1,0 +1,15 @@
+{
+  "kind": "route",
+  "task": {
+    "id": "E-BUG",
+    "description": "Fix regression where parser returns incorrect result"
+  },
+  "expect": {
+    "risk": "R1",
+    "agents_contains": [
+      "debugger",
+      "implementer",
+      "reviewer"
+    ]
+  }
+}

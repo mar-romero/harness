@@ -1,0 +1,14 @@
+{
+  "kind": "route",
+  "task": {
+    "id": "E-AUTH",
+    "description": "Change production authentication and authorization token behavior"
+  },
+  "expect": {
+    "risk": "R3",
+    "agents_contains": [
+      "security-reviewer",
+      "verifier"
+    ]
+  }
+}

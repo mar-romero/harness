@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness model selection record",
+  "type": "object",
+  "required": ["task_id", "provider", "agent", "model_class", "status", "action", "reason"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "provider": {"type": "string"},
+    "agent": {"type": "string"},
+    "model_class": {"type": "string", "enum": ["fast", "coding", "reasoning"]},
+    "risk": {"type": "string", "enum": ["R0", "R1", "R2", "R3"]},
+    "status": {"type": "string", "enum": ["selected", "inherit", "blocked"]},
+    "action": {"type": "string", "enum": ["use", "inherit", "block"]},
+    "model_id": {"type": ["string", "null"]},
+    "score": {"type": ["number", "null"]},
+    "reason": {"type": "string"},
+    "eligible_models": {"type": "integer", "minimum": 0},
+    "inventory_generated_at": {"type": ["string", "null"]},
+    "inventory_stale": {"type": "boolean"},
+    "requirements": {"type": "object", "additionalProperties": {"type": "number"}}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "algorithm": "Ed25519",
+  "required_for_risks": ["R3"],
+  "private_key_env": "HARNESS_ATTESTATION_PRIVATE_KEY",
+  "public_key_env": "HARNESS_ATTESTATION_PUBLIC_KEY",
+  "private_keys_must_not_be_in_repository": true,
+  "attest": ["task_id","risk","git_head","git_tree","manifest_sha256","route_sha256","context_sha256","model_selections_sha256","evidence_head_hash","python_version"]
+}

@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, json, re, shutil
+from pathlib import Path
+from harnesslib import ROOT, load_manifest
+
+ACI_SERVER = "harness-aci"
+ACI_INSPECT_TOOLS = [
+    "repo_search", "repo_read_range", "repo_symbol", "repo_callers",
+    "repo_dependencies", "git_status", "git_diff",
+]
+ACI_CHECK_TOOLS = ["tests_run", "lint_run", "diagnostics_get"]
+
+def aci_tools_for(name, meta):
+    allow_checks = meta.get('mode') != 'read-only' or 'shell' in meta.get('capabilities', []) or name == 'test-auditor'
+    return ACI_INSPECT_TOOLS + (ACI_CHECK_TOOLS if allow_checks else [])
+
+def claude_aci_tools(name, meta):
+    return [f"mcp__{ACI_SERVER}__{tool}" for tool in aci_tools_for(name, meta)]
+
+def gemini_aci_tools(name, meta):
+    return [f"mcp_{ACI_SERVER}_{tool}" for tool in aci_tools_for(name, meta)]
+
+def q(s): return json.dumps(s,ensure_ascii=False)
+def yaml_list(items): return '['+', '.join(items)+']'
+
+def front_body(provider,name,meta,body):
+    desc=meta['description']; mode=meta['mode']; turns=meta.get('max_turns',20); skills=meta.get('skills',[])
+    readonly = mode=='read-only'
+    shell = (not readonly) or ('shell' in meta.get('capabilities', []))
+    if provider=='codex':
+        # Current repo-compatible Codex profile format. Omit model to inherit the session model.
+        sandbox = 'sandbox_mode = \"read-only\"\n' if readonly else ''
+        return f'name = {q(name)}\ndescription = {q(desc)}\n{sandbox}\ndeveloper_instructions = """\n{body.rstrip()}\n"""\n'
+    if provider=='claude':
+        if readonly:
+            builtins=['Read','Glob','Grep'] + (['Bash'] if shell else [])
+            dis='Edit, Write' if shell else 'Edit, Write, Bash'
+        else:
+            builtins=['Read','Glob','Grep','Bash','Edit','Write']
+            dis='Agent'
+        tools=', '.join(builtins + claude_aci_tools(name, meta))
+        lines=['---',f'name: {name}',f'description: {desc}','model: inherit',f'maxTurns: {turns}',f'tools: {tools}',f'disallowedTools: {dis}']
+        if skills: lines.append('skills: ['+', '.join(skills)+']')
+        if meta.get('isolation')=='worktree': lines.append('isolation: worktree')
+        return '\n'.join(lines)+f'\n---\n\n{body.rstrip()}\n'
+    if provider=='cursor':
+        return f'---\nname: {name}\ndescription: {desc}\nmodel: inherit\nreadonly: {str(readonly).lower()}\n---\n\n{body.rstrip()}\n'
+    if provider=='gemini':
+        tools=['read_file','read_many_files','list_directory','glob','grep_search','activate_skill'] + gemini_aci_tools(name, meta)
+        if not readonly: tools += ['write_file','replace','run_shell_command']
+        elif shell: tools += ['run_shell_command']
+        return f'---\nname: {name}\ndescription: {desc}\nkind: local\nmax_turns: {turns}\ntools: [{", ".join(tools)}]\n---\n\n{body.rstrip()}\n'
+    if provider=='opencode':
+        # OpenCode V2 uses ordered permissions (last match wins). Keep the
+        # generated adapters explicit so provider safety survives recompilation.
+        caps=set(meta.get('capabilities', []))
+        perms=[
+            ('read','*','allow'), ('glob','*','allow'), ('grep','*','allow'), ('list','*','allow'),
+            ('lsp','*','allow'), ('skill','*','allow'), (f'{ACI_SERVER}_repo_*','*','allow'), (f'{ACI_SERVER}_git_*','*','allow'), (f'{ACI_SERVER}_tests_run','*','allow' if (not readonly or shell or name=='test-auditor') else 'deny'), (f'{ACI_SERVER}_lint_run','*','allow' if (not readonly or shell or name=='test-auditor') else 'deny'), (f'{ACI_SERVER}_diagnostics_get','*','allow' if (not readonly or shell or name=='test-auditor') else 'deny'), ('external_directory','*','deny'),
+            ('edit','*','deny' if readonly else 'allow'),
+            ('shell','*','allow' if shell else 'deny'),
+            ('webfetch','*','deny'), ('websearch','*','deny'), ('subagent','*','deny'),
+        ]
+        if name=='docs-researcher':
+            perms += [('webfetch','*','allow'), ('websearch','*','allow')]
+        lines=[]
+        for action,resource,effect in perms:
+            lines += [f'  - action: {action}', f'    resource: {q(resource)}', f'    effect: {effect}']
+        return f'---\ndescription: {desc}\nmode: subagent\nsteps: {turns}\npermissions:\n'+ '\n'.join(lines)+f'\n---\n\n{body.rstrip()}\n'
+    if provider=='copilot':
+        tools=(['read','search','execute'] if shell else ['read','search']) if readonly else ['read','search','edit','execute']
+        tools += [f'{ACI_SERVER}/{tool}' for tool in aci_tools_for(name, meta)]
+        return f'---\nname: {name}\ndescription: {desc}\ntools: [{", ".join(tools)}]\n---\n\n{body.rstrip()}\n'
+    raise ValueError(provider)
+
+def target(provider,name):
+    ext='.toml' if provider=='codex' else '.agent.md' if provider=='copilot' else '.md'
+    return Path(load_manifest()['providers'][provider]['agent_dir'])/(name+ext)
+
+def generated():
+    m=load_manifest(); out={}
+    for provider in m['providers']:
+        for name,meta in m['agents'].items():
+            body=(ROOT/m['canonical']['roles_dir']/f'{name}.md').read_text(encoding='utf-8')
+            out[target(provider,name)] = front_body(provider,name,meta,body)
+    # Claude Code currently discovers project skills from .claude/skills, while the
+    # other supported providers can consume .agents/skills directly. Generate tiny
+    # Claude compatibility wrappers so the canonical skill body still lives once.
+    for skill_dir in sorted((ROOT/m['canonical']['skills_dir']).iterdir()):
+        if not skill_dir.is_dir() or not (skill_dir/'SKILL.md').exists():
+            continue
+        canonical=(skill_dir/'SKILL.md').read_text(encoding='utf-8')
+        import re
+        dm=re.search(r'^description:\s*(.+)$', canonical, re.M)
+        desc=dm.group(1).strip() if dm else f'Canonical {skill_dir.name} skill.'
+        wrapper=f'---\nname: {skill_dir.name}\ndescription: {desc}\n---\n\n@../../../.agents/skills/{skill_dir.name}/SKILL.md\n\nCanonical guidance remains in `.agents/skills/{skill_dir.name}/`.\n'
+        out[Path('.claude/skills')/skill_dir.name/'SKILL.md']=wrapper
+    return out
+
+def compile_all(check=False):
+    expected=generated(); bad=[]
+    for rel,content in expected.items():
+        p=ROOT/rel
+        if check:
+            if not p.exists() or p.read_text(encoding='utf-8')!=content: bad.append(rel.as_posix())
+        else:
+            p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8')
+    if check and bad:
+        print('OUT-OF-DATE GENERATED ADAPTERS:'); [print(' -',x) for x in bad]; return 1
+    print('generated artifacts are in sync' if check else f'generated {len(expected)} provider artifacts'); return 0
+
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument('--check',action='store_true'); a=ap.parse_args(); raise SystemExit(compile_all(a.check))
+if __name__=='__main__': main()

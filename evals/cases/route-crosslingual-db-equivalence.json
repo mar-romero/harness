@@ -1,0 +1,6 @@
+{
+  "kind": "route_pair",
+  "left": {"id":"DB-EN","description":"Add a database schema migration for invoices"},
+  "right": {"id":"DB-ES","description":"Agregar una migración de esquema de base de datos para facturas"},
+  "expect_risk": "R2"
+}

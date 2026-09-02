@@ -1,0 +1,2 @@
+@AGENTS.md
+@AI_POLICY.md

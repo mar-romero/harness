@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "default_trials": 5,
+  "timeout_seconds": 900,
+  "required_result_fields": ["passed"],
+  "metrics": ["tokens","cost_usd","latency_seconds","unsafe_action_attempts","human_interventions"],
+  "notes": "Adapters are external commands that receive a case JSON path and output JSON path. This avoids pinning volatile provider CLI syntax in the harness."
+}

@@ -1,0 +1,33 @@
+{
+  "id": "TASK-001",
+  "description": "Canonical English description used by downstream agents.",
+  "request": {
+    "original_text": "Original user request, in any language.",
+    "original_language": "es",
+    "canonical_english": "Canonical English description used by downstream agents.",
+    "translation": {
+      "equivalence_claim": "EXACT_INTENT",
+      "back_translation": "Back-translation used to detect ambiguity."
+    }
+  },
+  "acceptance_criteria": ["Criterion 1"],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": false,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": false,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "files": [],
+  "tags": []
+}

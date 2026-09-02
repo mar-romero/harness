@@ -1,0 +1,268 @@
+{
+  "schema_version": 2,
+  "name": "portable-agent-harness-final-v4",
+  "canonical": {
+    "policy": [
+      "AGENTS.md",
+      "AI_POLICY.md"
+    ],
+    "roles_dir": ".agents/roles",
+    "skills_dir": ".agents/skills"
+  },
+  "workflow": [
+    "REQUEST",
+    "TASK",
+    "ROUTE",
+    "RISK",
+    "CONTEXT",
+    "IMPLEMENT",
+    "CHECKS",
+    "REVIEW",
+    "VERIFY",
+    "CLOSE"
+  ],
+  "risk_levels": {
+    "R0": {
+      "review": false,
+      "verification": false,
+      "human_gate": false
+    },
+    "R1": {
+      "review": true,
+      "verification": false,
+      "human_gate": false
+    },
+    "R2": {
+      "review": true,
+      "verification": true,
+      "human_gate": false
+    },
+    "R3": {
+      "review": true,
+      "verification": true,
+      "security_review": true,
+      "human_gate": true
+    }
+  },
+  "model_classes": {
+    "fast": {
+      "optimize": [
+        "latency",
+        "cost"
+      ],
+      "minimum": {
+        "reasoning": "medium"
+      }
+    },
+    "coding": {
+      "optimize": [
+        "coding",
+        "tool-use"
+      ],
+      "minimum": {
+        "reasoning": "high"
+      }
+    },
+    "reasoning": {
+      "optimize": [
+        "reasoning",
+        "falsification"
+      ],
+      "minimum": {
+        "reasoning": "high"
+      }
+    }
+  },
+  "agents": {
+    "explorer": {
+      "description": "Map repository structure and relevant evidence without writes.",
+      "mode": "read-only",
+      "capabilities": [
+        "repository-search",
+        "flow-mapping",
+        "risk-discovery"
+      ],
+      "skills": [
+        "grounded-evidence",
+        "agent-computer-interface"
+      ],
+      "model_class": "fast",
+      "max_turns": 16
+    },
+    "planner": {
+      "description": "Turn uncertainty into a bounded plan, acceptance criteria and rollback.",
+      "mode": "read-only",
+      "capabilities": [
+        "planning",
+        "risk-analysis",
+        "acceptance-design"
+      ],
+      "skills": [
+        "task-intake",
+        "architecture-decision",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 20
+    },
+    "implementer": {
+      "description": "Implement one accepted scoped task as the single writer in an isolated worktree.",
+      "mode": "writer",
+      "capabilities": [
+        "edit",
+        "shell",
+        "testing",
+        "implementation"
+      ],
+      "skills": [
+        "software-engineering",
+        "implementation-loop",
+        "evidence-ledger",
+        "agent-computer-interface"
+      ],
+      "model_class": "coding",
+      "max_turns": 30,
+      "isolation": "worktree"
+    },
+    "reviewer": {
+      "description": "Falsify a frozen candidate and report only evidence-backed defects.",
+      "mode": "read-only",
+      "capabilities": [
+        "code-review",
+        "correctness-review",
+        "reliability-review"
+      ],
+      "skills": [
+        "bounded-review",
+        "grounded-evidence",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 20
+    },
+    "security-reviewer": {
+      "description": "Audit trust boundaries and security-sensitive changes without edits.",
+      "mode": "read-only",
+      "capabilities": [
+        "security-review",
+        "threat-analysis"
+      ],
+      "skills": [
+        "prompt-injection-defense",
+        "tool-output-validation",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 20
+    },
+    "test-auditor": {
+      "description": "Audit whether tests can detect realistic failures.",
+      "mode": "read-only",
+      "capabilities": [
+        "test-review",
+        "failure-analysis"
+      ],
+      "skills": [
+        "test-strategy",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 18
+    },
+    "docs-researcher": {
+      "description": "Verify external technical contracts using authoritative sources.",
+      "mode": "read-only",
+      "capabilities": [
+        "source-research",
+        "contract-research"
+      ],
+      "skills": [
+        "source-research",
+        "grounded-evidence",
+        "agent-computer-interface"
+      ],
+      "model_class": "fast",
+      "max_turns": 18
+    },
+    "debugger": {
+      "description": "Reproduce and isolate root causes without editing implementation files.",
+      "mode": "read-only",
+      "capabilities": [
+        "debugging",
+        "root-cause-analysis",
+        "reproduction",
+        "shell"
+      ],
+      "skills": [
+        "debugging",
+        "systemic-defect-triage",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 24
+    },
+    "verifier": {
+      "description": "Independently verify observable acceptance criteria on the frozen candidate.",
+      "mode": "read-only",
+      "capabilities": [
+        "verification",
+        "integration-check",
+        "acceptance-validation",
+        "shell"
+      ],
+      "skills": [
+        "verification",
+        "grounded-evidence",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 20
+    }
+  },
+  "providers": {
+    "codex": {
+      "agent_dir": ".codex/agents",
+      "format": "toml",
+      "model_policy": "inherit"
+    },
+    "claude": {
+      "agent_dir": ".claude/agents",
+      "format": "claude-md",
+      "model_policy": "inherit"
+    },
+    "cursor": {
+      "agent_dir": ".cursor/agents",
+      "format": "cursor-md",
+      "model_policy": "inherit"
+    },
+    "gemini": {
+      "agent_dir": ".gemini/agents",
+      "format": "gemini-md",
+      "model_policy": "inherit"
+    },
+    "opencode": {
+      "agent_dir": ".opencode/agents",
+      "format": "opencode-md",
+      "model_policy": "inherit"
+    },
+    "copilot": {
+      "agent_dir": ".github/agents",
+      "format": "copilot-md",
+      "model_policy": "inherit"
+    }
+  },
+  "release_version": "4.1.0-aci-overlay",
+  "canonical_agent_language": "en",
+  "features": {
+    "request_normalization": "strict-original-plus-canonical-english",
+    "structured_risk_factors": true,
+    "runtime_eval_lab": true,
+    "typed_handoffs": true,
+    "progress_ledger": true,
+    "signed_r3_attestation": "Ed25519",
+    "context_graph_and_verified_memory": true,
+    "champion_challenger_evolution": true,
+    "opencode_native_integration": true,
+    "agent_computer_interface": "mcp-stdio-plus-cli"
+  }
+}

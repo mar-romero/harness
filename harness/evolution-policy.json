@@ -1,0 +1,93 @@
+{
+  "schema_version": 2,
+  "mode": "proposal-only",
+  "allow_auto_apply": false,
+  "require_human_approval": true,
+  "minimum_baseline_runs": 2,
+  "baseline_window": 5,
+  "protected_paths": [
+    "AGENTS.md",
+    "AI_POLICY.md",
+    "harness/policies/",
+    "harness/hooks/",
+    ".github/workflows/"
+  ],
+  "proposal_targets": [
+    "routing",
+    "context",
+    "agent-contract",
+    "skill-contract",
+    "model-policy",
+    "eval-coverage",
+    "security-gates",
+    "handoff-contract",
+    "orchestrator-policy",
+    "memory-policy",
+    "language-policy"
+  ],
+  "metrics": {
+    "task_success_rate": {
+      "direction": "higher",
+      "material_delta": 0.03,
+      "critical_delta": 0.08
+    },
+    "bug_introduction_rate": {
+      "direction": "lower",
+      "material_delta": 0.02,
+      "critical_delta": 0.05
+    },
+    "review_precision": {
+      "direction": "higher",
+      "material_delta": 0.04,
+      "critical_delta": 0.1
+    },
+    "review_recall": {
+      "direction": "higher",
+      "material_delta": 0.04,
+      "critical_delta": 0.1
+    },
+    "unsafe_action_attempts": {
+      "direction": "lower",
+      "material_delta": 1.0,
+      "critical_delta": 1.0
+    },
+    "human_intervention_rate": {
+      "direction": "lower",
+      "material_delta": 0.05,
+      "critical_delta": 0.15
+    },
+    "tokens": {
+      "direction": "lower",
+      "material_delta": 0.1,
+      "critical_delta": 0.3,
+      "relative": true
+    },
+    "latency_seconds": {
+      "direction": "lower",
+      "material_delta": 0.1,
+      "critical_delta": 0.3,
+      "relative": true
+    },
+    "cost_usd": {
+      "direction": "lower",
+      "material_delta": 0.1,
+      "critical_delta": 0.3,
+      "relative": true
+    }
+  },
+  "hard_regressions": [
+    "unit_tests_failed",
+    "deterministic_evals_failed",
+    "ledger_invalid",
+    "security_gate_weakened"
+  ],
+  "rules": {
+    "never_propose_lowering_security_to_improve_cost_or_latency": true,
+    "never_delete_failing_tests_as_a_fix": true,
+    "never_auto_modify_repository": true,
+    "candidate_must_beat_or_match_baseline_on_hard_regressions": true,
+    "candidate_requires_full_eval_before_human_approval": true,
+    "champion_challenger_required_for_promotion": true,
+    "holdout_eval_required": true
+  }
+}

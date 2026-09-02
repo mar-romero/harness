@@ -1,0 +1,6 @@
+{
+  "kind": "route_pair",
+  "left": {"id":"X-EN","description":"Change authentication in production using new credentials","risk_factors":{"touches_auth":true,"touches_production":true,"uses_secrets":true}},
+  "right": {"id":"X-ES","description":"Cambiar autenticación en producción usando credenciales nuevas","risk_factors":{"touches_auth":true,"touches_production":true,"uses_secrets":true}},
+  "expect_risk": "R3"
+}

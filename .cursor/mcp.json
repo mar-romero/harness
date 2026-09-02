@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "harness-aci": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["${workspaceFolder}/scripts/aci_mcp.py"]
+    }
+  }
+}

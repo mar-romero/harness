@@ -1,0 +1,17 @@
+{
+  "kind": "route",
+  "task": {
+    "id": "E-DOC",
+    "description": "Update README documentation formatting"
+  },
+  "expect": {
+    "risk": "R0",
+    "agents_contains": [
+      "implementer"
+    ],
+    "agents_excludes": [
+      "reviewer",
+      "verifier"
+    ]
+  }
+}

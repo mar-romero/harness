@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command|write_file|replace",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .gemini/hooks/gate.py"
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "harness-aci": {
+      "command": "python3",
+      "args": [
+        "scripts/aci_mcp.py"
+      ],
+      "cwd": ".",
+      "timeout": 30000,
+      "trust": false,
+      "includeTools": [
+        "repo_search",
+        "repo_read_range",
+        "repo_symbol",
+        "repo_callers",
+        "repo_dependencies",
+        "git_status",
+        "git_diff",
+        "tests_run",
+        "lint_run",
+        "diagnostics_get"
+      ]
+    }
+  }
+}

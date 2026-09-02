@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "description"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "risk": {
+      "enum": [
+        "R0",
+        "R1",
+        "R2",
+        "R3"
+      ]
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "original_text": {
+          "type": "string"
+        },
+        "original_language": {
+          "type": "string"
+        },
+        "canonical_english": {
+          "type": "string"
+        },
+        "translation": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "risk_factors": {
+      "type": "object",
+      "properties": {
+        "touches_auth": {
+          "type": "boolean"
+        },
+        "touches_production": {
+          "type": "boolean"
+        },
+        "uses_secrets": {
+          "type": "boolean"
+        },
+        "destructive_operation": {
+          "type": "boolean"
+        },
+        "irreversible_change": {
+          "type": "boolean"
+        },
+        "security_boundary": {
+          "type": "boolean"
+        },
+        "schema_change": {
+          "type": "boolean"
+        },
+        "database_change": {
+          "type": "boolean"
+        },
+        "concurrency": {
+          "type": "boolean"
+        },
+        "financial": {
+          "type": "boolean"
+        },
+        "external_contract": {
+          "type": "boolean"
+        },
+        "migration": {
+          "type": "boolean"
+        },
+        "persistence": {
+          "type": "boolean"
+        },
+        "important_calculation": {
+          "type": "boolean"
+        },
+        "bug_fix": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

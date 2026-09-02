@@ -1,0 +1,46 @@
+{
+  "capabilities": {
+    "repository-search": [
+      "explorer"
+    ],
+    "planning": [
+      "planner"
+    ],
+    "implementation": [
+      "implementer"
+    ],
+    "debugging": [
+      "debugger"
+    ],
+    "code-review": [
+      "reviewer"
+    ],
+    "test-review": [
+      "test-auditor"
+    ],
+    "security-review": [
+      "security-reviewer"
+    ],
+    "source-research": [
+      "docs-researcher"
+    ],
+    "verification": [
+      "verifier"
+    ]
+  },
+  "invariants": {
+    "single_writer_per_worktree": true,
+    "writer_cannot_final_review": true,
+    "writer_cannot_verify": true,
+    "read_only_agents": [
+      "explorer",
+      "planner",
+      "reviewer",
+      "security-reviewer",
+      "test-auditor",
+      "docs-researcher",
+      "debugger",
+      "verifier"
+    ]
+  }
+}

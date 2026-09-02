@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portable-agent-harness.local/schema/aci-result.schema.json",
+  "title": "Harness ACI result",
+  "type": "object",
+  "required": ["ok", "tool", "data"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "tool": {"type": "string", "minLength": 1},
+    "data": {},
+    "error": {"type": ["string", "null"]},
+    "meta": {
+      "type": "object",
+      "properties": {
+        "root": {"type": "string"},
+        "truncated": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "description": "Capability-based model selection policy. Runtime inventories are authoritative; this file intentionally does not pin mutable model IDs.",
+  "capability_scale": {
+    "min": 0,
+    "max": 5,
+    "meaning": {
+      "0": "unknown or unavailable",
+      "1": "weak",
+      "2": "basic",
+      "3": "good",
+      "4": "strong",
+      "5": "frontier/exceptional"
+    }
+  },
+  "model_classes": {
+    "fast": {
+      "required": {
+        "reasoning": 2,
+        "tool_use": 2
+      },
+      "weights": {
+        "reasoning": 0.15,
+        "coding": 0.05,
+        "tool_use": 0.10,
+        "reliability": 0.15,
+        "latency": 0.30,
+        "cost": 0.25
+      }
+    },
+    "coding": {
+      "required": {
+        "reasoning": 3,
+        "coding": 4,
+        "tool_use": 4,
+        "reliability": 3
+      },
+      "weights": {
+        "reasoning": 0.15,
+        "coding": 0.30,
+        "tool_use": 0.20,
+        "reliability": 0.20,
+        "latency": 0.075,
+        "cost": 0.075
+      }
+    },
+    "reasoning": {
+      "required": {
+        "reasoning": 4,
+        "reliability": 3
+      },
+      "weights": {
+        "reasoning": 0.40,
+        "coding": 0.05,
+        "tool_use": 0.10,
+        "reliability": 0.30,
+        "latency": 0.075,
+        "cost": 0.075
+      }
+    }
+  },
+  "risk_overrides": {
+    "R0": {},
+    "R1": {},
+    "R2": {
+      "required_floor": {
+        "reliability": 3
+      }
+    },
+    "R3": {
+      "required_floor": {
+        "reasoning": 4,
+        "reliability": 4,
+        "tool_use": 3
+      },
+      "no_eligible_action": "block"
+    }
+  },
+  "selection": {
+    "default_no_inventory_action": "inherit",
+    "default_no_eligible_action": "inherit",
+    "prefer_provider_native": true,
+    "deterministic_tie_break": "model_id_ascending",
+    "unknown_capability_is_zero": true,
+    "score_precision": 6
+  },
+  "inventory": {
+    "max_age_hours": 168,
+    "allow_stale_for_r0_r2": true,
+    "allow_stale_for_r3": false,
+    "environment_variable": "HARNESS_MODEL_INVENTORY",
+    "provider_environment_prefix": "HARNESS_MODEL_INVENTORY_"
+  }
+}

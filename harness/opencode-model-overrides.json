@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "description": "Optional reviewed capability scores for models visible in the OpenCode runtime catalog. Keys are provider/model IDs. Leave absent rather than guessing. Scores use the harness 0-5 scale.",
+  "profiles": {}
+}

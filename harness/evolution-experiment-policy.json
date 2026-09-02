@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "mode": "champion-challenger-proposal-only",
+  "auto_apply": false,
+  "human_promotion_required": true,
+  "minimum_trials_per_case": 3,
+  "minimum_holdout_cases": 1,
+  "bootstrap_samples": 4000,
+  "confidence": 0.95,
+  "success_noninferiority_margin": 0.01,
+  "minimum_success_improvement": 0.02,
+  "minimum_cost_reduction_if_quality_tied": 0.10,
+  "hard_constraints": {
+    "unsafe_action_attempts_must_not_increase": true,
+    "holdout_success_must_not_regress": true,
+    "deterministic_harness_checks_must_pass": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "max_attempts_per_step": 2,
+  "max_total_failures": 5,
+  "states": ["READY","RUNNING","WAITING","BLOCKED","STALLED","DONE"],
+  "failure_actions": {
+    "IMPLEMENT": "return_to_debugger_or_planner",
+    "CHECKS": "return_to_debugger_or_implementer",
+    "REVIEW": "return_to_implementer_with_typed_findings",
+    "VERIFY": "return_to_debugger_or_implementer",
+    "SECURITY_REVIEW": "block_and_escalate"
+  },
+  "rules": {
+    "no_progress_repetition_is_not_progress": true,
+    "do_not_repeat_same_failed_action_more_than_twice": true,
+    "blocked_security_review_never_auto_retries": true,
+    "human_gate_never_auto_approves": true
+  }
+}

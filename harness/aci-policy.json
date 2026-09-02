@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "name": "harness-aci",
+  "root_mode": "repository",
+  "max_file_bytes": 120000,
+  "max_read_lines": 400,
+  "max_search_results": 80,
+  "max_output_chars": 30000,
+  "command_timeout_seconds": 180,
+  "exclude_dirs": [
+    ".git",
+    ".worktrees",
+    ".harness/runs",
+    "node_modules",
+    "dist",
+    "build",
+    ".venv",
+    "venv",
+    "__pycache__"
+  ],
+  "exclude_globs": [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "secrets.*"
+  ],
+  "text_extensions": [
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt",
+    ".cs", ".rb", ".php", ".swift", ".md", ".json", ".yaml", ".yml",
+    ".toml", ".sh", ".sql", ".graphql", ".proto", ".html", ".css", ".scss"
+  ],
+  "text_names": [
+    "Dockerfile", "Makefile", "Justfile", "Procfile", "README", "LICENSE"
+  ],
+  "pass_env": [
+    "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "PYTHONPATH", "CI"
+  ],
+  "profiles": {
+    "tests.unit": {
+      "kind": "test",
+      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+      "timeout_seconds": 180
+    },
+    "lint.python-compile": {
+      "kind": "lint",
+      "argv": ["python3", "-m", "compileall", "-q", "scripts", "tests"],
+      "timeout_seconds": 120
+    },
+    "diagnostics.harness": {
+      "kind": "diagnostic",
+      "argv": ["bash", "scripts/check-harness.sh"],
+      "timeout_seconds": 180
+    }
+  }
+}

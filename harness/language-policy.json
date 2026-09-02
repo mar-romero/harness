@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "canonical_agent_language": "en",
+  "preserve_original_request": true,
+  "non_english_policy": "translate-then-verify",
+  "equivalence_claim": "EXACT_INTENT",
+  "fail_closed_on_ambiguity": true,
+  "require_back_translation_for_non_english": true,
+  "protected_semantics": [
+    "code_blocks",
+    "urls",
+    "file_paths",
+    "identifiers",
+    "numbers",
+    "quoted_literals",
+    "negation",
+    "must_should_only_constraints"
+  ],
+  "notes": "Natural-language translation cannot be mathematically guaranteed to preserve 100% of meaning. The harness therefore preserves the original, enforces deterministic invariants, requires a back-translation/equivalence attestation, and blocks ambiguous translations instead of silently routing them."
+}

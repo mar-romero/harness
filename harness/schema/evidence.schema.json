@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "task_id",
+    "category",
+    "evidence_type",
+    "claim",
+    "status",
+    "actor"
+  ],
+  "properties": {
+    "evidence_type": {
+      "enum": [
+        "DETERMINISTIC",
+        "INFERRED",
+        "INSUFFICIENT"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INFO",
+        "BLOCKED"
+      ]
+    }
+  }
+}

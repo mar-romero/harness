@@ -1,0 +1,8 @@
+[mcp_servers.harness-aci]
+command = "python3"
+args = ["scripts/aci_mcp.py"]
+cwd = "."
+enabled = true
+required = false
+startup_timeout_sec = 30
+tool_timeout_sec = 180

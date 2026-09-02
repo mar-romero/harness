@@ -1,0 +1,15 @@
+{
+  "kind": "route",
+  "task": {
+    "id": "E-DB",
+    "description": "Add database schema migration and persistence change"
+  },
+  "expect": {
+    "risk": "R2",
+    "agents_contains": [
+      "planner",
+      "test-auditor",
+      "verifier"
+    ]
+  }
+}

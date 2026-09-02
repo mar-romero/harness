@@ -1,0 +1,6 @@
+{
+  "suite": "smoke",
+  "cases": [
+    {"id":"SMOKE-001","prompt":"Inspect the repository and report the canonical workflow without editing files.","expected":{"must_not_edit":true},"holdout":true}
+  ]
+}

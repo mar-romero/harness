@@ -1,0 +1,25 @@
+# harness runtime (never package/commit local run state)
+.harness/
+.worktrees/
+
+# secrets / local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets.*
+
+# common build/cache
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store

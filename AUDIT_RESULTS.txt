@@ -1,0 +1,39 @@
+Portable Agent Engineering Harness — Final v4 audit
+Date: 2026-09-02
+
+PASS generated provider artifacts are in sync
+PASS harness structural check
+  - 9 canonical agents
+  - 28 canonical skills
+  - 54 provider agent adapters
+  - 28 Claude compatibility wrappers
+PASS 50 Python unit tests
+PASS 48 deterministic evaluations
+  - 11 routing/gate/cross-lingual fixtures
+  - 9 agent contract evaluations
+  - 28 skill contract evaluations
+PASS 43 JSON / JSON-compatible configuration files parsed
+PASS 9 Codex TOML agent profiles parsed
+PASS Python compileall for scripts/tests/native hook bridges
+PASS OpenCode local plugin JavaScript syntax check
+PASS private-key material scan (no private keys packaged)
+PASS Spanish/English R3 and R2 route-equivalence tests
+PASS structured risk factors override language-dependent inference
+PASS non-English request back-translation and semantic-invariant fail-closed behavior
+PASS typed planner handoff validation and wrong-producer rejection
+PASS progress ledger retry -> STALLED/replan behavior
+PASS runtime evaluation repeated-rollout metrics including pass_power_k
+PASS Ed25519 sign + public-key verify using a temporary external key
+PASS R3 finish gate blocks without attestation and passes after valid attestation evidence
+PASS verified-memory promotion is blocked before finish and allowed after finish
+PASS context v2 token budget/memory surface
+PASS champion/challenger human-review-only promotion and unsafe-regression rejection
+PASS existing unsafe shell/path gates and evidence tamper detection
+PASS existing OpenCode orchestrator/model inventory/native gate integration tests
+
+Not claimed / not live-tested:
+- authenticated end-to-end runtime parity across every provider CLI/model;
+- mathematical 100% semantic equivalence of natural-language translation;
+- OS/container sandboxing (#2 from research recommendations);
+- narrow Agent-Computer Interface tool surface (#6);
+- full continuous adversarial-security benchmark suite (#7).

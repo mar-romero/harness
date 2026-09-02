@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "human_gate_patterns": [
+    "(?i)terraform\\s+destroy",
+    "(?i)kubectl\\s+delete",
+    "(?i)drop\\s+(database|table|schema)",
+    "(?i)git\\s+push\\s+.*--force",
+    "(?i)rm\\s+-rf\\s+/(?!tmp\\b)",
+    "(?i)(prod|production).*(secret|credential|token|password)"
+  ],
+  "blocked_always_patterns": [
+    "(?i)curl\\s+[^|]+\\|\\s*(bash|sh)",
+    "(?i)wget\\s+[^|]+\\|\\s*(bash|sh)"
+  ],
+  "secret_path_patterns": [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "secrets.*"
+  ],
+  "protected_paths": [
+    "AGENTS.md",
+    "AI_POLICY.md",
+    "harness/manifest.yaml"
+  ],
+  "finish_requirements": {
+    "R0": [
+      "acceptance"
+    ],
+    "R1": [
+      "acceptance",
+      "checks",
+      "review"
+    ],
+    "R2": [
+      "acceptance",
+      "checks",
+      "review",
+      "verification"
+    ],
+    "R3": [
+      "acceptance",
+      "checks",
+      "review",
+      "verification",
+      "security_review",
+      "attestation",
+      "human_approval"
+    ]
+  }
+}

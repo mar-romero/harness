@@ -1,0 +1,14 @@
+{
+  "kind": "route",
+  "task": {
+    "id": "E-API",
+    "description": "Integrate external API SDK for notifications"
+  },
+  "expect": {
+    "risk": "R2",
+    "agents_contains": [
+      "docs-researcher",
+      "verifier"
+    ]
+  }
+}
