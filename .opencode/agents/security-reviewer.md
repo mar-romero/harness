@@ -21,6 +21,21 @@ permissions:
   - action: skill
     resource: "*"
     effect: allow
+  - action: harness-aci_repo_*
+    resource: "*"
+    effect: allow
+  - action: harness-aci_git_*
+    resource: "*"
+    effect: allow
+  - action: harness-aci_tests_run
+    resource: "*"
+    effect: deny
+  - action: harness-aci_lint_run
+    resource: "*"
+    effect: deny
+  - action: harness-aci_diagnostics_get
+    resource: "*"
+    effect: deny
   - action: external_directory
     resource: "*"
     effect: deny
