@@ -6,3 +6,8 @@ enabled = true
 required = false
 startup_timeout_sec = 30
 tool_timeout_sec = 180
+
+[agents]
+max_threads = 6
+max_depth = 1
+job_max_runtime_seconds = 1800

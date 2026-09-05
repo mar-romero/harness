@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "description": "Adaptive TDD policy for harness work units.",
+  "modes": [
+    "not_applicable",
+    "test_after_allowed",
+    "tdd_preferred",
+    "tdd_required",
+    "characterization_then_tdd",
+    "spike_then_tdd"
+  ],
+  "risk_defaults": {
+    "R0": "test_after_allowed",
+    "R1": "tdd_preferred",
+    "R2": "tdd_required",
+    "R3": "tdd_required"
+  },
+  "signals": {
+    "not_applicable": [
+      "\\b(documentation|docs|readme|research only|spike only|investigate only)\\b"
+    ],
+    "test_after_allowed": [
+      "\\b(css|visual only|copy change|formatting|generated adapter|generated file|asset)\\b"
+    ],
+    "characterization_then_tdd": [
+      "\\b(legacy|brownfield|characterization|behaviour unknown|behavior unknown|large refactor|refactor existing)\\b"
+    ],
+    "spike_then_tdd": [
+      "\\b(unknown contract|uncertain contract|verify .* api|investigate .* api|research .* api|prototype first|spike then)\\b"
+    ],
+    "tdd_required": [
+      "\\b(bug|regression|incorrect|broken|calculation|parser|validator|serialization|state machine|authorization|permission|idempotency)\\b"
+    ]
+  },
+  "structured_required_factors": [
+    "important_calculation",
+    "financial",
+    "persistence",
+    "concurrency",
+    "touches_auth",
+    "security_boundary",
+    "database_change",
+    "schema_change"
+  ],
+  "independent_test_designer": {
+    "required_for_modes": [
+      "tdd_required",
+      "characterization_then_tdd",
+      "spike_then_tdd"
+    ],
+    "minimum_risk_for_preferred": "R2"
+  },
+  "evidence": {
+    "tdd_required": [
+      "red",
+      "green"
+    ],
+    "characterization_then_tdd": [
+      "characterization",
+      "red",
+      "green"
+    ],
+    "spike_then_tdd": [
+      "contract",
+      "red",
+      "green"
+    ],
+    "tdd_preferred": [],
+    "test_after_allowed": [],
+    "not_applicable": []
+  },
+  "mutation": {
+    "required_by_default": false,
+    "recommended_risks": [
+      "R2",
+      "R3"
+    ],
+    "recommended_factors": [
+      "important_calculation",
+      "financial",
+      "touches_auth",
+      "security_boundary"
+    ]
+  },
+  "explicit_relaxation": {
+    "R0": true,
+    "R1": true,
+    "R2": false,
+    "R3": false,
+    "note": "R2/R3 may be relaxed only by an explicit human-approved exception recorded in task.test_strategy.exception."
+  }
+}

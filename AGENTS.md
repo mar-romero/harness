@@ -54,6 +54,62 @@ required action, and preserve the existing command/path gates. Source writes rem
 provider-native and single-writer gated; the ACI deliberately does not expose a
 generic write tool.
 
+## Runtime model routing
+
+For every meaningful task, model selection is per routed agent rather than one
+model for the whole task. Runtime host availability is authoritative; external
+benchmark data must never introduce a model that the active host did not discover.
+`harness/models.json` defines the scoring, task profiling, risk floors, effort
+selection and independence policy. Provider discovery/enrichment lives under
+`harness/model-providers/` and `scripts/openrouter_sync.py`.
+
+OpenRouter is an external capability, price and performance prior only. Keep its
+raw metrics and provenance in generated inventories. Unknown capabilities remain
+unknown rather than being guessed. Local harness evidence may gradually refine the
+external prior but must retain sample counts and may not silently override R3
+minimum requirements.
+OpenRouter refresh is operator-triggered only. Task activation must never contact
+OpenRouter or mutate the scored provider inventory. Generate/update scores explicitly
+with `python3 scripts/openrouter_sync.py --provider <opencode|codex|all>`. Every task
+reads the last local scored inventory and may intersect it with host-local model
+availability before selection. Inventory age is informational in this manual mode.
+
+Before OpenCode delegation, activate the durable task with
+`python3 scripts/providers/opencode_activate_task.py <task-path>`. Before Codex
+subagent delegation, activate it with
+`python3 scripts/providers/codex_activate_task.py <task-path>`. Codex activation
+regenerates `.codex/agents/*.toml` from canonical roles with the selected `model`
+and `model_reasoning_effort`; `--clear` restores normal model inheritance.
+
+Reviewer, test-auditor, verifier and security-reviewer selection should prefer a
+different model, then a different family, then a different vendor from the
+implementation model whenever the alternative remains within the configured
+relative-score threshold. If independence cannot be achieved, record the weaker
+independence strength explicitly rather than pretending the review is independent.
+
+<!-- PRODUCT_DISCOVERY_V1:START -->
+## Product discovery boundary
+
+A broad product idea is not automatically an executable task. For vague goals,
+new products, multi-feature requests or requests to improve an idea, use
+`.agents/skills/idea-to-work/SKILL.md` before normal task intake. Identify material
+product gaps, ask only high-information questions within
+`harness/product-discovery-policy.json`, challenge risky assumptions, propose a
+smaller MVP where useful, and classify the work as project, epic, feature, spike
+or task.
+
+Persist discovery under `planning/`. Product decisions remain with the human:
+draft planning may be recorded before approval, but derived executable `tasks/`
+must not be materialized while blocking product questions remain. Approved
+planning is validated/materialized through `scripts/product_planning.py`. Derived
+tasks preserve provenance back to the original discovery artifact rather than
+fabricating per-task translation attestations.
+
+Use `.agents/skills/sprint-planning/SKILL.md` to form a bounded execution batch
+from approved tasks using dependencies, value, risk reduction and capacity. A
+sprint is an execution batch, not a calendar-duration promise.
+<!-- PRODUCT_DISCOVERY_V1:END -->
+
 ## Operating model
 
 For a meaningful task use this sequence:

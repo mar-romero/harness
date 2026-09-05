@@ -23,3 +23,6 @@ dist/
 build/
 coverage/
 .DS_Store
+
+# Harness benchmark private holdouts
+benchmarks/private/

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portable-harness.local/schema/planning/discovery-bundle.schema.json",
+  "title": "Product discovery bundle",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "discovery_id",
+    "status",
+    "classification",
+    "title",
+    "original_request",
+    "refined_problem",
+    "target_users",
+    "outcomes",
+    "success_metrics",
+    "scope",
+    "assumptions",
+    "open_questions",
+    "challenges",
+    "mvp",
+    "work_items",
+    "tasks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "discovery_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "ready_for_approval",
+        "approved",
+        "archived"
+      ]
+    },
+    "classification": {
+      "enum": [
+        "SPIKE",
+        "TASK",
+        "FEATURE",
+        "EPIC",
+        "PROJECT"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "original_request": {
+      "type": "object",
+      "required": [
+        "text",
+        "language"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "refined_problem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_users": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "success_metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "definition"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "in",
+        "out"
+      ],
+      "properties": {
+        "in": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "out": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "question",
+          "blocking"
+        ],
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "dimension": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "challenges": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mvp": {
+      "type": "object",
+      "required": [
+        "goal",
+        "includes",
+        "excludes"
+      ],
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "work_items": {
+      "type": "array",
+      "items": {
+        "$ref": "work-item.schema.json"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "proposed_sprint": {
+      "$ref": "sprint.schema.json"
+    }
+  },
+  "additionalProperties": true
+}

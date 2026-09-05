@@ -8,8 +8,8 @@ class CompileTests(unittest.TestCase):
         m=load_manifest(); out=generated()
         agents=len(m['agents']); providers=len(m['providers']); skills=len([p for p in (Path(__file__).resolve().parents[1]/'.agents/skills').iterdir() if p.is_dir()])
         self.assertEqual(len(out),agents*providers+skills)
-        self.assertTrue(any(str(p).endswith('.codex/agents/implementer.toml') for p in out))
-        self.assertTrue(any(str(p).endswith('.claude/skills/software-engineering/SKILL.md') for p in out))
+        self.assertTrue(any(p.as_posix().endswith('.codex/agents/implementer.toml') for p in out))
+        self.assertTrue(any(p.as_posix().endswith('.claude/skills/software-engineering/SKILL.md') for p in out))
     def test_strict_read_only_agents_do_not_receive_shell_where_configurable(self):
         out=generated()
         claude=out[Path('.claude/agents/explorer.md')].split('---')[1]

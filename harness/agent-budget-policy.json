@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "support_agents": [
+    "explorer",
+    "planner",
+    "debugger",
+    "docs-researcher"
+  ],
+  "gate_agents": [
+    "reviewer",
+    "test-auditor",
+    "verifier",
+    "security-reviewer"
+  ],
+  "execution_agents": [
+    "implementer",
+    "test-designer"
+  ],
+  "initial": {
+    "always_if_routed": [
+      "explorer"
+    ],
+    "planner_risks": [
+      "R2",
+      "R3"
+    ],
+    "planner_impact_severities": [
+      "high",
+      "critical"
+    ],
+    "docs_researcher_when_external_uncertainty": true,
+    "debugger": false
+  },
+  "escalation": {
+    "high_impact": [
+      "planner"
+    ],
+    "critical_impact": [
+      "planner",
+      "explorer"
+    ],
+    "low_localization_confidence": [
+      "explorer",
+      "planner"
+    ],
+    "external_uncertainty": [
+      "docs-researcher"
+    ],
+    "implementation_fail": [
+      "debugger"
+    ],
+    "checks_fail": [
+      "debugger"
+    ],
+    "review_fail": [
+      "planner"
+    ],
+    "blocked": [
+      "planner"
+    ],
+    "repeated_failure": [
+      "planner",
+      "debugger"
+    ]
+  },
+  "repeat_failure_threshold": 2,
+  "rules": {
+    "never_remove_mandatory_gate_agents": true,
+    "single_writer_is_implementer": true,
+    "do_not_restart_workflow_on_escalation": true,
+    "add_only_agents_already_allowed_by_route": true
+  }
+}

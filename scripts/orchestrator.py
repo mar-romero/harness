@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse, datetime as dt, json
 from pathlib import Path
 from harnesslib import ROOT, load_json, run_dir, safe_task_id, write_json_atomic
+from agent_budget import observe_progress as observe_agent_budget
 
 POLICY=ROOT/'harness/orchestrator-policy.json'
 def now(): return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00','Z')
@@ -48,7 +49,13 @@ def record(task,status,step=None,note=None):
         else:
             s['state']='WAITING'; s['recommended_action']=policy['failure_actions'].get(step,'retry_once_then_replan')
     else: raise ValueError('status must be PASS, FAIL, BLOCKED or INSUFFICIENT')
-    write_json_atomic(path(task),s); return s
+    write_json_atomic(path(task),s)
+    # HARNESS_PROGRESSIVE_AGENT_BUDGET_OBSERVE
+    budget=observe_agent_budget(task,step,status,s)
+    if budget is not None:
+        s['agent_budget']=budget
+        write_json_atomic(path(task),s)
+    return s
 
 def resume(task,step=None,note=None):
     s=load(task)

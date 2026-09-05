@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "discovery_id": "DISC-META-ADS",
+  "status": "ready_for_approval",
+  "classification": "PROJECT",
+  "title": "Meta Ads Optimization Assistant",
+  "original_request": {
+    "text": "Quiero una app para analizar ads de Meta y mejorar mis métricas.",
+    "language": "es"
+  },
+  "refined_problem": "Advertisers need a reliable way to consolidate Meta Ads performance, detect meaningful performance changes and turn them into explainable optimization actions.",
+  "target_users": [
+    "Meta Ads operator managing one or more ad accounts"
+  ],
+  "outcomes": [
+    "See normalized campaign/ad-set/ad performance",
+    "Detect material performance problems",
+    "Receive explainable next actions"
+  ],
+  "success_metrics": [
+    {
+      "name": "diagnostic usefulness",
+      "definition": "percentage of surfaced diagnostics judged actionable",
+      "target": ">=70% in pilot"
+    },
+    {
+      "name": "data freshness",
+      "definition": "age of latest successfully ingested Meta data",
+      "target": "defined during Meta API spike"
+    }
+  ],
+  "scope": {
+    "in": [
+      "read-only Meta Ads analytics",
+      "historical metrics",
+      "diagnostics"
+    ],
+    "out": [
+      "automatic budget changes",
+      "automatic ad publishing"
+    ]
+  },
+  "assumptions": [
+    {
+      "statement": "The MVP can begin read-only before any write access to ad accounts.",
+      "confidence": "high"
+    }
+  ],
+  "open_questions": [
+    {
+      "question": "Will the MVP serve one account or multiple client accounts?",
+      "blocking": true,
+      "dimension": "mvp_scope"
+    }
+  ],
+  "challenges": [
+    {
+      "kind": "data_contract",
+      "finding": "Meta metric availability, attribution windows and breakdown compatibility must be verified before defining analytics guarantees."
+    },
+    {
+      "kind": "mvp_simplification",
+      "finding": "Start read-only; postpone automated campaign changes until diagnostics are trusted."
+    }
+  ],
+  "mvp": {
+    "goal": "Connect one account, ingest campaign metrics and surface explainable diagnostics.",
+    "includes": [
+      "account connection",
+      "campaign ingestion",
+      "metric dashboard",
+      "diagnostics"
+    ],
+    "excludes": [
+      "automatic campaign writes",
+      "creative generation"
+    ]
+  },
+  "work_items": [
+    {
+      "id": "META-PROJ",
+      "type": "PROJECT",
+      "title": "Meta Ads Optimization Assistant",
+      "description": "Build a read-first analytics and diagnostic product for Meta Ads.",
+      "status": "proposed",
+      "dependencies": []
+    },
+    {
+      "id": "META-EPIC-DATA",
+      "type": "EPIC",
+      "title": "Meta data foundation",
+      "description": "Establish authenticated access and reliable metric ingestion.",
+      "status": "proposed",
+      "parent_id": "META-PROJ",
+      "dependencies": []
+    },
+    {
+      "id": "META-SPIKE-API",
+      "type": "SPIKE",
+      "title": "Verify Meta Marketing API contracts",
+      "description": "Resolve metric, breakdown, attribution and token-lifecycle constraints before implementation.",
+      "status": "proposed",
+      "parent_id": "META-EPIC-DATA",
+      "dependencies": []
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-META-API-SPIKE",
+      "title": "Verify Meta Marketing API contracts",
+      "description": "Verify the Meta Marketing API contracts required for the MVP, including metric availability, attribution semantics, breakdown compatibility, pagination, rate limits and token lifecycle.",
+      "acceptance_criteria": [
+        "Authoritative source contracts are recorded under docs/sources/",
+        "Required MVP metrics and unsupported combinations are documented",
+        "Token lifecycle and rate-limit constraints are documented"
+      ],
+      "parent_id": "META-SPIKE-API",
+      "dependencies": [],
+      "size": "S",
+      "value": 4,
+      "dependency_unlock": 5,
+      "risk_reduction": 5,
+      "urgency": 4,
+      "confidence": 5,
+      "risk_factors": {
+        "external_contract": true
+      }
+    }
+  ]
+}

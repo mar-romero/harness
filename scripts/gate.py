@@ -4,6 +4,8 @@ import argparse, fnmatch, json, re, sys
 from pathlib import Path
 from harnesslib import ROOT, load_json, run_dir
 from evidence import read as read_evidence
+from impact_analysis import finish_decision as impact_finish_decision
+from tdd_evidence import finish_decision as tdd_finish_decision
 
 def command_decision(command, risk='R1'):
     p=load_json('harness/policies/risk-policy.json')
@@ -42,7 +44,15 @@ def finish_decision(task,risk):
         if not r or r.get('evidence_type')!='DETERMINISTIC': missing.append(cat); continue
         if r.get('status')!='PASS': failing.append(cat); continue
         if cat=='checks' and r.get('command') is not None and r.get('exit_code') != 0: failing.append(cat)
-    return {'allow':not missing and not failing,'required':req,'missing':missing,'failing':failing}
+    # HARNESS_ADAPTIVE_TDD_FINISH
+    tdd=tdd_finish_decision(task)
+    missing += tdd.get('missing',[]); failing += tdd.get('failing',[])
+    combined_req=list(req)+list(tdd.get('required',[]))
+    # HARNESS_CHANGE_IMPACT_FINISH
+    impact=impact_finish_decision(task)
+    missing += impact.get('missing',[]); failing += impact.get('failing',[])
+    combined_req += list(impact.get('required',[]))
+    return {'allow':not missing and not failing,'required':combined_req,'missing':missing,'failing':failing}
 
 def hook(event, payload):
     # Supports canonical payload and common Claude/Cursor shapes.

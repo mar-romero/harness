@@ -5,7 +5,7 @@ model: inherit
 maxTurns: 30
 tools: Read, Glob, Grep, Bash, Edit, Write, mcp__harness-aci__repo_search, mcp__harness-aci__repo_read_range, mcp__harness-aci__repo_symbol, mcp__harness-aci__repo_callers, mcp__harness-aci__repo_dependencies, mcp__harness-aci__git_status, mcp__harness-aci__git_diff, mcp__harness-aci__tests_run, mcp__harness-aci__lint_run, mcp__harness-aci__diagnostics_get
 disallowedTools: Agent
-skills: [software-engineering, implementation-loop, evidence-ledger, agent-computer-interface]
+skills: [software-engineering, adaptive-tdd, code-quality, implementation-loop, evidence-ledger, agent-computer-interface]
 isolation: worktree
 ---
 

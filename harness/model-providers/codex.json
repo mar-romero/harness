@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "provider": "codex",
+  "description": "Codex host adapter. Discover account/build-visible models from CODEX_HOME/models_cache.json; fall back to `codex debug models --bundled` only when no cache exists.",
+  "enriched_inventory": ".harness/model-inventories/codex.json",
+  "active_task": ".harness/codex/active-task.json",
+  "discovery": {
+    "codex_home_env": "CODEX_HOME",
+    "cache_file": "models_cache.json",
+    "bundled_fallback_command": [
+      "codex",
+      "debug",
+      "models",
+      "--bundled"
+    ],
+    "allowlist_env": "HARNESS_CODEX_MODELS"
+  },
+  "openrouter": {
+    "id_prefix": "openai/",
+    "benchmark_source": "artificial-analysis",
+    "fetch_endpoint_health": true,
+    "refresh_mode": "manual",
+    "activation_network_calls": false
+  },
+  "effort": {
+    "mode": "agent-toml",
+    "model_rules": [
+      {
+        "pattern": "^gpt-5\\.6-(sol|terra|luna)$",
+        "supported": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      {
+        "pattern": "^gpt-5\\.3-codex$",
+        "supported": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      {
+        "pattern": "^gpt-5\\.[2345]",
+        "supported": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    ],
+    "unknown_model_supported": []
+  }
+}

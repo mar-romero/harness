@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "BENCH-CPA-ZERO",
+  "tags": [
+    "bug",
+    "calculation",
+    "tdd"
+  ],
+  "task": {
+    "description": "Fix CPA calculation so zero conversions does not divide by zero. CPA is undefined when conversions are zero and must return None.",
+    "acceptance_criteria": [
+      "cpa(100, 4) returns 25",
+      "cpa(100, 0) returns None",
+      "Existing tests continue to pass"
+    ],
+    "files": [
+      "calc.py"
+    ],
+    "risk": "R2"
+  },
+  "workspace": {
+    "source": "repo",
+    "harness_overlay": true,
+    "setup_commands": []
+  },
+  "verification": {
+    "public_checks": [
+      {
+        "name": "public unit tests",
+        "kind": "regression",
+        "argv": [
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    ],
+    "private_oracle": "demo-private/oracle.json"
+  }
+}
