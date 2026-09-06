@@ -53,25 +53,56 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         task=ROOT/'tasks/TEST-OPENCODE-OVERLAY.json'
         runtime=ROOT/'.harness/opencode'
         active=runtime/'active-task.json'
-        inventory=runtime/'model-inventory.json'
+        inventory=ROOT/'.harness/model-inventories/opencode.json'
+
         old_inventory=inventory.read_text() if inventory.exists() else None
-        task.write_text(json.dumps({'id':'TEST-OPENCODE','description':'Fix normal backend bug','files':['scripts/task_router.py']}))
-        # Empty-but-fresh catalog is valid for R1 and safely results in inherit.
+
+        task.write_text(json.dumps({
+            'id':'TEST-OPENCODE',
+            'description':'Fix normal backend bug',
+            'files':['scripts/task_router.py']
+        }))
+
+        # Empty-but-fresh scored inventory is valid for R1 and safely results in inherit.
         runtime.mkdir(parents=True,exist_ok=True)
-        inventory.write_text(json.dumps({'schema_version':1,'provider':'opencode','generated_at':'2099-01-01T00:00:00Z','source':'test','models':[]}))
+        inventory.parent.mkdir(parents=True,exist_ok=True)
+
+        inventory.write_text(json.dumps({
+            'schema_version':2,
+            'provider':'opencode',
+            'generated_at':'2099-01-01T00:00:00Z',
+            'source':'test',
+            'models':[]
+        }))
+
         try:
-            p=subprocess.run([sys.executable,str(ROOT/'scripts/providers/opencode_activate_task.py'),str(task.relative_to(ROOT))],cwd=ROOT,text=True,capture_output=True)
+            p=subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT/'scripts/providers/opencode_activate_task.py'),
+                    str(task.relative_to(ROOT))
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True
+            )
+
             self.assertEqual(p.returncode,0,p.stderr+p.stdout)
+
             data=json.loads(active.read_text())
             self.assertEqual(data['task_id'],'TEST-OPENCODE')
             self.assertEqual(data['risk'],'R1')
             self.assertTrue(data['selections'])
-            self.assertTrue(all(x['action']=='inherit' for x in data['selections']))
+            self.assertTrue(
+                all(x['action']=='inherit' for x in data['selections'])
+            )
         finally:
             task.unlink(missing_ok=True)
             shutil.rmtree(ROOT/'.harness/runs/TEST-OPENCODE',ignore_errors=True)
             active.unlink(missing_ok=True)
-            if old_inventory is None: inventory.unlink(missing_ok=True)
-            else: inventory.write_text(old_inventory)
 
+            if old_inventory is None:
+                inventory.unlink(missing_ok=True)
+            else:
+                inventory.write_text(old_inventory)
 if __name__=='__main__': unittest.main()

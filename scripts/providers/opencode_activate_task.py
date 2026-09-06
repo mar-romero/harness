@@ -96,7 +96,8 @@ def activate(task_path: Path) -> dict:
     # HARNESS_IMPACT_BUDGET_ACTIVATION
     baseline = capture_impact_baseline(task_id)
 
-    impact = build_impact_plan(task, routed, context)    impact_path = out_dir / "impact.json"
+    impact = build_impact_plan(task, routed, context)    
+    impact_path = out_dir / "impact.json"
     write_json_atomic(impact_path, impact)
     agent_budget = init_agent_budget(task, routed)
     budget_path = out_dir / "agent-budget.json"
