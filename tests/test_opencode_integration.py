@@ -49,6 +49,68 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         finally:
             tmp.unlink(missing_ok=True)
 
+    def test_orchestrator_has_narrow_control_plane_shell_permissions(self):
+        text=(ROOT/'.opencode/agents/harness-orchestrator.md').read_text()
+
+        shell_deny=(
+            'action: shell\n'
+            '    resource: "*"\n'
+            '    effect: deny'
+        )
+        self.assertEqual(text.count(shell_deny), 1)
+
+        allowed=(
+            'python3 scripts/providers/opencode_activate_task.py *',
+            'python3 scripts/request_normalizer.py *',
+            'python3 scripts/product_planning.py validate *',
+            'python3 scripts/product_planning.py materialize *',
+            'python3 scripts/orchestrator.py *',
+            'python3 scripts/evidence.py *',
+            'python3 scripts/agent_budget.py *',
+            'python3 scripts/impact_analysis.py *',
+            'python3 scripts/tdd_evidence.py *',
+            'python3 scripts/gate.py finish *',
+            'python3 scripts/worktree.py *',
+            'python3 scripts/check_harness.py*',
+            'python3 scripts/run_evals.py*',
+        )
+
+        deny_pos=text.index(shell_deny)
+
+        for command in allowed:
+            rule=(
+                'action: shell\n'
+                f'    resource: "{command}"\n'
+                '    effect: allow'
+            )
+            self.assertEqual(text.count(rule), 1, command)
+            self.assertGreater(text.index(rule), deny_pos)
+
+        self.assertNotIn(
+            'resource: "python3 scripts/product_planning.py *"',
+            text,
+        )
+        self.assertNotIn('resource: "python3 -c *"', text)
+        self.assertNotIn('resource: "python -c *"', text)
+        self.assertNotIn('resource: "echo *"', text)
+
+
+    def test_orchestrator_does_not_use_shell_as_edit_transport(self):
+        text=(ROOT/'.opencode/agents/harness-orchestrator.md').read_text()
+
+        self.assertIn(
+            'Run exactly one allowlisted control-plane command per shell invocation.',
+            text,
+        )
+        self.assertIn(
+            'Never use any of the following as a file-edit transport:',
+            text,
+        )
+        self.assertIn(
+            '`HARNESS_PERMISSION_POLICY_MISMATCH`',
+            text,
+        )
+
     def test_activate_task_writes_runtime_binding(self):
         task=ROOT/'tasks/TEST-OPENCODE-OVERLAY.json'
         runtime=ROOT/'.harness/opencode'
