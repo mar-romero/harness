@@ -2,10 +2,15 @@
 from __future__ import annotations
 import argparse, fnmatch, json, re, sys
 from pathlib import Path
-from harnesslib import ROOT, load_json, run_dir
+from harnesslib import ROOT, load_json, run_dir, safe_task_id
 from evidence import read as read_evidence
+from handoff import validate as validate_handoff
 from impact_analysis import finish_decision as impact_finish_decision
 from tdd_evidence import finish_decision as tdd_finish_decision
+
+INFERRED_ALLOWED_CATEGORIES={'exploration','planning','test_design','implementation','review','test_audit','verification','security_review'}
+ROLE_EVIDENCE={'explorer':'exploration','planner':'planning','test-designer':'test_design','implementer':'implementation','test-auditor':'test_audit'}
+HANDOFF_ROLES={'explorer','planner','test-designer','implementer','reviewer','test-auditor','verifier','security-reviewer'}
 
 def command_decision(command, risk='R1'):
     p=load_json('harness/policies/risk-policy.json')
@@ -30,32 +35,175 @@ def path_decision(path):
         if fnmatch.fnmatch(rel.name,g) or fnmatch.fnmatch(normalized,g): return {'allow':False,'reason':'secret-sensitive path','human_gate':False}
     return {'allow':True,'reason':'path allowed','human_gate':False}
 
-def finish_decision(task,risk):
-    policy=load_json('harness/policies/risk-policy.json'); req=policy['finish_requirements'][risk]
+def _progress_decision(task, route):
+    p=run_dir(task)/'progress.json'
+    if not p.exists():
+        return False, ['progress'], [], 'progress.json missing'
+    try:
+        progress=json.loads(p.read_text(encoding='utf-8'))
+    except Exception as e:
+        return False, [], ['progress'], str(e)
+    if progress.get('risk') != route.get('risk'):
+        return False, [], ['risk_state_mismatch'], f'route risk {route.get("risk")} != progress risk {progress.get("risk")}'
+    if progress.get('current_step') != 'CLOSE':
+        return False, [], ['progress_not_at_close'], f'current step is {progress.get("current_step")}'
+    if progress.get('state') in {'WAITING','BLOCKED','STALLED'}:
+        return False, [], ['progress_blocked'], f'progress state is {progress.get("state")}'
+    required_predecessors=[x for x in progress.get('steps',[]) if x!='CLOSE']
+    missing=[f'progress:{x}' for x in required_predecessors if x not in progress.get('completed',[])]
+    return not missing, missing, [], None
+
+def _handoff_decision(task, route):
+    missing=[]; failing=[]
+    for role in route.get('agents',[]):
+        if role not in HANDOFF_ROLES:
+            continue
+        p=run_dir(task)/'handoffs'/f'{role}.json'
+        if not p.exists():
+            missing.append(f'handoff:{role}')
+            continue
+        try:
+            data=json.loads(p.read_text(encoding='utf-8'))
+            validate_handoff(role,data)
+        except Exception:
+            failing.append(f'handoff:{role}')
+    return missing,failing
+
+def _authoritative_checks_decision(task, latest):
+    row=latest.get('checks')
+    if not row:
+        return False,'acceptance:checks_missing'
+    if row.get('evidence_type')!='DETERMINISTIC' or row.get('status')!='PASS':
+        return False,'acceptance:checks_not_deterministic_pass'
+    if row.get('actor')!='check-runner' or row.get('exit_code')!=0:
+        return False,'acceptance:checks_not_authoritative'
+    expected=f'.harness/runs/{task}/checks-report.json'
+    if row.get('artifact')!=expected:
+        return False,'acceptance:checks_report_mismatch'
+    report_path=ROOT/expected
+    if not report_path.is_file():
+        return False,'acceptance:checks_report_missing'
+    try:
+        report=json.loads(report_path.read_text(encoding='utf-8'))
+    except Exception:
+        return False,'acceptance:checks_report_invalid'
+    if report.get('task_id')!=task or report.get('status')!='PASS':
+        return False,'acceptance:checks_report_not_pass'
+    return True,None
+
+def _acceptance_decision(task, route, latest):
+    # Acceptance is derived from authoritative workflow provenance. A standalone
+    # `acceptance` ledger row is intentionally ignored so the finish gate cannot
+    # be satisfied by evidence laundering after a failed CLOSE attempt.
+    checks_ok,reason=_authoritative_checks_decision(task,latest)
+    if not checks_ok:
+        return False,reason
+
+    requires_verification=bool((route.get('requirements') or {}).get('verification'))
+    role='verifier' if requires_verification else 'reviewer'
+    category='verification' if requires_verification else 'review'
+
+    if role not in route.get('agents',[]):
+        return False,f'acceptance:{role}_not_routed'
+
+    row=latest.get(category)
+    if not row:
+        return False,f'acceptance:{category}_missing'
+    if row.get('actor')!=role or row.get('status')!='PASS':
+        return False,f'acceptance:{category}_not_authoritative_pass'
+    if row.get('evidence_type') not in {'INFERRED','DETERMINISTIC'}:
+        return False,f'acceptance:{category}_evidence_invalid'
+
+    expected=f'.harness/runs/{task}/handoffs/{role}.json'
+    if row.get('artifact')!=expected:
+        return False,f'acceptance:{category}_handoff_mismatch'
+    handoff_path=ROOT/expected
+    if not handoff_path.is_file():
+        return False,f'acceptance:{category}_handoff_missing'
+    try:
+        data=json.loads(handoff_path.read_text(encoding='utf-8'))
+        validate_handoff(role,data)
+    except Exception:
+        return False,f'acceptance:{category}_handoff_invalid'
+    if data.get('task_id')!=task or data.get('status')!='PASS':
+        return False,f'acceptance:{category}_handoff_not_pass'
+
+    return True,None
+
+def finish_decision(task,risk,require_publication=True):
+    task=safe_task_id(task)
+    route_path=run_dir(task)/'route.json'
+    if not route_path.exists():
+        return {'allow':False,'required':['route'],'missing':['route'],'failing':[],'reason':'route.json missing'}
+    try:
+        route=json.loads(route_path.read_text(encoding='utf-8'))
+    except Exception as e:
+        return {'allow':False,'required':['route'],'missing':[],'failing':['route'],'reason':str(e)}
+    authoritative_risk=route.get('risk')
+    if risk != authoritative_risk:
+        return {'allow':False,'required':[],'missing':[],'failing':['risk_state_mismatch'],'reason':f'route risk is {authoritative_risk}, caller supplied {risk}'}
+
+    policy=load_json('harness/policies/risk-policy.json')
+    req=list(policy['finish_requirements'][authoritative_risk])
+    for role,category in ROLE_EVIDENCE.items():
+        if role in route.get('agents',[]) and category not in req:
+            req.append(category)
+
+    ok,progress_missing,progress_failing,progress_reason=_progress_decision(task,route)
+    if not ok:
+        return {'allow':False,'required':req+['progress'],'missing':progress_missing,'failing':progress_failing,'reason':progress_reason}
+
+    handoff_missing,handoff_failing=_handoff_decision(task,route)
+
     try:
         rows=read_evidence(task)
     except Exception as e:
-        return {'allow':False,'required':req,'missing':[],'failing':['evidence_chain'],'reason':str(e)}
+        return {'allow':False,'required':req,'missing':handoff_missing,'failing':handoff_failing+['evidence_chain'],'reason':str(e)}
     latest={}
     for r in rows: latest[r['category']]=r
-    missing=[]; failing=[]
+    missing=list(handoff_missing); failing=list(handoff_failing)
     for cat in req:
+        if cat=='acceptance':
+            acceptance_ok,acceptance_reason=_acceptance_decision(task,route,latest)
+            if not acceptance_ok:
+                missing.append('acceptance')
+                if acceptance_reason:
+                    failing.append(acceptance_reason)
+            continue
         r=latest.get(cat)
-        if not r or r.get('evidence_type')!='DETERMINISTIC': missing.append(cat); continue
-        if r.get('status')!='PASS': failing.append(cat); continue
-        if cat=='checks' and r.get('command') is not None and r.get('exit_code') != 0: failing.append(cat)
-    # HARNESS_ADAPTIVE_TDD_FINISH
+        if not r:
+            missing.append(cat); continue
+        if cat in INFERRED_ALLOWED_CATEGORIES:
+            if r.get('evidence_type') not in {'INFERRED','DETERMINISTIC'}:
+                missing.append(cat); continue
+        elif r.get('evidence_type')!='DETERMINISTIC':
+            missing.append(cat); continue
+        if r.get('status')!='PASS':
+            failing.append(cat); continue
+        if cat=='checks' and r.get('command') is not None and r.get('exit_code') != 0:
+            failing.append(cat)
+
     tdd=tdd_finish_decision(task)
     missing += tdd.get('missing',[]); failing += tdd.get('failing',[])
-    combined_req=list(req)+list(tdd.get('required',[]))
-    # HARNESS_CHANGE_IMPACT_FINISH
+    combined_req=list(req)+list(tdd.get('required',[]))+['progress']
+
     impact=impact_finish_decision(task)
     missing += impact.get('missing',[]); failing += impact.get('failing',[])
     combined_req += list(impact.get('required',[]))
+
+    if require_publication and route.get('isolation') == 'worktree':
+        from worktree import publish_status
+        publication=publish_status(task)
+        combined_req.append('publication')
+        if not publication.get('published'):
+            missing.append('publication')
+            reason=publication.get('reason')
+            if reason and reason != 'publish.json missing':
+                failing.append('publication:'+reason)
+
     return {'allow':not missing and not failing,'required':combined_req,'missing':missing,'failing':failing}
 
 def hook(event, payload):
-    # Supports canonical payload and common Claude/Cursor shapes.
     tool=payload.get('tool_name') or payload.get('tool') or ''
     ti=payload.get('tool_input') or payload.get('input') or {}
     if event=='pre-shell':
@@ -73,26 +221,20 @@ def hook(event, payload):
 def emit_provider(event, d, provider):
     allow=bool(d['allow']); reason=d.get('reason') or ('gate blocked' if not allow else 'allowed')
     if provider=='claude' and event in {'pre-shell','pre-write'}:
-        # Do not auto-allow safe operations: Claude's `allow` bypasses its normal permission flow.
-        # Emit a decision only when the harness needs to deny.
         if allow:
             print('{}'); return 0
         out={'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':reason}}
         print(json.dumps(out)); return 0
     if provider=='gemini' and event in {'pre-shell','pre-write'}:
-        # Gemini BeforeTool hooks preserve normal policy/confirmation on safe operations.
-        # A deny decision blocks the tool without granting any extra permission.
         if allow:
             print('{}'); return 0
         print(json.dumps({'decision':'deny','reason':reason})); return 0
     if provider=='cursor' and event in {'pre-shell','pre-write'}:
-        # Cursor expects a permission decision for beforeShellExecution/preToolUse.
         out={'permission':'allow' if allow else 'deny'}
         if not allow:
             out['user_message']=reason; out['agent_message']=reason
         print(json.dumps(out)); return 0 if allow else 2
     if provider=='cursor':
-        # Audit-only events such as afterFileEdit have no blocking output contract.
         print('{}'); return 0
     print(json.dumps(d)); return 0 if allow else 2
 

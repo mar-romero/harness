@@ -39,6 +39,13 @@ def main():
     # final-v4 feature invariants
     try:
         lang=load_json('harness/language-policy.json')
+        context_policy=load_json('harness/context-policy.json')
+        if '.harness' not in context_policy.get('exclude_dirs',[]):
+            fail('context selection must exclude all .harness runtime state and backups',errors)
+        discovery_policy=load_json('harness/product-discovery-policy.json')
+        surface_policy=discovery_policy.get('task_surface') or {}
+        if not surface_policy.get('approved_tasks_require_files') or not surface_policy.get('ready_for_approval_tasks_require_files'):
+            fail('product discovery must require prospective file surfaces before approval',errors)
         if lang.get('canonical_agent_language')!='en' or not lang.get('fail_closed_on_ambiguity'):
             fail('language boundary must be canonical English and fail closed',errors)
         risk=load_json('harness/policies/risk-policy.json')

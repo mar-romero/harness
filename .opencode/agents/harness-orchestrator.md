@@ -13,6 +13,9 @@ permissions:
   - action: edit
     resource: "planning/discovery/*.json"
     effect: allow
+  - action: edit
+    resource: ".harness/runs/*/incoming/*.json"
+    effect: allow
 
   - action: external_directory
     resource: "*"
@@ -42,7 +45,10 @@ permissions:
     resource: "python3 scripts/orchestrator.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/evidence.py *"
+    resource: "python3 scripts/evidence.py summary *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/evidence.py validate *"
     effect: allow
   - action: shell
     resource: "python3 scripts/agent_budget.py *"
@@ -57,7 +63,16 @@ permissions:
     resource: "python3 scripts/gate.py finish *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/worktree.py *"
+    resource: "python3 scripts/worktree.py create *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/worktree.py status *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/worktree.py publish *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/task_checks.py run *"
     effect: allow
   - action: shell
     resource: "python3 scripts/check_harness.py*"
@@ -162,11 +177,12 @@ For discovery:
 - surface assumptions, missing workflows, data/integration constraints, security/privacy boundaries, failure modes, success metrics, and a simpler MVP when useful;
 - do not ask the user for reversible implementation details that repository evidence can resolve.
 
-The only direct write exception for this orchestrator is:
+The only direct write exceptions for this orchestrator are:
 
-`planning/discovery/*.json`
+- `planning/discovery/*.json` for product discovery;
+- `.harness/runs/*/incoming/*.json` for staging the exact JSON returned by a subagent before the control plane validates and persists it.
 
-The orchestrator remains forbidden from directly editing application code, task implementation files, tests, harness policy, or arbitrary repository files.
+The orchestrator remains forbidden from directly editing application code, task implementation files, tests, harness policy, canonical handoffs, evidence ledgers, progress state, or arbitrary repository files.
 
 Validate discovery with:
 
@@ -244,7 +260,22 @@ Generic shell commands such as `echo`, arbitrary Python, package installation, a
 
 Prefer `harness-aci` repository and Git inspection tools over raw shell whenever they cover the operation.
 
-The orchestrator must not run the ACI test, lint, or diagnostics profiles itself.
+The orchestrator must not run arbitrary implementation shell commands or the generic
+ACI test/lint/diagnostics profiles itself.
+
+At CHECKS, use the allowlisted task check control plane:
+
+python3 scripts/task_checks.py run <TASK>
+
+The check runner resolves the authoritative task workspace/worktree, executes only
+its built-in deterministic profiles, persists checks-report.json and deterministic
+check-runner evidence.
+
+If task_checks exits non-zero, do not record CHECKS PASS.
+
+Only after task_checks returns PASS may the orchestrator run:
+
+python3 scripts/orchestrator.py record <TASK> --status PASS
 
 Delegate controlled checks to the routed execution or audit agents.
 
@@ -306,17 +337,23 @@ For every meaningful executable task:
     - explicit human approval;
     - all other R3 policy requirements.
 
-13. Record claims through `scripts/evidence.py`.
+13. Inspect the evidence ledger only through `scripts/evidence.py summary` and `scripts/evidence.py validate`.
 
-    Never convert a subagent assertion into deterministic evidence without deterministic support.
+    The primary orchestrator must never call `scripts/evidence.py add`. Evidence creation belongs to typed `orchestrator.py commit` transactions and dedicated narrow control-plane producers such as `task_checks.py`, TDD evidence commands, or explicit human/CI attestation paths. Never impersonate an agent by writing an evidence row with that agent's actor name.
 
 14. Record authoritative workflow transitions through `scripts/orchestrator.py`.
 
-15. Before reporting completion, run the finish gate for the routed risk.
+15. At `CLOSE`, routes using `isolation: worktree` must publish the validated task candidate before final closure by running exactly:
 
-16. If the finish gate fails, report missing or failing evidence instead of claiming completion.
+    `python3 scripts/worktree.py publish <TASK> --execute`
 
-17. Never weaken:
+    `worktree.py publish` is the only allowed delivery mechanism. It verifies the pre-publication finish requirements, the writer lock, frozen `task.files` surface, task branch/base commit, canonical branch cleanliness, creates the task commit, fast-forwards the canonical branch, writes `publish.json`, removes the worktree and releases the lock. Never run ad-hoc `git add`, `git commit`, `git merge`, `git cherry-pick`, or copy application files from one worktree to another.
+
+16. After successful publication (or immediately for a non-worktree route), run the final finish gate for the routed risk. The final finish gate requires authoritative publication for worktree routes. Only after it returns `allow: true` may `orchestrator.py record <TASK> --status PASS` close the task.
+
+17. If publication or the finish gate fails, report the exact reason instead of claiming completion. Never satisfy a failed finish gate by manually appending evidence. In particular, `acceptance` is derived by the finish gate from authoritative deterministic checks plus the routed PASS review (R0/R1) or routed PASS verifier handoff (R2/R3); a standalone acceptance ledger row is not closing authority.
+
+18. Never weaken:
     - permissions;
     - risk classification;
     - model eligibility rules;
@@ -331,29 +368,25 @@ For every meaningful executable task:
 
 ## Durable stage transition contract
 
-For every mandatory stage, advance only after durable persistence succeeds.
+`progress.json.current_step` is the authoritative next stage. Do not delegate or execute a later stage out of order.
 
-The required sequence is:
+For every typed subagent stage, use this sequence:
 
-`subagent/result`
--`typed handoff validation`
-- `evidence persistence`
-- `orchestrator record`
-- `advance`
+1. delegate the agent named by the current stage;
+2. require one JSON handoff conforming to that role's schema;
+3. write that exact returned JSON only to `.harness/runs/<TASK>/incoming/<role>.json`;
+4. run exactly one control-plane command: `python3 scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`;
+5. inspect the command result and re-read progress before delegating anything else.
 
-Do not advance if any required durable operation fails.
+`orchestrator.py commit` is responsible for typed handoff validation, canonical handoff persistence, evidence persistence, evidence-chain validation, progress recording and advancing. If any operation fails it exits non-zero and the stage must not advance.
 
-A handoff existing on disk is not sufficient by itself.
+Never use `orchestrator.py record --status PASS` for EXPLORE, PLAN, TEST_DESIGN, IMPLEMENT, REVIEW, TEST_AUDIT, VERIFY or SECURITY_REVIEW. Those stages require `commit`.
 
-A PASS assertion from a reviewer or verifier is not sufficient unless the required evidence and progress state have also been persisted.
+Use `orchestrator.py record` only for control-plane stages such as WORKTREE, CHECKS, IMPACT_VERIFY, HUMAN_GATE and CLOSE after their durable prerequisites already exist.
 
-Route, progress, handoffs, evidence, impact state, and finish-gate state must remain mutually consistent.
+A PASS assertion from a subagent is never sufficient by itself. Route, progress, handoffs, evidence, TDD, impact state and finish-gate state must remain mutually consistent.
 
-If evidence persistence fails, do not record the stage as complete.
-
-If progress recording fails, do not move to the next stage.
-
-If a repeated failed action is not producing new evidence, follow the progress-ledger recommendation and replan or delegate debugging instead of looping.
+If evidence persistence or progress recording fails, stop. If a repeated failed action is not producing new evidence, follow the progress-ledger recommendation and replan or delegate debugging instead of looping.
 
 ## Model routing
 
@@ -390,9 +423,9 @@ Honor `route.json.tdd` before implementation.
 
 When `test_designer` is true:
 
-1. delegate `test-designer` before the implementer;
-2. validate its handoff;
-3. record accepted design evidence with `scripts/tdd_evidence.py`.
+1. delegate `test-designer` only when `progress.json.current_step` is `TEST_DESIGN`;
+2. stage its exact JSON result under `.harness/runs/<TASK>/incoming/test-designer.json`;
+3. run `orchestrator.py commit`; the commit validates/persists the handoff and records accepted TDD design evidence before advancing.
 
 For `spike_then_tdd`, resolve the blocking contract first and record the contract artifact.
 
@@ -470,6 +503,6 @@ Before reporting a task as complete, ensure all applicable artifacts are coheren
 - required human approval;
 - finish-gate result.
 
-The finish gate is the final authority.
+The finish gate is the final authority. For `isolation: worktree`, `publish.json` must prove that the task commit is integrated into the canonical branch before the final finish gate can allow closure.
 
-Do not report DONE or CLOSE if the finish gate does not allow closure.
+Do not report DONE or CLOSE if publication is missing/invalid or the finish gate does not allow closure. A later task must never read application code from a previous task worktree; successful publication removes that worktree and makes the integrated canonical branch the only dependency source.

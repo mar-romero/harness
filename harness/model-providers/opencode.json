@@ -3,6 +3,14 @@
   "provider": "opencode",
   "description": "OpenCode host adapter. Runtime catalog membership is authoritative; OpenRouter only enriches discovered models.",
   "runtime_catalog": ".harness/opencode/catalog-snapshot.json",
+  "runtime_requirements": {
+    "agentic_structured_output": {
+      "tool_choice_modes": [
+        "auto",
+       "required"
+     ]
+    }
+  },
   "discovery": {
     "command": ["opencode2", "models"],
     "access_profile": "free",

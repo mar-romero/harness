@@ -18,7 +18,20 @@ def _policy():
     return load_json("harness/impact-policy.json")
 
 def _is_test(path: str) -> bool:
-    return bool(TEST_RE.search(path))
+    p = Path(path)
+    parts = [part.lower() for part in p.parts]
+    stem = p.stem.lower()
+
+    if any(part in {"test", "tests", "spec", "specs"} for part in parts[:-1]):
+        return True
+
+    if stem.startswith(("test_", "spec_")):
+        return True
+
+    if stem.endswith(("_test", "_spec")):
+        return True
+
+    return False
 
 def _reverse(graph: dict[str,list[str]]) -> dict[str,set[str]]:
     r: dict[str,set[str]] = {}
@@ -31,8 +44,12 @@ def _seed_files(task: dict, context: dict | None, graph: dict[str,list[str]], po
     explicit=[]
     for f in task.get("files") or []:
         rel=Path(str(f)).as_posix()
-        if (ROOT/rel).is_file():
-            explicit.append(rel)
+        candidate=(ROOT/rel).resolve()
+        try:
+            candidate.relative_to(ROOT.resolve())
+        except ValueError:
+            continue
+        explicit.append(rel)
     if explicit:
         return sorted(dict.fromkeys(explicit)), "explicit-task-files"
 
@@ -166,14 +183,15 @@ def plan(task_path: Path, route_path: Path | None=None, context_path: Path | Non
     write_json_atomic(dest,out)
     return out
 
-def _git_changed(base: str = "HEAD") -> list[str]:
+def _git_changed(base: str = "HEAD", cwd: Path = ROOT) -> list[str]:
     cmds = [
         ["git", "diff", "--name-only", "--relative", base],
         ["git", "diff", "--cached", "--name-only", "--relative", base],
+        ["git", "ls-files", "--others", "--exclude-standard"],
     ]
     out = []
     for cmd in cmds:
-        cp = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True)
+        cp = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
         if cp.returncode == 0:
             out.extend(x.strip() for x in cp.stdout.splitlines() if x.strip())
     return sorted(dict.fromkeys(out))
@@ -222,6 +240,7 @@ def verify(task_id: str, base: str="HEAD", reviewed_expansion: bool=False, actor
         "schema_version":1,
         "task_id":task_id,
         "base":base,
+        "baseline_mode":baseline_mode,
         "changed_files":changed,
         "planned_surface_count":len(planned),
         "unexpected_changed_files":unexpected,
@@ -236,21 +255,24 @@ def verify(task_id: str, base: str="HEAD", reviewed_expansion: bool=False, actor
     return doc
 
 def _task_changed_files(task_id: str, base: str = "HEAD") -> tuple[list[str], str]:
-    current = set(_git_changed(base))
+    task_id = safe_task_id(task_id)
+    route_path = run_dir(task_id) / "route.json"
+    route = json.loads(route_path.read_text(encoding="utf-8")) if route_path.exists() else {}
 
+    worktree = ROOT / ".worktrees" / task_id
+    lock = ROOT / ".harness" / "locks" / f"{task_id}.json"
+    if route.get("isolation") == "worktree":
+        if not worktree.exists() or not lock.exists():
+            raise SystemExit("task requires worktree isolation but assigned worktree/lock is missing")
+        return _git_changed(base, cwd=worktree), "task-worktree"
+
+    current = set(_git_changed(base, cwd=ROOT))
     baseline_path = run_dir(task_id) / "impact-baseline.json"
-
     if not baseline_path.exists():
         return sorted(current), "legacy-head"
 
-    baseline = json.loads(
-        baseline_path.read_text(encoding="utf-8")
-    )
-
-    preexisting = set(
-        baseline.get("preexisting_changed_files") or []
-    )
-
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    preexisting = set(baseline.get("preexisting_changed_files") or [])
     return sorted(current - preexisting), "task-baseline"
 
 def finish_decision(task_id: str) -> dict:

@@ -65,7 +65,7 @@ Use this hierarchy:
 
 `PROJECT → EPIC → FEATURE → TASK/SPIKE`
 
-Tasks must be independently executable by the harness. Each task needs a canonical English description, acceptance criteria, dependencies, a size (`XS/S/M/L/XL`), and structured risk factors compatible with `tasks/TASK_TEMPLATE.json`.
+Tasks must be independently executable by the harness. Each task needs a canonical English description, acceptance criteria, dependencies, a size (`XS/S/M/L/XL`), structured risk factors compatible with `tasks/TASK_TEMPLATE.json`, and a non-empty prospective `files` surface. Risk factors must use only the canonical keys from `tasks/TASK_TEMPLATE.json`, and every risk-factor value must be the JSON boolean `true` or `false`. Do not use prose severities or sentinel strings such as `"low"`, `"high"`, `"none"`, or `"not_applicable"`; absence/negative risk is represented by `false`. For greenfield work, list the repository-relative files the task is expected to create even though they do not exist yet. Do not substitute unrelated existing files merely to satisfy this field. If a credible file surface cannot yet be identified, keep discovery in draft or convert the uncertainty into a `SPIKE` instead of approving an executable task.
 
 Avoid horizontal decomposition that produces unusable intermediate states when a small vertical slice is possible. Prefer an end-to-end slice that can demonstrate value and expose integration risk early.
 

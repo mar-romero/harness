@@ -43,6 +43,37 @@ def _list_of_strings(value: Any, field: str, *, nonempty: bool = False) -> list[
     return value
 
 
+def _task_files(value: Any, field: str) -> list[str]:
+    files = _list_of_strings(value, field)
+    out: list[str] = []
+    for raw in files:
+        rel = raw.strip().replace("\\", "/")
+        if not rel or rel.startswith("/") or re.match(r"^[A-Za-z]:/", rel):
+            raise PlanningError(f"{field} entries must be repository-relative paths: {raw!r}")
+        parts = [part for part in rel.split("/") if part not in {"", "."}]
+        if not parts or ".." in parts:
+            raise PlanningError(f"{field} entries must stay inside the repository: {raw!r}")
+        normalized = "/".join(parts)
+        if normalized not in out:
+            out.append(normalized)
+    return out
+
+
+def _validated_risk_factors(value: Any, field: str = "risk_factors") -> dict[str, bool]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PlanningError(f"{field} must be an object")
+    unknown = sorted(set(value) - set(RISK_KEYS))
+    if unknown:
+        raise PlanningError(f"{field} contains unknown keys: {', '.join(unknown)}")
+    invalid = [(key, raw) for key, raw in value.items() if not isinstance(raw, bool)]
+    if invalid:
+        rendered = ", ".join(f"{key}={raw!r}" for key, raw in invalid)
+        raise PlanningError(f"{field} values must be booleans; invalid: {rendered}")
+    return dict(value)
+
+
 def _score_1_5(value: Any, field: str) -> float:
     try:
         number = float(value)
@@ -129,11 +160,21 @@ def validate_bundle(bundle: dict[str, Any], policy: dict[str, Any] | None = None
             raise PlanningError(f"task {task_id} requires title and canonical-English description")
         _list_of_strings(task.get("acceptance_criteria"), f"task {task_id}.acceptance_criteria", nonempty=True)
         _list_of_strings(task.get("dependencies", []), f"task {task_id}.dependencies")
+        files = _task_files(task.get("files", []), f"task {task_id}.files")
+        surface_policy = policy.get("task_surface") or {}
+        files_required = (
+            status == "approved" and surface_policy.get("approved_tasks_require_files", True)
+        ) or (
+            status == "ready_for_approval" and surface_policy.get("ready_for_approval_tasks_require_files", True)
+        )
+        if files_required and not files:
+            raise PlanningError(
+                f"task {task_id}.files must identify a prospective repository file surface before {status}"
+            )
         size = task.get("size", "M")
         if size not in sizes:
             raise PlanningError(f"task {task_id} has invalid size {size!r}")
-        if task.get("risk_factors") is not None and not isinstance(task.get("risk_factors"), dict):
-            raise PlanningError(f"task {task_id}.risk_factors must be an object")
+        _validated_risk_factors(task.get("risk_factors"), f"task {task_id}.risk_factors")
         for score in ("value", "dependency_unlock", "risk_reduction", "urgency", "confidence"):
             if score in task:
                 _score_1_5(task[score], f"task {task_id}.{score}")
@@ -178,8 +219,8 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def _risk_factors(raw: dict[str, Any] | None) -> dict[str, bool]:
-    raw = raw or {}
-    return {key: bool(raw.get(key, False)) for key in RISK_KEYS}
+    validated = _validated_risk_factors(raw)
+    return {key: validated.get(key, False) for key in RISK_KEYS}
 
 
 def _task_payload(task: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
@@ -189,7 +230,7 @@ def _task_payload(task: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any
         "description": task["description"],
         "acceptance_criteria": list(task["acceptance_criteria"]),
         "risk_factors": _risk_factors(task.get("risk_factors")),
-        "files": list(task.get("files", [])),
+        "files": _task_files(task.get("files", []), f"task {task['id']}.files"),
         "tags": list(dict.fromkeys([*task.get("tags", []), "derived-work", "product-discovery"])),
         "origin": {
             "kind": "derived_from_approved_discovery",
