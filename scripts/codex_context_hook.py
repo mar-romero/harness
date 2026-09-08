@@ -4,10 +4,29 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+
+
+def audit_session_boundary(payload: dict) -> None:
+    """Create durable proof that the Codex audit hook was active.
+
+    Record only lifecycle metadata: never prompts, tool arguments, or context.
+    """
+    audit = ROOT / ".harness" / "codex" / "permission-audit.jsonl"
+    audit.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "event": payload.get("hook_event_name"),
+        "session_id": payload.get("session_id"),
+        "decision": "session_boundary",
+        "reason": "Codex harness audit initialized",
+    }
+    with audit.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
 
 
 def _context() -> str | None:
@@ -37,6 +56,7 @@ def main() -> int:
     if event not in {"SessionStart", "SubagentStart"}:
         return 0
     try:
+        audit_session_boundary(payload)
         # Reconcile the local Codex model cache before a new session/subagent.
         from providers.codex_activate_task import refresh_active
         refresh_active()
