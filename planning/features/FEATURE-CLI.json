@@ -1,7 +1,0 @@
-{
-  "id": "FEATURE-CLI",
-  "type": "FEATURE",
-  "title": "CLI Entry Point",
-  "description": "Handle single positional argument, format output (integral without .0, float with repr), and route errors to stderr with Spanish messages and correct exit codes.",
-  "discovery_id": "test-harness-arithmetic-evaluator"
-}

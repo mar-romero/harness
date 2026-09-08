@@ -1,7 +1,0 @@
-{
-  "id": "FEATURE-PARSER",
-  "type": "FEATURE",
-  "title": "Recursive Descent Parser",
-  "description": "Parse token streams into AST respecting operator precedence (+/- lower than */, parentheses highest) and supporting unary + and -.",
-  "discovery_id": "test-harness-arithmetic-evaluator"
-}
