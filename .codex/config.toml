@@ -3,7 +3,7 @@ command = "python3"
 args = ["scripts/aci_mcp.py"]
 cwd = "."
 enabled = true
-required = false
+required = true
 startup_timeout_sec = 30
 tool_timeout_sec = 180
 

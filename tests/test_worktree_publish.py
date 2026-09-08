@@ -104,6 +104,14 @@ class WorktreePublishTests(unittest.TestCase):
         self.assertTrue(path.exists())
         self.assertTrue(worktree.lock(self.task).exists())
 
+    def test_publish_rejects_active_codex_model_binding(self):
+        self._runtime(['src/app.py'])
+        active = self.repo / '.harness/codex/active-task.json'
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_text(json.dumps({'task_id': self.task}), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'Codex task binding is still active'):
+            worktree._publication_preconditions(self.task)
+
     def test_publish_rejects_rename_that_deletes_file_outside_surface(self):
         # Seed a tracked file before creating the task worktree. The task only
         # authorizes the destination path; --no-renames must still expose the

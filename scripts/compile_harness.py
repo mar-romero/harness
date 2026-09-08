@@ -11,6 +11,10 @@ ACI_INSPECT_TOOLS = [
 ]
 ACI_CHECK_TOOLS = ["tests_run", "lint_run", "diagnostics_get"]
 CODEX_ACTIVE = ROOT / ".harness" / "codex" / "active-task.json"
+CODEX_ORCHESTRATOR = Path(".codex/agents/harness-orchestrator.toml")
+CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
+CODEX_HOOKS = Path(".codex/hooks.json")
+ORCHESTRATOR_ROLE = ROOT / ".agents" / "roles" / "harness-orchestrator.md"
 
 
 def _codex_binding(name):
@@ -117,6 +121,80 @@ def generated():
         for name,meta in m['agents'].items():
             body=(ROOT/m['canonical']['roles_dir']/f'{name}.md').read_text(encoding='utf-8')
             out[target(provider,name)] = front_body(provider,name,meta,body)
+    # The primary orchestration contract is a separate canonical role: it is
+    # not a worker role in manifest.yaml and therefore is not emitted for every
+    # provider. OpenCode has its native primary adapter; Codex receives the
+    # equivalent selectable custom agent.
+    orchestrator_body = ORCHESTRATOR_ROLE.read_text(encoding='utf-8').rstrip()
+    out[CODEX_ORCHESTRATOR] = (
+        'name = "harness-orchestrator"\n'
+        'description = "Coordinate one routed harness task through specialist agents and evidence-backed closure."\n\n'
+        'developer_instructions = """\n'
+        + orchestrator_body
+        + '\n"""\n'
+    )
+    # Codex gives a project custom agent precedence when its name matches a
+    # built-in agent. `default` is the primary fallback agent, so bind it to
+    # the same durable lifecycle without creating a second source of truth.
+    out[CODEX_DEFAULT_AGENT] = (
+        'name = "default"\n'
+        'description = "Primary harness coordinator for routed, evidence-backed work in this repository."\n\n'
+        'developer_instructions = """\n'
+        + orchestrator_body
+        + '\n"""\n'
+    )
+    out[CODEX_HOOKS] = json.dumps({
+        "version": 1,
+        "description": "Run canonical safety gates before Codex shell commands and file patches.",
+        "hooks": {
+            "SessionStart": [{
+                "matcher": "startup|resume|clear|compact",
+                "hooks": [{
+                    "type": "command",
+                    "command": "python3 scripts/codex_context_hook.py",
+                    "timeout": 3,
+                    "statusMessage": "Loading active harness context",
+                }],
+            }],
+            "SubagentStart": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": "python3 scripts/codex_context_hook.py",
+                    "timeout": 3,
+                    "statusMessage": "Loading active harness context",
+                }],
+            }],
+            "PreToolUse": [
+                {
+                    "matcher": "^Bash$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "python3 scripts/codex_hook.py",
+                        "timeout": 3,
+                        "statusMessage": "Checking repository command policy",
+                    }],
+                },
+                {
+                    "matcher": "^apply_patch$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "python3 scripts/codex_hook.py",
+                        "timeout": 3,
+                        "statusMessage": "Checking repository write policy",
+                    }],
+                },
+                {
+                    "matcher": "^Agent$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "python3 scripts/codex_hook.py",
+                        "timeout": 3,
+                        "statusMessage": "Checking harness subagent allowlist",
+                    }],
+                },
+            ]
+        },
+    }, indent=2) + "\n"
     # Claude Code currently discovers project skills from .claude/skills, while the
     # other supported providers can consume .agents/skills directly. Generate tiny
     # Claude compatibility wrappers so the canonical skill body still lives once.

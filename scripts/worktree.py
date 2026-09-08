@@ -226,6 +226,17 @@ def _publication_preconditions(task):
     if route.get('isolation') != 'worktree':
         raise ValueError('publish is only valid for routes with isolation=worktree')
 
+    codex_active = ROOT / '.harness' / 'codex' / 'active-task.json'
+    if codex_active.is_file():
+        try:
+            binding = json.loads(codex_active.read_text(encoding='utf-8'))
+        except Exception as exc:
+            raise ValueError(f'Codex active task binding is invalid: {exc}') from exc
+        if binding.get('task_id') == task:
+            raise ValueError(
+                'Codex task binding is still active; clear the task-scoped model overlay before publication'
+            )
+
     progress = _load_progress(task)
     if progress.get('current_step') != 'CLOSE' or progress.get('state') != 'RUNNING':
         raise ValueError(

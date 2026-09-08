@@ -23,7 +23,10 @@ from harnesslib import run_dir, safe_task_id, write_json_atomic  # noqa: E402
 from task_router import route  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
 from orchestrator import init_progress  # noqa: E402
-from impact_analysis import build_plan as build_impact_plan  # noqa: E402
+from impact_analysis import (  # noqa: E402
+    build_plan as build_impact_plan,
+    capture_baseline as capture_impact_baseline,
+)
 from agent_budget import init as init_agent_budget  # noqa: E402
 from request_normalizer import normalize_task  # noqa: E402
 from model_router import load_inventory, selections_for_task  # noqa: E402
@@ -86,13 +89,19 @@ def activate(task_path: Path) -> dict:
     route_path = out_dir / "route.json"
     context_path = out_dir / "context.json"
     models_path = out_dir / "model-selections.json"
+    task_snapshot_path = out_dir / "task.json"
 
+    # Freeze the authorized task surface before generating any durable runtime
+    # artifact. Consumers must never trust a subsequently edited tasks/*.json.
+    write_json_atomic(task_snapshot_path, task)
     write_json_atomic(route_path, routed)
     progress = init_progress(task_id, routed)
     context = build_context(task, routed)
     write_json_atomic(context_path, context)
 
     # HARNESS_IMPACT_BUDGET_ACTIVATION
+    capture_impact_baseline(task_id)
+    baseline_path = out_dir / "impact-baseline.json"
     impact = build_impact_plan(task, routed, context)
     impact_path = out_dir / "impact.json"
     write_json_atomic(impact_path, impact)
@@ -117,6 +126,8 @@ def activate(task_path: Path) -> dict:
         "activated_at": datetime.now(timezone.utc).isoformat(),
         "task_id": task_id,
         "task_path": task_path.relative_to(ROOT).as_posix(),
+        "task_snapshot_path": task_snapshot_path.relative_to(ROOT).as_posix(),
+        "impact_baseline_path": baseline_path.relative_to(ROOT).as_posix(),
         "risk": routed["risk"],
         "route_path": route_path.relative_to(ROOT).as_posix(),
         "context_path": context_path.relative_to(ROOT).as_posix(),
@@ -144,14 +155,56 @@ def clear() -> None:
         raise SystemExit("failed to restore inherited Codex agent configuration")
 
 
+def refresh_active() -> dict:
+    """Reconcile an active Codex binding with the current local model catalog.
+
+    Codex loads custom-agent TOMLs at session creation. A refresh therefore
+    applies to subsequently created sessions/subagents; it never pretends to
+    hot-swap a model already running in this turn.
+    """
+    if not ACTIVE.is_file():
+        return {"refreshed": False, "reason": "no active Codex task binding"}
+    active = json.loads(ACTIVE.read_text(encoding="utf-8"))
+    snapshot_rel = active.get("task_snapshot_path")
+    if not isinstance(snapshot_rel, str) or not snapshot_rel:
+        raise SystemExit("active Codex binding has no immutable task snapshot")
+    snapshot = (ROOT / snapshot_rel).resolve()
+    snapshot.relative_to(ROOT.resolve())
+    task = json.loads(snapshot.read_text(encoding="utf-8"))
+    if task.get("id") != active.get("task_id"):
+        raise SystemExit("active Codex binding and immutable task snapshot disagree")
+    inventory, inventory_path, inventory_status = _select_inventory()
+    selections = selections_for_task(task, "codex", inventory)
+    models_path = ROOT / active["model_selections_path"]
+    write_json_atomic(models_path, {
+        "schema_version": 2,
+        "task_id": active["task_id"],
+        "provider": "codex",
+        "inventory_path": str(inventory_path) if inventory_path else None,
+        "inventory_status": inventory_status,
+        "openrouter_fetch_error": inventory.get("openrouter_fetch_error") if inventory else None,
+        "selections": selections,
+    })
+    active["selections"] = selections
+    active["refreshed_at"] = datetime.now(timezone.utc).isoformat()
+    write_json_atomic(ACTIVE, active)
+    if compile_all(check=False) != 0:
+        raise SystemExit("failed to regenerate Codex agent bindings after refresh")
+    return {"refreshed": True, "task_id": active["task_id"], "selections": selections}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Activate one harness task for Codex dynamic per-agent routing.")
     ap.add_argument("task", nargs="?")
     ap.add_argument("--clear", action="store_true")
+    ap.add_argument("--refresh-active", action="store_true")
     args = ap.parse_args()
     if args.clear:
         clear()
         print(json.dumps({"cleared": True, "path": str(ACTIVE.relative_to(ROOT)), "codex_agents_restored": True}, indent=2))
+        return 0
+    if args.refresh_active:
+        print(json.dumps(refresh_active(), indent=2, ensure_ascii=False))
         return 0
     if not args.task:
         ap.error("task is required unless --clear is used")

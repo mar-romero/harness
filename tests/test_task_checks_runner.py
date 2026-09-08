@@ -1,7 +1,9 @@
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -24,6 +26,22 @@ class TaskChecksRunnerTests(unittest.TestCase):
             self.assertEqual(result['status'], 'PASS')
             self.assertEqual(result['files_checked'], 1)
             self.assertFalse(any(src.rglob('__pycache__')))
+
+    def test_codex_binding_uses_immutable_snapshot(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(task_checks, 'ROOT', Path(td)):
+            root = Path(td)
+            snapshot = root / '.harness/runs/T/task.json'
+            snapshot.parent.mkdir(parents=True)
+            snapshot.write_text(json.dumps({'id': 'T', 'files': ['src/a.py']}), encoding='utf-8')
+            active = root / '.harness/codex/active-task.json'
+            active.parent.mkdir(parents=True)
+            active.write_text(json.dumps({
+                'task_id': 'T',
+                'task_snapshot_path': '.harness/runs/T/task.json',
+            }), encoding='utf-8')
+            task, path = task_checks._load_active_task('T')
+        self.assertEqual(task['id'], 'T')
+        self.assertEqual(path.name, 'task.json')
 
 
 if __name__ == '__main__':

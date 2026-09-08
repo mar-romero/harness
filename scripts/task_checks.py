@@ -16,27 +16,37 @@ from harnesslib import ROOT, load_json, run_dir, safe_task_id, write_json_atomic
 from worktree import status as worktree_status, wt as worktree_path
 
 
-ACTIVE = ROOT / ".harness" / "opencode" / "active-task.json"
+PROVIDERS = ("codex", "opencode")
 
 
 def _load_active_task(task_id: str) -> tuple[dict, Path]:
-    if not ACTIVE.is_file():
-        raise ValueError("OpenCode active task binding is missing")
+    bindings = []
+    for provider in PROVIDERS:
+        active_path = ROOT / ".harness" / provider / "active-task.json"
+        if not active_path.is_file():
+            continue
+        active = json.loads(active_path.read_text(encoding="utf-8"))
+        if active.get("task_id") == task_id:
+            bindings.append((provider, active, active_path))
 
-    active = json.loads(ACTIVE.read_text(encoding="utf-8"))
-    if active.get("task_id") != task_id:
-        raise ValueError(
-            f"active task is {active.get('task_id')}, not {task_id}"
-        )
+    if not bindings:
+        raise ValueError("no active Codex or OpenCode task binding matches this task")
+    if len(bindings) != 1:
+        providers = ", ".join(provider for provider, _, _ in bindings)
+        raise ValueError(f"ambiguous active task binding for {task_id}: {providers}")
 
-    task_path = ROOT / active["task_path"]
-    task_path = task_path.resolve()
+    provider, active, _ = bindings[0]
+    snapshot_rel = active.get("task_snapshot_path")
+    if not isinstance(snapshot_rel, str) or not snapshot_rel:
+        raise ValueError(f"{provider} active task binding has no immutable task snapshot")
+    task_path = (ROOT / snapshot_rel).resolve()
     task_path.relative_to(ROOT.resolve())
-
     if not task_path.is_file():
-        raise ValueError(f"task file not found: {task_path}")
-
-    return json.loads(task_path.read_text(encoding="utf-8")), task_path
+        raise ValueError(f"immutable task snapshot not found: {task_path}")
+    task = json.loads(task_path.read_text(encoding="utf-8"))
+    if task.get("id") != task_id:
+        raise ValueError("immutable task snapshot id does not match active task")
+    return task, task_path
 
 
 def _require_checks_step(task_id: str) -> dict:
