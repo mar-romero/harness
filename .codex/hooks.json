@@ -1,5 +1,4 @@
 {
-  "version": 1,
   "description": "Run canonical safety gates before Codex shell commands and file patches.",
   "hooks": {
     "SessionStart": [

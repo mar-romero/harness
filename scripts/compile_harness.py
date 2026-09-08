@@ -14,6 +14,7 @@ CODEX_ACTIVE = ROOT / ".harness" / "codex" / "active-task.json"
 CODEX_ORCHESTRATOR = Path(".codex/agents/harness-orchestrator.toml")
 CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
 CODEX_HOOKS = Path(".codex/hooks.json")
+CODEX_ACI_ENTRY = Path(".codex/aci_mcp_entry.py")
 ORCHESTRATOR_ROLE = ROOT / ".agents" / "roles" / "harness-orchestrator.md"
 
 
@@ -143,8 +144,45 @@ def generated():
         + orchestrator_body
         + '\n"""\n'
     )
+    # Project-local config resolves relative paths from `.codex`. Keep the
+    # stdio entrypoint there, then import the canonical implementation from
+    # `scripts/` so desktop, CLI, and IDE clients start it consistently.
+    out[CODEX_ACI_ENTRY] = '''#!/usr/bin/env python3
+"""Generated entrypoint for the project-scoped Harness ACI MCP server."""
+import json
+import os
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+    path = ROOT / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"event": "entrypoint_started"}) + "\\n")
+
+try:
+    from aci_mcp import main
+except BaseException as exc:
+    if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"event": "entrypoint_import_failed", "error": str(exc), "error_type": type(exc).__name__}) + "\\n")
+    raise
+
+if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"event": "entrypoint_ready"}) + "\\n")
+
+if __name__ == "__main__":
+    exit_code = main()
+    if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"event": "entrypoint_main_returned", "exit_code": exit_code}) + "\\n")
+    raise SystemExit(exit_code)
+'''
     out[CODEX_HOOKS] = json.dumps({
-        "version": 1,
         "description": "Run canonical safety gates before Codex shell commands and file patches.",
         "hooks": {
             "SessionStart": [{

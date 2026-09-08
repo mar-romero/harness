@@ -16,8 +16,36 @@ class ACICoreTests(unittest.TestCase):
     def test_codex_project_mcp_starts_from_repository_root(self):
         config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
         server = config["mcp_servers"]["harness-aci"]
-        self.assertEqual(server["cwd"], "..")
-        self.assertEqual(server["args"], ["scripts/aci_mcp.py"])
+        self.assertEqual(Path(server["cwd"]).resolve(), ROOT)
+        self.assertEqual(Path(server["args"][-1]).resolve(), ROOT / "scripts" / "aci_mcp_node.js")
+        self.assertTrue(server["command"].lower().endswith("node.exe"))
+        self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
+
+    def test_codex_project_mcp_entrypoint_handles_initialize(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "aci_mcp_entry.py"],
+            cwd=ROOT / ".codex",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert proc.stdin and proc.stdout
+        try:
+            proc.stdin.write(json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}},
+            }) + "\n")
+            proc.stdin.flush()
+            response = json.loads(proc.stdout.readline())
+            self.assertEqual(response["result"]["protocolVersion"], "2025-11-25")
+        finally:
+            proc.stdin.close()
+            proc.wait(timeout=5)
+            if proc.stdout:
+                proc.stdout.close()
+            if proc.stderr:
+                proc.stderr.close()
 
     def test_tool_catalog_is_small_deterministic_and_typed(self):
         tools = tool_definitions()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -14,6 +15,20 @@ SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo"
 PROTOCOL_META_KEY = "io.modelcontextprotocol/protocolVersion"
 
 legacy_initialized = False
+
+
+def _diagnostic(event: str, **fields: Any) -> None:
+    """Write opt-in handshake diagnostics without recording tool arguments."""
+    if os.environ.get("HARNESS_ACI_DIAGNOSTICS") != "1":
+        return
+    try:
+        root = Path(__file__).resolve().parents[1]
+        path = root / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"event": event, **fields}, sort_keys=True) + "\n")
+    except OSError:
+        pass
 
 
 def _server_meta() -> dict[str, Any]:
@@ -68,6 +83,7 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "initialize":
         legacy_initialized = True
         requested = params.get("protocolVersion")
+        _diagnostic("initialize_received", protocol_version=requested)
         if not isinstance(requested, str) or not requested:
             return _error(req_id, -32602, "initialize requires protocolVersion")
         # MCP clients send the protocol revision they implement. Returning an
@@ -75,12 +91,14 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
         # in newer Codex clients, even though this server uses only the common
         # JSON-RPC tool surface. Negotiate the client's declared revision.
         selected = requested
-        return _response(req_id, {
+        response = _response(req_id, {
             "protocolVersion": selected,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": SERVER_INFO,
             "instructions": "Use Harness ACI tools before raw shell for matching repository inspection/check operations.",
         })
+        _diagnostic("initialize_responded", protocol_version=selected)
+        return response
 
     modern = _modern_request(message) and not legacy_initialized
 
@@ -129,8 +147,10 @@ def main() -> int:
                 raise ValueError("expected JSON-RPC 2.0 object")
             response = _handle(message)
         except json.JSONDecodeError as exc:
+            _diagnostic("parse_error", raw_prefix=raw[:32])
             response = _error(None, -32700, f"Parse error: {exc}")
         except Exception as exc:  # fail closed at the protocol boundary
+            _diagnostic("internal_error", error_type=type(exc).__name__)
             print(f"harness-aci internal error: {exc}", file=sys.stderr)
             response = _error(None, -32603, "Internal error")
         if response is not None:

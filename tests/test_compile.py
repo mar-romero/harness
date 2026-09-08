@@ -7,11 +7,12 @@ class CompileTests(unittest.TestCase):
     def test_all_provider_agent_pairs_and_claude_wrappers_generated(self):
         m=load_manifest(); out=generated()
         agents=len(m['agents']); providers=len(m['providers']); skills=len([p for p in (Path(__file__).resolve().parents[1]/'.agents/skills').iterdir() if p.is_dir()])
-        self.assertEqual(len(out),agents*providers+skills+3)
+        self.assertEqual(len(out),agents*providers+skills+4)
         self.assertTrue(any(p.as_posix().endswith('.codex/agents/implementer.toml') for p in out))
         self.assertIn(Path('.codex/agents/harness-orchestrator.toml'), out)
         self.assertIn(Path('.codex/agents/default.toml'), out)
         self.assertIn(Path('.codex/hooks.json'), out)
+        self.assertIn(Path('.codex/aci_mcp_entry.py'), out)
         self.assertTrue(any(p.as_posix().endswith('.claude/skills/software-engineering/SKILL.md') for p in out))
     def test_strict_read_only_agents_do_not_receive_shell_where_configurable(self):
         out=generated()
@@ -46,6 +47,7 @@ class CompileTests(unittest.TestCase):
     def test_codex_hooks_are_generated_for_shell_and_patches(self):
         import json
         payload=json.loads(generated()[Path('.codex/hooks.json')])
+        self.assertNotIn('version', payload)
         self.assertEqual(
             payload['hooks']['SessionStart'][0]['matcher'],
             'startup|resume|clear|compact',
