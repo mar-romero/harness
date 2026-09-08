@@ -1,17 +1,55 @@
 import json
 import subprocess
 import sys
+import tempfile
+import tomllib
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import aci_core
 from aci_core import call_tool, repo_read_range, repo_search, tool_definitions
 
 
 class ACICoreTests(unittest.TestCase):
+    def test_codex_project_mcp_starts_from_repository_root(self):
+        config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        server = config["mcp_servers"]["harness-aci"]
+        self.assertEqual(server["cwd"], ".")
+        self.assertEqual(server["args"][-1], "scripts/aci_mcp_node.js")
+        self.assertIn(server["command"].lower(), {"node", "node.exe"})
+        self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
+
+    def test_codex_project_mcp_entrypoint_handles_initialize(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "aci_mcp_entry.py"],
+            cwd=ROOT / ".codex",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert proc.stdin and proc.stdout
+        try:
+            proc.stdin.write(json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}},
+            }) + "\n")
+            proc.stdin.flush()
+            response = json.loads(proc.stdout.readline())
+            self.assertEqual(response["result"]["protocolVersion"], "2025-11-25")
+        finally:
+            proc.stdin.close()
+            proc.wait(timeout=5)
+            if proc.stdout:
+                proc.stdout.close()
+            if proc.stderr:
+                proc.stderr.close()
+
     def test_tool_catalog_is_small_deterministic_and_typed(self):
         tools = tool_definitions()
         names = [item["name"] for item in tools]
@@ -54,6 +92,15 @@ class ACICoreTests(unittest.TestCase):
         result = call_tool("tests_run", {"command": "echo hacked"})
         self.assertFalse(result["ok"])
         self.assertIn("invalid arguments", result["error"])
+
+    def test_runtime_permission_audit_jsonl_is_readable(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(aci_core, "ROOT", Path(td)):
+            audit = Path(td) / ".harness/opencode/permission-audit.jsonl"
+            audit.parent.mkdir(parents=True)
+            audit.write_text('{"action":"shell"}\n', encoding="utf-8")
+            result = aci_core.repo_read_range(".harness/opencode/permission-audit.jsonl", 1, 2)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["data"]["lines"][0]["text"], '{"action":"shell"}')
 
 
 class ACIMCPProtocolTests(unittest.TestCase):
@@ -101,6 +148,16 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(len(responses[1]["result"]["tools"]), 10)
         self.assertFalse(responses[2]["result"]["isError"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
+
+    def test_initialize_negotiates_the_client_protocol_version(self):
+        requested = "2025-03-26"
+        response = self._exchange([{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": requested, "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}},
+        }])[0]
+        self.assertEqual(response["result"]["protocolVersion"], requested)
 
     def test_modern_discovery_and_tool_list(self):
         meta = {

@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "provider": "opencode",
+  "description": "OpenCode host adapter. Runtime catalog membership is authoritative; OpenRouter only enriches discovered models.",
+  "runtime_catalog": ".harness/opencode/catalog-snapshot.json",
+  "runtime_requirements": {
+    "agentic_structured_output": {
+      "tool_choice_modes": [
+        "auto",
+       "required"
+     ]
+    }
+  },
+  "discovery": {
+    "command": ["opencode2", "models"],
+    "access_profile": "free",
+    "profiles": {
+      "free": {
+        "allow_prefixes": ["opencode/"],
+        "deny_prefixes": ["opencode-go/"]
+      },
+      "paid": {
+        "allow_prefixes": ["opencode/", "opencode-go/"],
+        "deny_prefixes": []
+      }
+    }
+  },
+  "openrouter_aliases": {
+    "opencode/nemotron-3-ultra-free": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "opencode/nemotron-3.5-lightning-free": "nvidia/nemotron-3.5-lightning"
+  },
+  "openrouter_catalog": ".harness/openrouter/model-inventory.json",
+  "raw_inventory": ".harness/opencode/model-inventory.json",
+  "enriched_inventory": ".harness/model-inventories/opencode.json",
+  "openrouter": {
+    "id_strategy": "native-provider-slash-model",
+    "benchmark_source": "artificial-analysis",
+    "fetch_endpoint_health": true,
+    "refresh_mode": "manual",
+    "activation_network_calls": false
+  },
+  "effort": {
+    "mode": "variant-suffix",
+    "separator": "#",
+    "model_rules": [
+      {
+        "pattern": "^openai/gpt-5\\.6-",
+        "supported": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      {
+        "pattern": "^openai/gpt-5\\.[2345]",
+        "supported": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    ],
+    "unknown_model_supported": []
+  }
+}

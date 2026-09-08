@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "graph_depth": 2,
+  "max_context_seed_files": 6,
+  "max_affected_files": 80,
+  "critical_path_tokens": [
+    "auth",
+    "authorization",
+    "authentication",
+    "security",
+    "permission",
+    "payment",
+    "billing",
+    "migration",
+    "schema",
+    "database",
+    "persistence",
+    "transaction",
+    "secret",
+    "credential",
+    "token"
+  ],
+  "severity_thresholds": {
+    "low_max": 0.34,
+    "medium_max": 0.59,
+    "high_max": 0.79
+  },
+  "finish_gate": {
+    "R0": false,
+    "R1": false,
+    "R2": true,
+    "R3": true
+  },
+  "ignored_diff_prefixes": [
+    ".harness/",
+    ".worktrees/"
+  ],
+  "ignored_diff_files": [
+    ".DS_Store"
+  ],
+  "notes": {
+    "affected_is_not_edit_list": true,
+    "unexpected_diff_requires_reanalysis": true,
+    "verifier_can_review_expansion": true
+  }
+}

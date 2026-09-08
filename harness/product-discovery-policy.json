@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "description": "Product discovery and planning policy for turning conversational ideas into durable harness work without prematurely coding ambiguous product decisions.",
+  "classification": {
+    "levels": [
+      "QUESTION",
+      "SPIKE",
+      "TASK",
+      "FEATURE",
+      "EPIC",
+      "PROJECT"
+    ],
+    "guidance": {
+      "TASK": "one bounded independently verifiable outcome",
+      "FEATURE": "one user-visible capability requiring multiple tasks",
+      "EPIC": "multiple related features or a cross-cutting capability",
+      "PROJECT": "new product/initiative containing multiple epics",
+      "SPIKE": "bounded investigation needed before credible implementation"
+    }
+  },
+  "questioning": {
+    "max_questions_per_round": 3,
+    "max_rounds": 2,
+    "material_dimensions": [
+      "target_user",
+      "problem",
+      "desired_outcome",
+      "success_metric",
+      "mvp_scope",
+      "business_rules",
+      "data_contract",
+      "external_integration",
+      "security_privacy",
+      "compliance",
+      "irreversible_cost",
+      "acceptance_criteria"
+    ],
+    "do_not_block_on": [
+      "reversible_implementation_detail",
+      "naming",
+      "formatting",
+      "repository_answerable_detail"
+    ]
+  },
+  "discovery": {
+    "required_sections": [
+      "refined_problem",
+      "target_users",
+      "outcomes",
+      "success_metrics",
+      "scope",
+      "assumptions",
+      "open_questions",
+      "challenges",
+      "mvp"
+    ],
+    "approved_requires_no_blocking_questions": true
+  },
+  "sizes": {
+    "XS": 1,
+    "S": 2,
+    "M": 3,
+    "L": 5,
+    "XL": 8
+  },
+  "sprint": {
+    "default_capacity_units": 12,
+    "max_xl_default": 1,
+    "priority_weights": {
+      "value": 0.35,
+      "dependency_unlock": 0.25,
+      "risk_reduction": 0.2,
+      "urgency": 0.1,
+      "confidence": 0.1
+    }
+  },
+  "approval": {
+    "planning_can_persist_before_approval": true,
+    "executable_tasks_require_approved_status": true,
+    "explicit_start_after_approval_may_activate_first_ready_task": true
+  },
+  "task_surface": {
+    "ready_for_approval_tasks_require_files": true,
+    "approved_tasks_require_files": true,
+    "allow_prospective_paths": true,
+    "paths_must_be_repo_relative": true
+  },
+  "task_risk_factors": {
+    "allowed_keys": [
+      "touches_auth",
+      "touches_production",
+      "uses_secrets",
+      "destructive_operation",
+      "irreversible_change",
+      "security_boundary",
+      "schema_change",
+      "database_change",
+      "concurrency",
+      "financial",
+      "external_contract",
+      "migration",
+      "persistence",
+      "important_calculation",
+      "bug_fix"
+    ],
+    "values_must_be_boolean": true,
+    "reject_unknown_keys": true,
+    "no_truthy_coercion": true
+  }
+}

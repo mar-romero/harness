@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Bind one durable task to the OpenCode harness runtime.
 
-This adapter is intentionally provider-specific. It reuses the canonical task
-router, context compiler and v3 model router, then writes a small active-task
-file consumed by the OpenCode plugin. It never edits provider agent files or
-application code.
+The OpenCode plugin remains authoritative for runtime model availability. OpenRouter
+enrichment is operator-triggered only: task activation never performs network calls.
+Activation reads the previously generated scored inventory, intersects it with the
+currently visible local OpenCode catalog, and routes using that local snapshot.
 """
 from __future__ import annotations
 
@@ -22,14 +22,17 @@ from harnesslib import run_dir, safe_task_id, write_json_atomic  # noqa: E402
 from task_router import route  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
 from orchestrator import init_progress  # noqa: E402
+from impact_analysis import (
+    build_plan as build_impact_plan,
+    capture_baseline as capture_impact_baseline,
+) # noqa: E402
+from agent_budget import init as init_agent_budget  # noqa: E402
 from request_normalizer import normalize_task  # noqa: E402
-try:
-    from model_router import load_inventory, selections_for_task  # noqa: E402
-except ImportError as exc:
-    raise SystemExit("OpenCode overlay requires the v3 model-routing files (scripts/model_router.py and harness/models.json). Apply the v3 changes #9/#10 first.") from exc
+from model_router import load_inventory, selections_for_task  # noqa: E402
+from openrouter_sync import discover_provider, load_provider_config  # noqa: E402
 
 RUNTIME = ROOT / ".harness" / "opencode"
-INVENTORY = RUNTIME / "model-inventory.json"
+ENRICHED_INVENTORY = ROOT / ".harness" / "model-inventories" / "opencode.json"
 ACTIVE = RUNTIME / "active-task.json"
 
 
@@ -46,9 +49,37 @@ def resolve_task(value: str) -> Path:
     return p
 
 
+def _select_inventory() -> tuple[dict | None, Path | None, dict]:
+    status = {
+        "mode": "manual-openrouter-sync",
+        "network_refresh": False,
+        "inventory_exists": ENRICHED_INVENTORY.exists(),
+        "availability_filtered": False,
+        "available_models": None,
+    }
+    if not ENRICHED_INVENTORY.exists():
+        status["reason"] = "scored inventory missing; run python3 scripts/openrouter_sync.py --provider opencode"
+        return None, None, status
+    inventory, path = load_inventory("opencode", str(ENRICHED_INVENTORY))
+    try:
+        cfg = load_provider_config("opencode")
+        available = {row["id"] for row in discover_provider("opencode", cfg) if row.get("enabled", True)}
+    except Exception as exc:
+        status["availability_error"] = str(exc)
+        available = set()
+    if available:
+        original = list(inventory.get("models", []))
+        inventory = dict(inventory)
+        inventory["models"] = [m for m in original if m.get("id") in available]
+        status["availability_filtered"] = True
+        status["available_models"] = len(available)
+        status["scored_models_after_filter"] = len(inventory["models"])
+    return inventory, path, status
+
+
 def activate(task_path: Path) -> dict:
     task = json.loads(task_path.read_text(encoding="utf-8"))
-    if task.get('request'):
+    if task.get("request"):
         task = normalize_task(task)
     task_id = safe_task_id(task.get("id", ""))
     routed = route(task)
@@ -56,31 +87,50 @@ def activate(task_path: Path) -> dict:
     route_path = out_dir / "route.json"
     context_path = out_dir / "context.json"
     models_path = out_dir / "model-selections.json"
+    task_snapshot_path = out_dir / "task.json"
 
+    # Freeze the authorized task surface for the lifetime of this run. Publication
+    # must not trust a mutable tasks/*.json file after activation.
+    write_json_atomic(task_snapshot_path, task)
     write_json_atomic(route_path, routed)
     progress = init_progress(task_id, routed)
     context = build_context(task, routed)
     write_json_atomic(context_path, context)
 
-    inventory, inventory_path = load_inventory("opencode", str(INVENTORY) if INVENTORY.exists() else None)
+    # HARNESS_IMPACT_BUDGET_ACTIVATION
+    baseline = capture_impact_baseline(task_id)
+
+    impact = build_impact_plan(task, routed, context)    
+    impact_path = out_dir / "impact.json"
+    write_json_atomic(impact_path, impact)
+    agent_budget = init_agent_budget(task, routed)
+    budget_path = out_dir / "agent-budget.json"
+
+    inventory, inventory_path, inventory_status = _select_inventory()
     selections = selections_for_task(task, "opencode", inventory)
     model_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "task_id": task_id,
         "provider": "opencode",
         "inventory_path": str(inventory_path) if inventory_path else None,
+        "inventory_status": inventory_status,
         "selections": selections,
     }
     write_json_atomic(models_path, model_payload)
 
     active = {
-        "schema_version": 1,
+        "schema_version": 2,
         "activated_at": datetime.now(timezone.utc).isoformat(),
         "task_id": task_id,
         "task_path": task_path.relative_to(ROOT).as_posix(),
+        "task_snapshot_path": task_snapshot_path.relative_to(ROOT).as_posix(),
         "risk": routed["risk"],
         "route_path": route_path.relative_to(ROOT).as_posix(),
         "context_path": context_path.relative_to(ROOT).as_posix(),
+        "impact_path": impact_path.relative_to(ROOT).as_posix(),
+        "agent_budget_path": budget_path.relative_to(ROOT).as_posix(),
+        "current_agents": agent_budget.get("current_agents", []),
+        "mandatory_gate_agents": agent_budget.get("mandatory_gate_agents", []),
         "model_selections_path": models_path.relative_to(ROOT).as_posix(),
         "agents": routed["agents"],
         "human_gate": routed["human_gate"],
@@ -94,7 +144,7 @@ def activate(task_path: Path) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Activate one harness task for the OpenCode plugin runtime.")
+    ap = argparse.ArgumentParser(description="Activate one harness task for the OpenCode runtime.")
     ap.add_argument("task", nargs="?", help="Task JSON path under the project")
     ap.add_argument("--clear", action="store_true", help="Clear the OpenCode active task/model mapping")
     args = ap.parse_args()

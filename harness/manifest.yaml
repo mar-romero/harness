@@ -84,6 +84,7 @@
       ],
       "skills": [
         "grounded-evidence",
+        "change-impact-analysis",
         "agent-computer-interface"
       ],
       "model_class": "fast",
@@ -100,10 +101,28 @@
       "skills": [
         "task-intake",
         "architecture-decision",
+        "change-impact-analysis",
         "agent-computer-interface"
       ],
       "model_class": "reasoning",
       "max_turns": 20
+    },
+    "test-designer": {
+      "description": "Independently derive behavioral test oracles, negative/boundary cases and fail-to-pass intent before risky implementation.",
+      "mode": "read-only",
+      "capabilities": [
+        "test-design",
+        "acceptance-analysis",
+        "failure-analysis"
+      ],
+      "skills": [
+        "adaptive-tdd",
+        "test-strategy",
+        "grounded-evidence",
+        "agent-computer-interface"
+      ],
+      "model_class": "reasoning",
+      "max_turns": 18
     },
     "implementer": {
       "description": "Implement one accepted scoped task as the single writer in an isolated worktree.",
@@ -116,6 +135,8 @@
       ],
       "skills": [
         "software-engineering",
+        "adaptive-tdd",
+        "code-quality",
         "implementation-loop",
         "evidence-ledger",
         "agent-computer-interface"
@@ -134,6 +155,8 @@
       ],
       "skills": [
         "bounded-review",
+        "change-impact-analysis",
+        "code-quality",
         "grounded-evidence",
         "agent-computer-interface"
       ],
@@ -164,6 +187,7 @@
       ],
       "skills": [
         "test-strategy",
+        "adaptive-tdd",
         "agent-computer-interface"
       ],
       "model_class": "reasoning",
@@ -212,6 +236,7 @@
       ],
       "skills": [
         "verification",
+        "change-impact-analysis",
         "grounded-evidence",
         "agent-computer-interface"
       ],
@@ -263,6 +288,9 @@
     "context_graph_and_verified_memory": true,
     "champion_challenger_evolution": true,
     "opencode_native_integration": true,
-    "agent_computer_interface": "mcp-stdio-plus-cli"
+    "agent_computer_interface": "mcp-stdio-plus-cli",
+    "adaptive_tdd": "risk-aware-red-green-evidence",
+    "change_impact_graph": "prechange-plan-plus-postdiff-verification",
+    "progressive_agent_budget": "mandatory-gates-plus-signal-driven-support"
   }
 }

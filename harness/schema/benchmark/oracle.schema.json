@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private benchmark oracle",
+  "type": "object",
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "destination"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "argv"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "acceptance",
+              "regression",
+              "security",
+              "mutation",
+              "quality"
+            ]
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metric": {
+            "type": "object",
+            "required": [
+              "name",
+              "regex"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "regex": {
+                "type": "string"
+              },
+              "scale": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "impacted_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_review_findings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

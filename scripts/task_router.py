@@ -3,12 +3,33 @@ from __future__ import annotations
 import argparse, json, re
 from pathlib import Path
 from harnesslib import ROOT, load_manifest, safe_task_id, write_json_atomic, run_dir
+from tdd_policy import profile_task as tdd_profile
 
 RISK_RANK={'R0':0,'R1':1,'R2':2,'R3':3}
+RISK_KEYS={
+    'touches_auth','touches_production','uses_secrets','destructive_operation',
+    'irreversible_change','security_boundary','schema_change','database_change',
+    'concurrency','financial','external_contract','migration','persistence',
+    'important_calculation','bug_fix',
+}
 def maxrisk(a,b): return a if RISK_RANK[a]>=RISK_RANK[b] else b
 
-def _factor(task,name): return bool((task.get('risk_factors') or {}).get(name,False))
+def _validate_risk_factors(task):
+    raw=task.get('risk_factors') or {}
+    if not isinstance(raw,dict):
+        raise ValueError('risk_factors must be an object')
+    unknown=sorted(set(raw)-RISK_KEYS)
+    if unknown:
+        raise ValueError('risk_factors contains unknown keys: '+', '.join(unknown))
+    invalid=[(name,value) for name,value in raw.items() if not isinstance(value,bool)]
+    if invalid:
+        rendered=', '.join(f'{name}={value!r}' for name,value in invalid)
+        raise ValueError('risk_factors values must be booleans; invalid: '+rendered)
+    return raw
+
+def _factor(task,name): return (task.get('risk_factors') or {}).get(name,False)
 def route(task):
+    _validate_risk_factors(task)
     m=load_manifest(); req=task.get('request') or {}; canonical=req.get('canonical_english') or task.get('description','')
     original=req.get('original_text','')
     text=' '.join([canonical, original, *task.get('tags',[]), *task.get('files',[])]).lower()
@@ -28,13 +49,19 @@ def route(task):
     if risk!='R0': agents.append('planner')
     if bug: agents.append('debugger'); skills += ['debugging','systemic-defect-triage']
     if external: agents.append('docs-researcher'); skills.append('source-research')
+    # HARNESS_ADAPTIVE_TDD_ROUTE
+    tdd=tdd_profile(task,risk=risk,text=text,bug=bug,external=external,security=security)
+    if tdd.get('test_designer'):
+        agents.append('test-designer'); skills += ['adaptive-tdd','test-strategy']
+    elif tdd.get('mode') not in ('not_applicable','test_after_allowed'):
+        skills.append('adaptive-tdd')
     agents.append('implementer'); skills += ['software-engineering','implementation-loop','evidence-ledger','worktree-isolation']
     if risk in ('R1','R2','R3'): agents.append('reviewer'); skills.append('bounded-review')
     if risk in ('R2','R3'): agents += ['test-auditor','verifier']; skills += ['test-strategy','verification']
     if security or risk=='R3': agents.append('security-reviewer'); skills += ['prompt-injection-defense','tool-output-validation']
     agents=list(dict.fromkeys(agents)); skills=list(dict.fromkeys(skills)); reqs=m['risk_levels'][risk]
     confidence='high' if explicit or reasons or task.get('risk_factors') else 'medium'
-    return {'task_id':task['id'],'risk':risk,'risk_reasons':reasons or ['default normal risk'],'confidence':confidence,'agents':agents,'skills':skills,'isolation':'worktree' if 'implementer' in agents else 'none','human_gate':bool(reqs.get('human_gate')),'requirements':reqs,'canonical_language':'en'}
+    return {'task_id':task['id'],'risk':risk,'risk_reasons':reasons or ['default normal risk'],'confidence':confidence,'agents':agents,'skills':skills,'isolation':'worktree' if 'implementer' in agents else 'none','human_gate':bool(reqs.get('human_gate')),'requirements':reqs,'tdd':tdd,'canonical_language':'en'}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('task'); ap.add_argument('--output'); a=ap.parse_args(); task=json.loads(Path(a.task).read_text(encoding='utf-8')); safe_task_id(task.get('id',''))

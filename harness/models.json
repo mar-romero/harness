@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "description": "Capability-based model selection policy. Runtime inventories are authoritative; this file intentionally does not pin mutable model IDs.",
+  "schema_version": 2,
+  "description": "Dynamic per-agent model routing policy. Runtime availability is authoritative; OpenRouter supplies external benchmark/cost/latency priors only when an operator explicitly refreshes provider inventories. Tasks read local scored inventories and never trigger OpenRouter requests.",
   "capability_scale": {
     "min": 0,
     "max": 5,
@@ -19,13 +19,11 @@
         "reasoning": 2,
         "tool_use": 2
       },
-      "weights": {
-        "reasoning": 0.15,
+      "quality_weights": {
+        "reasoning": 0.3,
         "coding": 0.05,
-        "tool_use": 0.10,
-        "reliability": 0.15,
-        "latency": 0.30,
-        "cost": 0.25
+        "tool_use": 0.25,
+        "reliability": 0.4
       }
     },
     "coding": {
@@ -35,13 +33,11 @@
         "tool_use": 4,
         "reliability": 3
       },
-      "weights": {
-        "reasoning": 0.15,
-        "coding": 0.30,
-        "tool_use": 0.20,
-        "reliability": 0.20,
-        "latency": 0.075,
-        "cost": 0.075
+      "quality_weights": {
+        "reasoning": 0.2,
+        "coding": 0.35,
+        "tool_use": 0.25,
+        "reliability": 0.2
       }
     },
     "reasoning": {
@@ -49,22 +45,33 @@
         "reasoning": 4,
         "reliability": 3
       },
-      "weights": {
-        "reasoning": 0.40,
-        "coding": 0.05,
-        "tool_use": 0.10,
-        "reliability": 0.30,
-        "latency": 0.075,
-        "cost": 0.075
+      "quality_weights": {
+        "reasoning": 0.45,
+        "coding": 0.08,
+        "tool_use": 0.12,
+        "reliability": 0.35
       }
     }
   },
   "risk_overrides": {
-    "R0": {},
-    "R1": {},
+    "R0": {
+      "target_floors": {
+        "reliability": 2.0
+      }
+    },
+    "R1": {
+      "target_floors": {
+        "reliability": 3.0
+      }
+    },
     "R2": {
       "required_floor": {
         "reliability": 3
+      },
+      "target_floors": {
+        "reasoning": 3.3,
+        "tool_use": 3.0,
+        "reliability": 4.0
       }
     },
     "R3": {
@@ -73,22 +80,383 @@
         "reliability": 4,
         "tool_use": 3
       },
+      "target_floors": {
+        "reasoning": 4.5,
+        "tool_use": 4.0,
+        "reliability": 4.8
+      },
       "no_eligible_action": "block"
     }
+  },
+  "task_profile": {
+    "base": {
+      "reasoning": 2.0,
+      "coding": 1.5,
+      "tool_use": 2.0,
+      "reliability": 2.5
+    },
+    "signals": [
+      {
+        "name": "architecture",
+        "pattern": "\\b(architecture|architectural|design|trade[- ]?off|distributed|consistency|failover|multi[- ]?region|arquitectura|dise[nñ]o)\\b",
+        "delta": {
+          "reasoning": 1.5,
+          "reliability": 0.5
+        }
+      },
+      {
+        "name": "database",
+        "pattern": "\\b(database|postgres|mysql|sqlite|schema|migration|persistence|transaction|mvcc|base de datos|esquema|migraci[oó]n|persistencia|transacci[oó]n)\\b",
+        "delta": {
+          "reasoning": 0.8,
+          "coding": 0.4,
+          "tool_use": 0.4,
+          "reliability": 0.7
+        }
+      },
+      {
+        "name": "implementation",
+        "pattern": "\\b(implement|implementation|code|coding|refactor|feature|fix|bug|test|patch|implementar|implementaci[oó]n|c[oó]digo|refactor|corregir|prueba)\\b",
+        "delta": {
+          "coding": 1.4,
+          "tool_use": 1.0,
+          "reliability": 0.3
+        }
+      },
+      {
+        "name": "debugging",
+        "pattern": "\\b(debug|bug|error|exception|regression|broken|failure|falla|fallo|depurar|roto)\\b",
+        "delta": {
+          "reasoning": 0.7,
+          "coding": 0.7,
+          "tool_use": 0.8,
+          "reliability": 0.5
+        }
+      },
+      {
+        "name": "security",
+        "pattern": "\\b(auth|authentication|authorization|security|secret|credential|permission|token|xss|csrf|injection|autenticaci[oó]n|autorizaci[oó]n|seguridad|secreto|credencial|permiso)\\b",
+        "delta": {
+          "reasoning": 1.0,
+          "tool_use": 0.4,
+          "reliability": 1.2
+        }
+      },
+      {
+        "name": "production",
+        "pattern": "\\b(production|prod|deploy|deployment|terraform destroy|destructive|irreversible|producci[oó]n|despliegue|destructiv|irreversible)\\b",
+        "delta": {
+          "reasoning": 0.8,
+          "tool_use": 0.5,
+          "reliability": 1.3
+        }
+      },
+      {
+        "name": "external_contract",
+        "pattern": "\\b(api|sdk|library|protocol|provider|dependency|external|version|biblioteca|protocolo|proveedor|dependencia|extern[oa]|versi[oó]n)\\b",
+        "delta": {
+          "reasoning": 0.5,
+          "tool_use": 0.9,
+          "reliability": 0.6
+        }
+      },
+      {
+        "name": "research",
+        "pattern": "\\b(research|investigate|compare|evaluate|documentation|docs|investigar|comparar|evaluar|documentaci[oó]n)\\b",
+        "delta": {
+          "reasoning": 0.7,
+          "coding": -0.7,
+          "tool_use": 0.7
+        }
+      },
+      {
+        "name": "mechanical",
+        "pattern": "\\b(typo|formatting|rename|mechanical|formato|renombrar)\\b",
+        "delta": {
+          "reasoning": -0.7,
+          "coding": -0.5,
+          "tool_use": -0.4,
+          "reliability": -0.3
+        }
+      }
+    ],
+    "structured_factor_deltas": {
+      "bug_fix": {
+        "reasoning": 0.5,
+        "coding": 0.7,
+        "tool_use": 0.6,
+        "reliability": 0.4
+      },
+      "schema_change": {
+        "reasoning": 0.8,
+        "coding": 0.4,
+        "reliability": 0.8
+      },
+      "database_change": {
+        "reasoning": 0.8,
+        "coding": 0.4,
+        "reliability": 0.8
+      },
+      "concurrency": {
+        "reasoning": 1.1,
+        "coding": 0.4,
+        "reliability": 0.8
+      },
+      "financial": {
+        "reasoning": 0.6,
+        "reliability": 1.0
+      },
+      "external_contract": {
+        "reasoning": 0.5,
+        "tool_use": 0.8,
+        "reliability": 0.6
+      },
+      "migration": {
+        "reasoning": 0.9,
+        "coding": 0.4,
+        "reliability": 0.9
+      },
+      "persistence": {
+        "reasoning": 0.6,
+        "coding": 0.4,
+        "reliability": 0.7
+      },
+      "important_calculation": {
+        "reasoning": 0.9,
+        "reliability": 0.9
+      },
+      "touches_auth": {
+        "reasoning": 1.0,
+        "reliability": 1.2
+      },
+      "touches_production": {
+        "reasoning": 0.8,
+        "tool_use": 0.4,
+        "reliability": 1.2
+      },
+      "uses_secrets": {
+        "reasoning": 0.5,
+        "reliability": 1.2
+      },
+      "destructive_operation": {
+        "reasoning": 1.0,
+        "reliability": 1.4
+      },
+      "irreversible_change": {
+        "reasoning": 1.1,
+        "reliability": 1.4
+      },
+      "security_boundary": {
+        "reasoning": 1.0,
+        "reliability": 1.3
+      }
+    }
+  },
+  "role_adjustments": {
+    "explorer": {
+      "reasoning": 0.0,
+      "coding": -0.9,
+      "tool_use": 0.5,
+      "reliability": -0.2
+    },
+    "planner": {
+      "reasoning": 0.9,
+      "coding": -0.8,
+      "tool_use": 0.0,
+      "reliability": 0.5
+    },
+    "implementer": {
+      "reasoning": 0.3,
+      "coding": 1.1,
+      "tool_use": 1.0,
+      "reliability": 0.4
+    },
+    "reviewer": {
+      "reasoning": 0.8,
+      "coding": 0.2,
+      "tool_use": 0.0,
+      "reliability": 0.8
+    },
+    "security-reviewer": {
+      "reasoning": 1.0,
+      "coding": 0.1,
+      "tool_use": 0.4,
+      "reliability": 1.0
+    },
+    "test-auditor": {
+      "reasoning": 0.7,
+      "coding": 0.6,
+      "tool_use": 0.5,
+      "reliability": 0.8
+    },
+    "docs-researcher": {
+      "reasoning": 0.3,
+      "coding": -1.1,
+      "tool_use": 0.9,
+      "reliability": 0.3
+    },
+    "debugger": {
+      "reasoning": 0.8,
+      "coding": 0.5,
+      "tool_use": 0.8,
+      "reliability": 0.6
+    },
+    "verifier": {
+      "reasoning": 0.7,
+      "coding": 0.1,
+      "tool_use": 0.7,
+      "reliability": 0.9
+    },
+    "test-designer": {
+      "reasoning": 0.8,
+      "coding": 0.5,
+      "tool_use": 0.4,
+      "reliability": 0.9
+    }
+  },
+  "scoring": {
+    "formula_version": "coverage-surplus-v2",
+    "coverage_weight": 0.85,
+    "surplus_weight": 0.15,
+    "risk_objective_weights": {
+      "R0": {
+        "quality": 0.55,
+        "cost": 0.2,
+        "latency": 0.2,
+        "local_evidence": 0.05
+      },
+      "R1": {
+        "quality": 0.65,
+        "cost": 0.15,
+        "latency": 0.15,
+        "local_evidence": 0.05
+      },
+      "R2": {
+        "quality": 0.78,
+        "cost": 0.08,
+        "latency": 0.08,
+        "local_evidence": 0.06
+      },
+      "R3": {
+        "quality": 0.9,
+        "cost": 0.02,
+        "latency": 0.02,
+        "local_evidence": 0.06
+      }
+    },
+    "local_evidence_neutral": 0.5,
+    "local_evidence_full_weight_samples": 20,
+    "score_precision": 6
+  },
+  "effort": {
+    "pressure_weights": {
+      "reasoning": 0.45,
+      "reliability": 0.25,
+      "tool_use": 0.15,
+      "coding": 0.15
+    },
+    "role_bias": {
+      "planner": 0.25,
+      "reviewer": 0.25,
+      "security-reviewer": 0.3,
+      "verifier": 0.25,
+      "implementer": 0.15,
+      "debugger": 0.15,
+      "test-auditor": 0.15
+    },
+    "risk_bias": {
+      "R0": -0.15,
+      "R1": 0.0,
+      "R2": 0.15,
+      "R3": 0.35
+    },
+    "thresholds": [
+      {
+        "max_exclusive": 2.5,
+        "effort": "low"
+      },
+      {
+        "max_exclusive": 3.5,
+        "effort": "medium"
+      },
+      {
+        "max_exclusive": 4.35,
+        "effort": "high"
+      },
+      {
+        "max_exclusive": 4.8,
+        "effort": "xhigh"
+      }
+    ],
+    "top_effort": "max",
+    "risk_caps": {
+      "R0": "medium",
+      "R1": "high",
+      "R2": "xhigh",
+      "R3": "max"
+    },
+    "order": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "fallback": "nearest-lower-then-higher"
+  },
+  "independence": {
+    "roles": {
+      "test-auditor": {
+        "avoid_agents": [
+          "implementer",
+          "test-designer"
+        ]
+      },
+      "reviewer": {
+        "avoid_agents": [
+          "implementer"
+        ]
+      },
+      "security-reviewer": {
+        "avoid_agents": [
+          "implementer"
+        ]
+      },
+      "verifier": {
+        "avoid_agents": [
+          "implementer",
+          "reviewer"
+        ]
+      },
+      "implementer": {
+        "avoid_agents": [
+          "test-designer"
+        ]
+      }
+    },
+    "different_model_min_relative_score": 0.9,
+    "different_family_preferred": true,
+    "different_family_min_relative_score": 0.92,
+    "different_vendor_preferred": true,
+    "different_vendor_min_relative_score": 0.94
   },
   "selection": {
     "default_no_inventory_action": "inherit",
     "default_no_eligible_action": "inherit",
-    "prefer_provider_native": true,
+    "prefer_provider_native_on_exact_tie": true,
     "deterministic_tie_break": "model_id_ascending",
-    "unknown_capability_is_zero": true,
-    "score_precision": 6
+    "unknown_capability_is_zero": true
   },
   "inventory": {
-    "max_age_hours": 168,
+    "max_age_hours": null,
     "allow_stale_for_r0_r2": true,
-    "allow_stale_for_r3": false,
+    "allow_stale_for_r3": true,
     "environment_variable": "HARNESS_MODEL_INVENTORY",
-    "provider_environment_prefix": "HARNESS_MODEL_INVENTORY_"
+    "provider_environment_prefix": "HARNESS_MODEL_INVENTORY_",
+    "openrouter_benchmark_source": "artificial-analysis",
+    "refresh_mode": "manual",
+    "enforce_max_age": false
   }
 }

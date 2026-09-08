@@ -23,7 +23,8 @@
     "handoff-contract",
     "orchestrator-policy",
     "memory-policy",
-    "language-policy"
+    "language-policy",
+    "benchmark-policy"
   ],
   "metrics": {
     "task_success_rate": {
@@ -72,6 +73,37 @@
       "direction": "lower",
       "material_delta": 0.1,
       "critical_delta": 0.3,
+      "relative": true
+    },
+    "first_pass_success_rate": {
+      "direction": "higher",
+      "material_delta": 0.03,
+      "critical_delta": 0.08
+    },
+    "hidden_test_pass_rate": {
+      "direction": "higher",
+      "material_delta": 0.03,
+      "critical_delta": 0.08
+    },
+    "mutation_score": {
+      "direction": "higher",
+      "material_delta": 0.04,
+      "critical_delta": 0.1
+    },
+    "impact_recall": {
+      "direction": "higher",
+      "material_delta": 0.05,
+      "critical_delta": 0.15
+    },
+    "tdd_valid_red_rate": {
+      "direction": "higher",
+      "material_delta": 0.05,
+      "critical_delta": 0.15
+    },
+    "agents_used_mean": {
+      "direction": "lower",
+      "material_delta": 0.15,
+      "critical_delta": 0.35,
       "relative": true
     }
   },

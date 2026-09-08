@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness Model Inventory",
+  "type": "object",
+  "required": ["schema_version", "provider", "generated_at", "models"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "provider": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "minLength": 1},
+    "source": {"type": "string"},
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "enabled", "capabilities", "cost", "latency"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "openrouter_id": {"type": ["string", "null"]},
+          "enabled": {"type": "boolean"},
+          "native": {"type": "boolean"},
+          "vendor": {"type": ["string", "null"]},
+          "family": {"type": ["string", "null"]},
+          "supported_efforts": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "capabilities": {
+            "type": "object",
+            "required": ["reasoning", "coding", "tool_use", "reliability"],
+            "properties": {
+              "reasoning": {"type": "number", "minimum": 0, "maximum": 5},
+              "coding": {"type": "number", "minimum": 0, "maximum": 5},
+              "tool_use": {"type": "number", "minimum": 0, "maximum": 5},
+              "reliability": {"type": "number", "minimum": 0, "maximum": 5}
+            },
+            "additionalProperties": false
+          },
+          "cost": {"type": "number", "minimum": 0, "maximum": 5},
+          "latency": {"type": "number", "minimum": 0, "maximum": 5},
+          "context_window": {"type": "integer", "minimum": 0},
+          "raw_metrics": {"type": "object"},
+          "provenance": {"type": "object"},
+          "local_evidence": {"type": "object"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

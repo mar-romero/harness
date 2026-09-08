@@ -1,37 +1,47 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "provider": "example-provider",
-  "generated_at": "2026-09-02T00:00:00Z",
-  "source": "replace with provider CLI/API discovery or a reviewed organization inventory",
+  "generated_at": "2026-09-04T00:00:00Z",
+  "availability_generated_at": "2026-09-04T00:00:00Z",
+  "source": "runtime availability + OpenRouter external priors + optional local harness evidence",
   "models": [
     {
       "id": "runtime-model-id-a",
+      "openrouter_id": "vendor/model-a",
       "enabled": true,
       "native": true,
+      "vendor": "vendor",
+      "family": "vendor/model-family",
+      "supported_efforts": ["low", "medium", "high"],
       "capabilities": {
-        "reasoning": 5,
-        "coding": 4,
-        "tool_use": 5,
-        "reliability": 5
+        "reasoning": 4.7,
+        "coding": 4.4,
+        "tool_use": 4.8,
+        "reliability": 4.6
       },
-      "cost": 3,
-      "latency": 2,
+      "cost": 3.2,
+      "latency": 4.1,
       "context_window": 200000,
-      "notes": "Scores use 0-5. For cost/latency, 5 means better (cheaper/faster)."
-    },
-    {
-      "id": "runtime-model-id-b",
-      "enabled": true,
-      "native": true,
-      "capabilities": {
-        "reasoning": 3,
-        "coding": 3,
-        "tool_use": 4,
-        "reliability": 4
+      "raw_metrics": {
+        "intelligence_index": 71.2,
+        "coding_index": 65.8,
+        "agentic_index": 58.3,
+        "average_token_price": 0.00000625,
+        "latency_p50": 0.42,
+        "uptime_1d": 99.7,
+        "tool_parameter_supported": true
       },
-      "cost": 5,
-      "latency": 5,
-      "context_window": 100000
+      "provenance": {
+        "availability": "provider-runtime",
+        "quality": "OpenRouter /api/v1/benchmarks artificial-analysis",
+        "pricing": "OpenRouter /api/v1/models",
+        "endpoint_health": "OpenRouter model endpoints",
+        "confidence": 1.0
+      },
+      "local_evidence": {
+        "samples": 12,
+        "score": 4.3
+      }
     }
   ]
 }

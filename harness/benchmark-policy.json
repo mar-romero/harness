@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "default_repetitions": 3,
+  "default_timeout_seconds": 900,
+  "max_output_bytes": 2000000,
+  "workspace": {
+    "keep_on_failure": true,
+    "strip_runtime_dirs": [
+      ".harness",
+      ".worktrees"
+    ],
+    "harness_control_paths": [
+      "AGENTS.md",
+      "AI_POLICY.md",
+      "harness",
+      ".agents",
+      ".opencode",
+      ".codex",
+      "scripts"
+    ]
+  },
+  "variants": {
+    "baseline": {
+      "kind": "baseline",
+      "description": "Provider agent without project harness orchestration."
+    },
+    "full": {
+      "kind": "harness",
+      "description": "Full installed harness."
+    },
+    "no_tdd": {
+      "kind": "harness_ablation",
+      "ablations": [
+        "tdd"
+      ],
+      "description": "Full harness with Adaptive TDD disabled in the disposable benchmark workspace."
+    },
+    "no_impact": {
+      "kind": "harness_ablation",
+      "ablations": [
+        "impact"
+      ],
+      "description": "Full harness without change-impact gate/context-neighbor bonus."
+    },
+    "eager_agents": {
+      "kind": "harness_ablation",
+      "ablations": [
+        "progressive_budget"
+      ],
+      "description": "Full harness with routed support agents activated eagerly."
+    },
+    "no_reviewer": {
+      "kind": "harness_ablation",
+      "ablations": [
+        "reviewer"
+      ],
+      "description": "Full harness with reviewer removed from the benchmark route."
+    },
+    "no_code_quality": {
+      "kind": "harness_ablation",
+      "ablations": [
+        "code_quality"
+      ],
+      "description": "Full harness with code-quality removed from implementer/reviewer."
+    }
+  },
+  "record_variant_default": "full",
+  "success": {
+    "require_executor_success": true,
+    "require_public_checks": true,
+    "require_hidden_checks": true
+  },
+  "report_metrics": [
+    "task_success_rate",
+    "first_pass_success_rate",
+    "hidden_test_pass_rate",
+    "bug_introduction_rate",
+    "mutation_score",
+    "impact_recall",
+    "tdd_valid_red_rate",
+    "human_intervention_rate",
+    "tokens",
+    "cost_usd",
+    "latency_seconds",
+    "agents_used_mean"
+  ]
+}

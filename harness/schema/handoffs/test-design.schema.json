@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "task_id",
+    "producer",
+    "status",
+    "tdd_mode",
+    "behaviors",
+    "oracle",
+    "cases",
+    "assumptions",
+    "unresolved",
+    "evidence_refs"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string"
+    },
+    "producer": {
+      "const": "test-designer"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "BLOCKED",
+        "INSUFFICIENT"
+      ]
+    },
+    "tdd_mode": {
+      "type": "string"
+    },
+    "behaviors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "oracle": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
