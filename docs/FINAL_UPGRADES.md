@@ -1,5 +1,8 @@
 # Final research-driven upgrades
 
+> Historical upgrade record. For current operational commands, provider
+> boundaries, and portable-installation status, use `README.md` and `docs/`.
+
 ## 1 — Language/risk boundary
 
 The original request is never discarded. `request.canonical_english` is the

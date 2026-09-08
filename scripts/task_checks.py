@@ -72,6 +72,20 @@ def _route(task_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _validate_runtime_consistency(task_id: str, route: dict) -> None:
+    """Reject a stale budget before it can weaken the routed task lifecycle."""
+    path = run_dir(task_id) / "agent-budget.json"
+    if not path.is_file():
+        raise ValueError("agent-budget.json missing")
+    budget = json.loads(path.read_text(encoding="utf-8"))
+    if budget.get("risk") != route.get("risk"):
+        raise ValueError(
+            f"agent budget risk {budget.get('risk')} != route risk {route.get('risk')}"
+        )
+    if budget.get("route_agents") != route.get("agents"):
+        raise ValueError("agent budget route_agents do not match route agents")
+
+
 def _project_root(task: dict) -> Path:
     roots: set[str] = set()
 
@@ -210,6 +224,7 @@ def run_checks(task_id: str) -> dict:
     _require_checks_step(task_id)
     task, _ = _load_active_task(task_id)
     route = _route(task_id)
+    _validate_runtime_consistency(task_id, route)
 
     execution_root = _execution_root(task_id, route)
     project_rel = _project_root(task)

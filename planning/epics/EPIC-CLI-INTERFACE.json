@@ -1,0 +1,7 @@
+{
+  "id": "EPIC-CLI-INTERFACE",
+  "type": "EPIC",
+  "title": "CLI Interface",
+  "description": "Implement the CLI entry point, argument handling, output formatting, and error reporting.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

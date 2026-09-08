@@ -57,9 +57,6 @@ def main() -> int:
         return 0
     try:
         audit_session_boundary(payload)
-        # Reconcile the local Codex model cache before a new session/subagent.
-        from providers.codex_activate_task import refresh_active
-        refresh_active()
         context = _context()
         if context:
             print(json.dumps({"hookSpecificOutput": {

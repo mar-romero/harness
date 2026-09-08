@@ -43,6 +43,15 @@ class TaskChecksRunnerTests(unittest.TestCase):
         self.assertEqual(task['id'], 'T')
         self.assertEqual(path.name, 'task.json')
 
+    def test_runtime_consistency_rejects_stale_agent_budget_risk(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(task_checks, 'ROOT', Path(td)), \
+             patch.object(task_checks, 'run_dir', return_value=Path(td) / '.harness/runs/T'):
+            run = Path(td) / '.harness/runs/T'
+            run.mkdir(parents=True)
+            (run / 'agent-budget.json').write_text(json.dumps({'risk': 'R2'}), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'agent budget risk R2 != route risk R3'):
+                task_checks._validate_runtime_consistency('T', {'risk': 'R3'})
+
 
 if __name__ == '__main__':
     unittest.main()

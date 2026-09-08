@@ -1,5 +1,8 @@
 # Runtime-eval adapters
 
+Keep provider authentication outside the repository and preserve result JSON as
+run evidence.
+
 A runtime adapter is a command that is invoked as:
 
 `<adapter command> <case-json> <result-json>`

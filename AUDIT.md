@@ -1,45 +1,38 @@
-# Audit report — Portable Agent Engineering Harness Final v4
+# Historical harness audit record
 
-Audit scope: consolidated v2 + v3 + OpenCode integration + requested upgrades
-1, 3, 4, 5, 8, 9 and 10.
+> This is a bounded historical audit record, not a current operating guide.
+> Current commands and support boundaries are documented in `README.md` and
+> `docs/INSTALLATION.md`.
+
+## Recorded scope
+
+The audit covered the consolidated core, model routing, provider integration,
+and the named upgrades for language normalization, runtime evaluation, typed
+handoffs, progress tracking, signed provenance, context/memory, and
+champion/challenger evaluation.
 
 ## Preserved invariants
 
-- executable evidence outranks model claims;
-- exactly one implementation writer owns a scoped worktree;
-- writer cannot issue final review/verification verdicts;
-- R0–R3 risk and human decision gates remain explicit;
-- provider files remain generated adapters, not policy sources;
-- untrusted content cannot authorize external side effects;
-- evolution is proposal-only and cannot auto-edit/promote itself.
+- Executable evidence outranks model assertions.
+- One implementation writer owns a scoped worktree.
+- The writer cannot issue its own final review or verification verdict.
+- Risk levels and human decision gates remain explicit.
+- Canonical roles and skills are the source; provider adapters are generated.
+- Untrusted input cannot authorize external side effects.
+- Evolution can propose but cannot auto-apply a change.
 
-## New invariants
+## Verification boundary
 
-- non-English requests preserve the original and require a validated canonical
-  English form before downstream use;
-- structured risk flags outrank language-dependent keyword inference;
-- authoritative specialist handoffs are JSON-schema contracts;
-- retries and stalls are recorded in a durable progress ledger;
-- R3 requires signed Ed25519 provenance evidence;
-- reusable memory is only explicitly promoted from finish-gate-passing tasks;
-- champion/challenger promotion always requires a human decision.
+Local checks can validate generated-file drift, deterministic tests, typed
+handoff schemas, evidence-chain mechanics, and configured policy. They cannot
+prove semantic equivalence of natural-language translation, authenticated live
+provider behavior, provider API stability, account permissions, or protection
+of a signing key outside the repository.
 
-## What this audit can prove locally
+For the current validation path, use:
 
-It validates source generation/drift, unit behavior, deterministic evals,
-OpenCode plugin syntax/contracts, cryptographic sign/verify with a temporary
-Ed25519 key, runtime-eval adapter mechanics, routing equivalence for an EN/ES R3
-case, typed handoffs, progress stall behavior, context token bounds and
-champion/challenger safety behavior.
-
-## Residual limitations
-
-- Natural-language translation cannot be proven 100% semantically identical by
-  deterministic software; the harness therefore preserves the original and
-  blocks detectable ambiguity/invariant loss.
-- Real provider/model quality still requires authenticated live runtime evals.
-- The OpenCode plugin API is provider-owned and may evolve.
-- OS/container sandboxing, narrow ACI tools and a full adversarial-security
-  benchmark suite were not requested in this build and are not claimed.
-- Ed25519 provenance depends on the operator protecting the private key outside
-  the repository and establishing trust in the corresponding public key.
+```bash
+python scripts/compile_harness.py --check
+python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/run_evals.py
+```

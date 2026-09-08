@@ -1,0 +1,7 @@
+{
+  "id": "EPIC-CORE-ENGINE",
+  "type": "EPIC",
+  "title": "Core Evaluation Engine",
+  "description": "Implement the lexer, parser, and evaluator for arithmetic expressions with correct precedence and float64 semantics.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

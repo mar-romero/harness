@@ -65,4 +65,9 @@ class CompileTests(unittest.TestCase):
             payload['hooks']['PreToolUse'][2]['matcher'],
             '^Agent$',
         )
+        command=payload['hooks']['SessionStart'][0]['hooks'][0]['command']
+        self.assertIn('codex_context_hook.py', command)
+        self.assertEqual(command, 'python scripts/codex_context_hook.py')
+        self.assertNotIn('cmd.exe', command)
+        self.assertNotIn('\\Users\\', command)
 if __name__=='__main__': unittest.main()

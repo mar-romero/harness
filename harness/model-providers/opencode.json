@@ -29,6 +29,7 @@
     "opencode/nemotron-3-ultra-free": "nvidia/nemotron-3-ultra-550b-a55b:free",
     "opencode/nemotron-3.5-lightning-free": "nvidia/nemotron-3.5-lightning"
   },
+  "openrouter_catalog": ".harness/openrouter/model-inventory.json",
   "raw_inventory": ".harness/opencode/model-inventory.json",
   "enriched_inventory": ".harness/model-inventories/opencode.json",
   "openrouter": {

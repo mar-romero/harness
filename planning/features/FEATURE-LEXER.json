@@ -1,0 +1,7 @@
+{
+  "id": "FEATURE-LEXER",
+  "type": "FEATURE",
+  "title": "Lexer",
+  "description": "Tokenize input strings into numbers, operators, and parentheses supporting integers, decimals, unary operators, and arbitrary whitespace.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

@@ -27,10 +27,45 @@ from harnesslib import ROOT, write_json_atomic
 OPENROUTER = "https://openrouter.ai/api/v1"
 PROVIDER_DIR = ROOT / "harness" / "model-providers"
 HISTORY_DIR = ROOT / ".harness" / "model-history"
+OPENROUTER_SCORES_PATH = ROOT / ".harness" / "openrouter" / "model-scores.json"
+UNMATCHED_OVERRIDES_PATH = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _project_env(name: str) -> str | None:
+    """Resolve a value from the process environment or the repository .env."""
+    value = os.getenv(name)
+    if value and value.strip():
+        return value.strip()
+
+    env_path = ROOT / ".env"
+    try:
+        lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return None
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, sep, raw_value = line.partition("=")
+        if not sep or key.strip() != name:
+            continue
+        resolved = raw_value.strip()
+        if (
+            len(resolved) >= 2
+            and resolved[0] == resolved[-1]
+            and resolved[0] in {"\"", "'"}
+        ):
+            resolved = resolved[1:-1]
+        return resolved or None
+
+    return None
 
 
 def _load_json(path: Path, fallback: Any = None) -> Any:
@@ -207,6 +242,67 @@ def _resolve_openrouter_id(
 
     if len(matches) > 1:
         return None, "ambiguous"
+
+    return None, "unmatched"
+
+
+def _resolve_benchmark_id(
+    openrouter_id: str | None,
+    bench_idx: dict[str, dict[str, Any]],
+) -> tuple[str | None, str]:
+    if not openrouter_id:
+        return None, "unmatched"
+
+    # 1. Exact benchmark for the OpenRouter model itself.
+    if openrouter_id in bench_idx:
+        return openrouter_id, "exact"
+
+    # 2. Versioned benchmark for the OpenRouter model itself.
+    versioned = sorted(
+        mid
+        for mid in bench_idx
+        if re.fullmatch(
+            re.escape(openrouter_id) + r"-\d{8}",
+            mid,
+        )
+    )
+
+    if len(versioned) == 1:
+        return versioned[0], "unique-versioned"
+
+    if len(versioned) > 1:
+        return None, "ambiguous-versioned"
+
+    # 3. OpenRouter routing variants such as ":free" are the same
+    # underlying model for quality/benchmark purposes.
+    #
+    # Keep pricing, context window and endpoint health from the
+    # variant itself; only inherit benchmark quality from the base model.
+    model_part = openrouter_id.split("/", 1)[-1]
+
+    if ":" in model_part:
+        base_id = openrouter_id.rsplit(":", 1)[0]
+
+        if base_id in bench_idx:
+            return base_id, "base-model-exact"
+
+        base_versioned = sorted(
+            mid
+            for mid in bench_idx
+            if re.fullmatch(
+                re.escape(base_id) + r"-\d{8}",
+                mid,
+            )
+        )
+
+        if len(base_versioned) == 1:
+            return (
+                base_versioned[0],
+                "base-model-unique-versioned",
+            )
+
+        if len(base_versioned) > 1:
+            return None, "base-model-ambiguous-versioned"
 
     return None, "unmatched"
 
@@ -394,7 +490,7 @@ def _codex_home(cfg: dict[str, Any]) -> Path:
         )
     )
 
-    value = os.getenv(env_name)
+    value = _project_env(env_name)
 
     return (
         Path(value).expanduser()
@@ -594,7 +690,7 @@ def discover_codex(
         )
     )
 
-    allow_raw = os.getenv(allow_env, "").strip()
+    allow_raw = (_project_env(allow_env) or "").strip()
 
     if allow_raw:
         allow = {
@@ -884,6 +980,106 @@ def _fetch_sources(
 
     return models, benchmarks
 
+
+def _openrouter_catalog_path(cfg: dict[str, Any]) -> Path:
+    return ROOT / str(
+        cfg.get(
+            "openrouter_catalog",
+            ".harness/openrouter/model-inventory.json",
+        )
+    )
+
+
+def _load_openrouter_catalog(
+    cfg: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _load_json(_openrouter_catalog_path(cfg), {})
+    return payload if _list_payload(payload) else {"models": []}
+
+
+def _write_openrouter_catalog(
+    cfg: dict[str, Any],
+    models_payload: dict[str, Any],
+) -> Path | None:
+    models = [
+        row
+        for row in _list_payload(models_payload)
+        if isinstance(row, dict) and row.get("id")
+    ]
+
+    if not models:
+        return None
+
+    dest = _openrouter_catalog_path(cfg)
+    write_json_atomic(
+        dest,
+        {
+            "schema_version": 1,
+            "provider": "openrouter",
+            "generated_at": _now(),
+            "source": "OpenRouter /api/v1/models",
+            "models": models,
+        },
+    )
+    return dest
+
+
+def _write_raw_provider_inventory(
+    provider: str,
+    cfg: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> Path | None:
+    raw_path = cfg.get("raw_inventory")
+
+    # OpenCode owns and refreshes its raw inventory through the native plugin.
+    # Codex has no equivalent plugin hook, so the explicit operator refresh
+    # materializes the same kind of provider-local availability snapshot here.
+    if provider != "codex" or not raw_path:
+        return None
+
+    models = []
+
+    for candidate in candidates:
+        supports_reasoning = bool(candidate.get("supports_reasoning"))
+        supports_tools = bool(candidate.get("supports_tools"))
+        models.append(
+            {
+                "id": candidate["id"],
+                "enabled": bool(candidate.get("enabled", True)),
+                "native": bool(candidate.get("native", True)),
+                "capabilities": {
+                    "reasoning": 2.0 if supports_reasoning else 0.0,
+                    "coding": 0.0,
+                    "tool_use": 4.0 if supports_tools else 0.0,
+                    "reliability": 0.0,
+                },
+                "cost": 0.0,
+                "latency": 0.0,
+                "context_window": int(candidate.get("context_window") or 0),
+                "notes": (
+                    "Codex runtime availability metadata; quality, price, "
+                    "latency, and reliability are added only in the enriched "
+                    "OpenRouter-backed inventory."
+                ),
+            }
+        )
+
+    dest = ROOT / str(raw_path)
+    write_json_atomic(
+        dest,
+        {
+            "schema_version": 1,
+            "provider": provider,
+            "generated_at": _now(),
+            "source": (
+                "Codex account/build-visible runtime catalog from "
+                "models_cache.json or bundled fallback"
+            ),
+            "models": models,
+        },
+    )
+    return dest
+
 def _local_fallback_scores(local_evidence: dict[str, Any]) -> dict[str, float | int]:
     benchmarks = local_evidence.get("benchmarks", {})
     capabilities = local_evidence.get("capabilities", {})
@@ -937,12 +1133,20 @@ def refresh_provider_inventory(
 ) -> tuple[dict[str, Any], Path]:
     cfg = load_provider_config(provider)
     candidates = discover_provider(provider, cfg)
+    raw_inventory_path = _write_raw_provider_inventory(
+        provider,
+        cfg,
+        candidates,
+    )
 
     api_key = (
         api_key
         if api_key is not None
-        else os.getenv("OPENROUTER_API_KEY")
+        else _project_env("OPENROUTER_API_KEY")
     )
+
+    fetched_models_from_openrouter = False
+    needs_models = models_payload is None
 
     if (
         models_payload is None
@@ -958,6 +1162,9 @@ def refresh_provider_inventory(
                 models_payload
                 or fetched_models
             )
+            fetched_models_from_openrouter = needs_models and bool(
+                _list_payload(fetched_models)
+            )
 
             benchmarks_payload = (
                 benchmarks_payload
@@ -970,10 +1177,7 @@ def refresh_provider_inventory(
             TimeoutError,
             json.JSONDecodeError,
         ) as exc:
-            models_payload = (
-                models_payload
-                or {"data": []}
-            )
+            models_payload = models_payload or _load_openrouter_catalog(cfg)
 
             benchmarks_payload = (
                 benchmarks_payload
@@ -988,6 +1192,20 @@ def refresh_provider_inventory(
     else:
         fetch_error = None
 
+    openrouter_catalog_path = None
+
+    if fetched_models_from_openrouter:
+        openrouter_catalog_path = _write_openrouter_catalog(
+            cfg,
+            models_payload or {},
+        )
+        # Both provider adapters consume the same persisted snapshot. This
+        # keeps OpenCode and Codex matching reproducible within one refresh and
+        # makes the shared catalog the explicit boundary with OpenRouter.
+        models_payload = _load_openrouter_catalog(cfg)
+    elif _list_payload(_load_openrouter_catalog(cfg)):
+        openrouter_catalog_path = _openrouter_catalog_path(cfg)
+
     model_idx = _model_index(
         models_payload or {}
     )
@@ -995,18 +1213,20 @@ def refresh_provider_inventory(
     bench_idx = _benchmark_index(
         benchmarks_payload or {}
     )
-    if provider == "opencode":
-        aliases = cfg.get("openrouter_aliases", {})
+    # Resolve every provider's runtime-visible model IDs against the fetched
+    # OpenRouter catalog. Discovery may provide a provisional/native-derived
+    # ID, but that is not evidence that the model actually exists upstream.
+    aliases = cfg.get("openrouter_aliases", {})
 
-        for candidate in candidates:
-            oid, match_type = _resolve_openrouter_id(
-                candidate["id"],
-                aliases,
-                model_idx,
-            )
+    for candidate in candidates:
+        oid, match_type = _resolve_openrouter_id(
+            candidate["id"],
+            aliases,
+            model_idx,
+        )
 
-            candidate["openrouter_id"] = oid
-            candidate["openrouter_match"] = match_type
+        candidate["openrouter_id"] = oid
+        candidate["openrouter_match"] = match_type
     
     intelligence = {
         mid: x
@@ -1143,6 +1363,10 @@ def refresh_provider_inventory(
     for candidate in candidates:
         native_id = candidate["id"]
         oid = candidate.get("openrouter_id")
+        benchmark_id, benchmark_match = _resolve_benchmark_id(
+            oid,
+            bench_idx,
+        )
         local_evidence = (
             local.get(native_id)
             or (local.get(oid) if oid else {})
@@ -1157,8 +1381,8 @@ def refresh_provider_inventory(
         )
 
         bench = (
-            bench_idx.get(oid, {})
-            if oid
+            bench_idx.get(benchmark_id, {})
+            if benchmark_id
             else {}
         )
 
@@ -1174,8 +1398,8 @@ def refresh_provider_inventory(
         )
 
         reasoning = (
-            reasoning_scores.get(oid, 0.0)
-            if oid
+            reasoning_scores.get(benchmark_id, 0.0)
+            if benchmark_id
             else 0.0
         )
 
@@ -1183,8 +1407,8 @@ def refresh_provider_inventory(
             reasoning = float(local_fallback["reasoning"])
 
         coding_score = (
-            coding_scores.get(oid, 0.0)
-            if oid
+            coding_scores.get(benchmark_id, 0.0)
+            if benchmark_id
             else 0.0
         )
 
@@ -1192,8 +1416,8 @@ def refresh_provider_inventory(
             coding_score = float(local_fallback["coding"])
 
         agentic_score = (
-            agentic_scores.get(oid)
-            if oid
+            agentic_scores.get(benchmark_id)
+            if benchmark_id
             else None
         )
 
@@ -1255,6 +1479,8 @@ def refresh_provider_inventory(
             {
                 "id": native_id,
                 "openrouter_id": oid,
+                "openrouter_benchmark_id": benchmark_id,
+                "openrouter_benchmark_match": benchmark_match,
                 "openrouter_match": (
                     candidate.get(
                         "openrouter_match",
@@ -1305,6 +1531,7 @@ def refresh_provider_inventory(
                     or 0
                 ),
                 "raw_metrics": {
+                    "benchmark_model_id": benchmark_id,
                     "intelligence_index": (
                         _float(
                             bench.get(
@@ -1432,6 +1659,16 @@ def refresh_provider_inventory(
         "openrouter_fetch_error": (
             fetch_error
         ),
+        "openrouter_catalog_path": (
+            openrouter_catalog_path.relative_to(ROOT).as_posix()
+            if openrouter_catalog_path
+            else None
+        ),
+        "raw_inventory_path": (
+            raw_inventory_path.relative_to(ROOT).as_posix()
+            if raw_inventory_path
+            else None
+        ),
         "models": normalized,
     }
 
@@ -1440,129 +1677,772 @@ def refresh_provider_inventory(
     return payload, dest
 
 
+
+def _load_openrouter_scores() -> dict[str, Any]:
+    payload = _load_json(OPENROUTER_SCORES_PATH, {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _central_score_index(
+    scores_payload: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    return {
+        str(row["id"]): row
+        for row in _list_payload(scores_payload)
+        if isinstance(row, dict) and row.get("id")
+    }
+
+
+def _unmatched_override_index() -> dict[str, dict[str, Any]]:
+    path = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
+    payload = _load_json(path, {})
+    if not isinstance(payload, dict):
+        return {}
+    models = payload.get("models", {})
+    if not isinstance(models, dict):
+        return {}
+    return {
+        str(model_id): row
+        for model_id, row in models.items()
+        if isinstance(row, dict)
+    }
+
+
+def _override_score_row(
+    native_id: str,
+    override: dict[str, Any],
+    score_idx: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    strategy = str(override.get("strategy") or "").strip()
+    metadata = {
+        "strategy": strategy or None,
+        "confidence": override.get("confidence"),
+        "reason": override.get("reason"),
+        "sources": override.get("sources", []),
+    }
+
+    if strategy in {"score_alias", "score_proxy"}:
+        source_model_id = str(override.get("score_model_id") or "").strip()
+        if not source_model_id:
+            return {}, None
+        source = score_idx.get(source_model_id)
+        if not source:
+            return {}, None
+        metadata["score_model_id"] = source_model_id
+        metadata["estimated"] = strategy == "score_proxy"
+        if strategy == "score_alias":
+            return source, metadata
+
+        # A proxy is deliberately quality-only: do not pretend that pricing,
+        # endpoint health, latency, or raw commercial metrics of another model
+        # belong to the unmatched native model.
+        source_caps = source.get("capabilities", {})
+        proxy_caps = {
+            "reasoning": source_caps.get("reasoning", 0.0),
+            "coding": source_caps.get("coding", 0.0),
+            "tool_use": source_caps.get("tool_use", 0.0),
+            "reliability": 0.0,
+        }
+        return {
+            "id": native_id,
+            "openrouter_benchmark_id": source.get("openrouter_benchmark_id"),
+            "openrouter_benchmark_match": "proxy",
+            "capabilities": proxy_caps,
+            "cost": 0.0,
+            "latency": 0.0,
+            "context_window": 0,
+            "raw_metrics": {
+                "proxy_model_id": source_model_id,
+                "proxy_reasoning": source_caps.get("reasoning", 0.0),
+                "proxy_coding": source_caps.get("coding", 0.0),
+                "proxy_tool_use": source_caps.get("tool_use", 0.0),
+            },
+            "provenance": {
+                "quality": f"proxy from {source_model_id}",
+                "pricing": None,
+                "endpoint_health": None,
+            },
+        }, metadata
+
+    if strategy == "direct":
+        scores = override.get("scores", {})
+        if not isinstance(scores, dict):
+            return {}, None
+        row = {
+            "id": native_id,
+            "openrouter_benchmark_id": None,
+            "openrouter_benchmark_match": "local-override",
+            "capabilities": scores.get("capabilities", {}),
+            "cost": scores.get("cost", 0.0),
+            "latency": scores.get("latency", 0.0),
+            "context_window": scores.get("context_window", 0),
+            "raw_metrics": scores.get("raw_metrics", {}),
+            "provenance": {
+                "quality": "local unmatched-model override",
+                "pricing": "local unmatched-model override",
+                "endpoint_health": None,
+            },
+        }
+        metadata["estimated"] = bool(override.get("estimated", False))
+        return row, metadata
+
+    return {}, None
+
+
+def _build_openrouter_scores_payload(
+    models_payload: dict[str, Any],
+    benchmarks_payload: dict[str, Any],
+    *,
+    models_fetch_error: str | None = None,
+    benchmarks_fetch_error: str | None = None,
+) -> dict[str, Any]:
+    model_idx = _model_index(models_payload)
+    bench_idx = _benchmark_index(benchmarks_payload)
+
+    intelligence = {
+        mid: value
+        for mid, row in bench_idx.items()
+        if (value := _float(row.get("intelligence_index"))) is not None
+    }
+    coding = {
+        mid: value
+        for mid, row in bench_idx.items()
+        if (value := _float(row.get("coding_index"))) is not None
+    }
+    agentic = {
+        mid: value
+        for mid, row in bench_idx.items()
+        if (value := _float(row.get("agentic_index"))) is not None
+    }
+
+    reasoning_scores = _percentiles(intelligence)
+    coding_scores = _percentiles(coding)
+    agentic_scores = _percentiles(agentic)
+
+    raw_prices: dict[str, float] = {}
+    canonical_models: dict[str, dict[str, Any]] = {}
+    for row in _list_payload(models_payload):
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        oid = str(row["id"])
+        canonical_models[oid] = row
+        price = _price(row, None)
+        if price is not None:
+            raw_prices[oid] = price
+
+    cost_scores = _inverse_rank_scores(raw_prices)
+    rows: list[dict[str, Any]] = []
+
+    for oid in sorted(canonical_models):
+        model = canonical_models[oid]
+        benchmark_id, benchmark_match = _resolve_benchmark_id(oid, bench_idx)
+        bench = bench_idx.get(benchmark_id, {}) if benchmark_id else {}
+        tool_supported = "tools" in (model.get("supported_parameters") or [])
+
+        reasoning = (
+            reasoning_scores.get(benchmark_id, 0.0)
+            if benchmark_id
+            else 0.0
+        )
+        coding_score = (
+            coding_scores.get(benchmark_id, 0.0)
+            if benchmark_id
+            else 0.0
+        )
+        agentic_score = (
+            agentic_scores.get(benchmark_id)
+            if benchmark_id
+            else None
+        )
+        if agentic_score is None:
+            tool_use = 3.0 if tool_supported else 0.0
+        else:
+            tool_use = round(
+                0.70 * agentic_score
+                + 0.30 * (5.0 if tool_supported else 1.0),
+                3,
+            )
+
+        known = [
+            reasoning > 0,
+            coding_score > 0,
+            tool_use > 0,
+            cost_scores.get(oid, 0.0) > 0,
+        ]
+        confidence = round(sum(1 for value in known if value) / len(known), 3)
+
+        rows.append(
+            {
+                "id": oid,
+                "openrouter_benchmark_id": benchmark_id,
+                "openrouter_benchmark_match": benchmark_match,
+                "capabilities": {
+                    "reasoning": reasoning,
+                    "coding": coding_score,
+                    "tool_use": tool_use,
+                    "reliability": 0.0,
+                },
+                "cost": cost_scores.get(oid, 0.0),
+                "latency": 0.0,
+                "context_window": int(model.get("context_length") or 0),
+                "raw_metrics": {
+                    "benchmark_model_id": benchmark_id,
+                    "intelligence_index": _float(bench.get("intelligence_index")),
+                    "coding_index": _float(bench.get("coding_index")),
+                    "agentic_index": _float(bench.get("agentic_index")),
+                    "average_token_price": raw_prices.get(oid),
+                    "latency_p50": None,
+                    "uptime_1d": None,
+                    "tool_parameter_supported": tool_supported,
+                },
+                "provenance": {
+                    "quality": (
+                        "OpenRouter /api/v1/benchmarks artificial-analysis"
+                        if bench
+                        else None
+                    ),
+                    "pricing": "OpenRouter /api/v1/models",
+                    "endpoint_health": None,
+                    "confidence": confidence,
+                },
+            }
+        )
+
+    return {
+        "schema_version": 1,
+        "provider": "openrouter",
+        "generated_at": _now(),
+        "source": (
+            "OpenRouter /api/v1/models + /api/v1/benchmarks; "
+            "provider inventories consume these scores without recalculating them"
+        ),
+        "benchmark_as_of": (
+            benchmarks_payload.get("meta", {}).get("as_of")
+            if isinstance(benchmarks_payload, dict)
+            else None
+        ),
+        "models_fetch_error": models_fetch_error,
+        "benchmarks_fetch_error": benchmarks_fetch_error,
+        "models": rows,
+    }
+
+
+def refresh_openrouter_scores(
+    *,
+    api_key: str | None = None,
+    models_payload: dict[str, Any] | None = None,
+    benchmarks_payload: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Refresh the single shared OpenRouter score catalog once."""
+    api_key = api_key if api_key is not None else _project_env("OPENROUTER_API_KEY")
+
+    models_error = None
+    benchmarks_error = None
+    fetched_models = False
+
+    if models_payload is None:
+        try:
+            models_payload = _http_json(f"{OPENROUTER}/models", api_key)
+            fetched_models = bool(_list_payload(models_payload))
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            TimeoutError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
+            models_error = str(exc)
+            # Shared raw catalog is the network fallback boundary.
+            cfg = {"openrouter_catalog": ".harness/openrouter/model-inventory.json"}
+            models_payload = _load_openrouter_catalog(cfg)
+
+    if benchmarks_payload is None:
+        if not api_key:
+            benchmarks_error = "OPENROUTER_API_KEY missing; benchmark endpoint not queried"
+            benchmarks_payload = {"data": []}
+        else:
+            try:
+                benchmarks_payload = _http_json(
+                    f"{OPENROUTER}/benchmarks?source=artificial-analysis",
+                    api_key,
+                )
+            except (
+                urllib.error.URLError,
+                urllib.error.HTTPError,
+                TimeoutError,
+                OSError,
+                json.JSONDecodeError,
+            ) as exc:
+                benchmarks_error = str(exc)
+                previous = _load_openrouter_scores()
+                # Preserve prior benchmark-derived scores only when we cannot
+                # refresh benchmarks but still have a usable central cache.
+                if _list_payload(previous):
+                    previous["generated_at"] = _now()
+                    previous["models_fetch_error"] = models_error
+                    previous["benchmarks_fetch_error"] = benchmarks_error
+                    write_json_atomic(OPENROUTER_SCORES_PATH, previous)
+                    if fetched_models:
+                        cfg = {"openrouter_catalog": ".harness/openrouter/model-inventory.json"}
+                        _write_openrouter_catalog(cfg, models_payload or {})
+                    return previous, OPENROUTER_SCORES_PATH
+                benchmarks_payload = {"data": []}
+
+    if not _list_payload(models_payload or {}):
+        raise RuntimeError(
+            "OpenRouter model catalog is unavailable and no cached catalog exists"
+        )
+
+    cfg = {"openrouter_catalog": ".harness/openrouter/model-inventory.json"}
+    if fetched_models or models_payload is not None:
+        _write_openrouter_catalog(cfg, models_payload or {})
+
+    payload = _build_openrouter_scores_payload(
+        models_payload or {},
+        benchmarks_payload or {"data": []},
+        models_fetch_error=models_error,
+        benchmarks_fetch_error=benchmarks_error,
+    )
+    write_json_atomic(OPENROUTER_SCORES_PATH, payload)
+    return payload, OPENROUTER_SCORES_PATH
+
+
+def enrich_openrouter_endpoint_health(
+    scores_payload: dict[str, Any],
+    openrouter_ids: list[str],
+    *,
+    api_key: str | None = None,
+    timeout: int = 8,
+    endpoint_payloads: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Add health only for models needed by the selected providers."""
+    api_key = api_key if api_key is not None else _project_env("OPENROUTER_API_KEY")
+    endpoint_payloads = endpoint_payloads or {}
+    score_idx = _central_score_index(scores_payload)
+    latency_values: dict[str, float] = {}
+    uptime_values: dict[str, float] = {}
+
+    for oid in sorted(set(openrouter_ids)):
+        if oid not in score_idx or "/" not in oid:
+            continue
+        payload = endpoint_payloads.get(oid)
+        if payload is None and api_key:
+            author, slug = oid.split("/", 1)
+            try:
+                payload = _http_json(
+                    (
+                        f"{OPENROUTER}/models/{urllib.parse.quote(author)}/"
+                        f"{urllib.parse.quote(slug, safe=':')}/endpoints"
+                    ),
+                    api_key,
+                    timeout=timeout,
+                )
+            except (
+                urllib.error.URLError,
+                urllib.error.HTTPError,
+                TimeoutError,
+                OSError,
+                json.JSONDecodeError,
+            ):
+                payload = None
+
+        if not payload:
+            continue
+        latency, uptime = _endpoint_metrics(payload)
+        if latency is not None:
+            latency_values[oid] = latency
+        if uptime is not None:
+            uptime_values[oid] = uptime
+
+    latency_scores = _inverse_rank_scores(latency_values)
+    for oid, row in score_idx.items():
+        latency = latency_values.get(oid)
+        uptime = uptime_values.get(oid)
+        if latency is not None:
+            row["latency"] = latency_scores.get(oid, 0.0)
+            row.setdefault("raw_metrics", {})["latency_p50"] = latency
+        if uptime is not None:
+            row.setdefault("capabilities", {})["reliability"] = _reliability_score(uptime)
+            row.setdefault("raw_metrics", {})["uptime_1d"] = uptime
+        if latency is not None or uptime is not None:
+            row.setdefault("provenance", {})["endpoint_health"] = "OpenRouter model endpoints"
+
+        caps = row.get("capabilities", {})
+        known = [
+            _float(caps.get("reasoning")) not in (None, 0.0),
+            _float(caps.get("coding")) not in (None, 0.0),
+            _float(caps.get("tool_use")) not in (None, 0.0),
+            _float(caps.get("reliability")) not in (None, 0.0),
+            _float(row.get("cost")) not in (None, 0.0),
+            _float(row.get("latency")) not in (None, 0.0),
+        ]
+        row.setdefault("provenance", {})["confidence"] = round(
+            sum(1 for value in known if value) / len(known), 3
+        )
+
+    scores_payload["generated_at"] = _now()
+    write_json_atomic(OPENROUTER_SCORES_PATH, scores_payload)
+    return scores_payload
+
+
+def _resolve_provider_candidates(
+    provider: str,
+    candidates: list[dict[str, Any]],
+    score_idx: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cfg = load_provider_config(provider)
+    aliases = cfg.get("openrouter_aliases", {})
+    # _resolve_openrouter_id only needs an ID-index; score rows are enough.
+    for candidate in candidates:
+        oid, match_type = _resolve_openrouter_id(
+            candidate["id"],
+            aliases,
+            score_idx,
+        )
+        candidate["openrouter_id"] = oid
+        candidate["openrouter_match"] = match_type
+    return candidates
+
+
+def build_provider_inventory_from_scores(
+    provider: str,
+    scores_payload: dict[str, Any],
+    *,
+    candidates: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Build a provider inventory using only the persisted shared scores."""
+    cfg = load_provider_config(provider)
+    candidates = candidates if candidates is not None else discover_provider(provider, cfg)
+    raw_inventory_path = _write_raw_provider_inventory(provider, cfg, candidates)
+    score_idx = _central_score_index(scores_payload)
+    candidates = _resolve_provider_candidates(provider, candidates, score_idx)
+    local = _local_evidence(provider)
+    unmatched_overrides = _unmatched_override_index()
+    normalized: list[dict[str, Any]] = []
+
+    for candidate in candidates:
+        native_id = candidate["id"]
+        oid = candidate.get("openrouter_id")
+        central = score_idx.get(oid, {}) if oid else {}
+        score_override = None
+        if not central and candidate.get("openrouter_match") in {"unmatched", "ambiguous"}:
+            override = unmatched_overrides.get(native_id, {})
+            if override:
+                central, score_override = _override_score_row(
+                    native_id, override, score_idx
+                )
+
+        central_caps = central.get("capabilities", {}) if central else {}
+        central_raw = central.get("raw_metrics", {}) if central else {}
+        central_provenance = central.get("provenance", {}) if central else {}
+
+        local_evidence = (
+            local.get(native_id)
+            or (local.get(oid) if oid else {})
+            or {}
+        )
+        local_fallback = _local_fallback_scores(local_evidence)
+
+        reasoning = float(central_caps.get("reasoning") or 0.0)
+        if reasoning <= 0:
+            reasoning = float(local_fallback["reasoning"])
+
+        coding_score = float(central_caps.get("coding") or 0.0)
+        if coding_score <= 0:
+            coding_score = float(local_fallback["coding"])
+
+        tool_use = float(central_caps.get("tool_use") or 0.0)
+        if tool_use <= 0:
+            if local_fallback["tool_use"]:
+                tool_use = float(local_fallback["tool_use"])
+            elif candidate.get("supports_tools"):
+                tool_use = 3.0
+
+        reliability = float(central_caps.get("reliability") or 0.0)
+        cost = float(central.get("cost") or 0.0) if central else 0.0
+        latency = float(central.get("latency") or 0.0) if central else 0.0
+
+        used_local_fields = []
+        if not central_caps.get("reasoning") and local_fallback["reasoning"]:
+            used_local_fields.append("reasoning")
+        if not central_caps.get("coding") and local_fallback["coding"]:
+            used_local_fields.append("coding")
+        if not central_caps.get("tool_use") and local_fallback["tool_use"]:
+            used_local_fields.append("tool_use")
+        if not central and local_fallback["context_window"]:
+            used_local_fields.append("context_window")
+
+        known = [
+            reasoning > 0,
+            coding_score > 0,
+            tool_use > 0,
+            reliability > 0,
+            cost > 0,
+            latency > 0,
+        ]
+        confidence = round(sum(1 for value in known if value) / len(known), 3)
+
+        normalized.append(
+            {
+                "id": native_id,
+                "openrouter_id": oid,
+                "openrouter_benchmark_id": central.get("openrouter_benchmark_id"),
+                "openrouter_benchmark_match": central.get(
+                    "openrouter_benchmark_match", "unmatched"
+                ),
+                "openrouter_match": candidate.get("openrouter_match", "unmatched"),
+                "enabled": bool(candidate.get("enabled", True)),
+                "native": bool(candidate.get("native", True)),
+                "vendor": candidate.get("vendor"),
+                "family": candidate.get("family") or _family(oid),
+                "supported_efforts": candidate.get("supported_efforts", []),
+                "capabilities": {
+                    "reasoning": reasoning,
+                    "coding": coding_score,
+                    "tool_use": tool_use,
+                    "reliability": reliability,
+                },
+                "cost": cost,
+                "latency": latency,
+                "context_window": int(
+                    candidate.get("context_window")
+                    or central.get("context_window")
+                    or local_fallback["context_window"]
+                    or 0
+                ),
+                "raw_metrics": {
+                    **central_raw,
+                    "tool_parameter_supported": (
+                        central_raw.get("tool_parameter_supported")
+                        if central
+                        else bool(candidate.get("supports_tools"))
+                    ),
+                },
+                "provenance": {
+                    "availability": candidate.get("availability_source"),
+                    "availability_generated_at": candidate.get("availability_generated_at"),
+                    "quality": central_provenance.get("quality"),
+                    "pricing": central_provenance.get("pricing"),
+                    "endpoint_health": central_provenance.get("endpoint_health"),
+                    "score_catalog": (
+                        ".harness/openrouter/model-scores.json"
+                        if central
+                        and (
+                            not score_override
+                            or score_override.get("strategy")
+                            in {"score_alias", "score_proxy"}
+                        )
+                        else None
+                    ),
+                    "unmatched_override_catalog": (
+                        ".harness/model-overrides/unmatched-models.json"
+                        if score_override
+                        else None
+                    ),
+                    "confidence": confidence,
+                },
+                "score_override": score_override,
+                "local_evidence": local_evidence,
+                "local_fallback_used": bool(used_local_fields),
+                "local_fallback_fields": used_local_fields,
+            }
+        )
+
+    dest = ROOT / str(cfg["enriched_inventory"])
+    availability_times = [
+        candidate.get("availability_generated_at")
+        for candidate in candidates
+        if candidate.get("availability_generated_at")
+    ]
+    payload = {
+        "schema_version": 3,
+        "provider": provider,
+        "generated_at": _now(),
+        "availability_generated_at": (
+            min(availability_times) if availability_times else _now()
+        ),
+        "source": (
+            "runtime availability + shared OpenRouter score catalog "
+            "+ per-field local harness fallback"
+        ),
+        "openrouter_scores_path": OPENROUTER_SCORES_PATH.relative_to(ROOT).as_posix(),
+        "openrouter_scores_generated_at": scores_payload.get("generated_at"),
+        "openrouter_benchmark_as_of": scores_payload.get("benchmark_as_of"),
+        "openrouter_fetch_error": (
+            scores_payload.get("models_fetch_error")
+            or scores_payload.get("benchmarks_fetch_error")
+        ),
+        "raw_inventory_path": (
+            raw_inventory_path.relative_to(ROOT).as_posix()
+            if raw_inventory_path
+            else None
+        ),
+        "models": normalized,
+    }
+    write_json_atomic(dest, payload)
+    return payload, dest
+
+
+def _summary(provider: str, payload: dict[str, Any], dest: Path) -> dict[str, Any]:
+    models = payload.get("models", [])
+    confirmed = {"auto-exact-normalized", "explicit-alias"}
+    matched = [m["id"] for m in models if m.get("openrouter_match") in confirmed]
+    auto_matched = [
+        m["id"] for m in models if str(m.get("openrouter_match", "")).startswith("auto-")
+    ]
+    alias_matched = [
+        m["id"] for m in models if m.get("openrouter_match") == "explicit-alias"
+    ]
+    ambiguous = [m["id"] for m in models if m.get("openrouter_match") == "ambiguous"]
+    unmatched = [
+        m["id"]
+        for m in models
+        if m.get("openrouter_match") not in confirmed | {"ambiguous"}
+    ]
+    return {
+        "provider": provider,
+        "ok": True,
+        "models": len(models),
+        "matched": len(matched),
+        "unmatched": len(unmatched),
+        "unmatched_models": unmatched,
+        "auto_matched": len(auto_matched),
+        "alias_matched": len(alias_matched),
+        "ambiguous": len(ambiguous),
+        "ambiguous_models": ambiguous,
+        "output": str(dest.relative_to(ROOT)),
+        "openrouter_scores": str(OPENROUTER_SCORES_PATH.relative_to(ROOT)),
+        "openrouter_fetch_error": payload.get("openrouter_fetch_error"),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=(
-            "Discover host models and enrich "
-            "them using OpenRouter."
+            "Refresh one shared OpenRouter score catalog, then build provider "
+            "inventories from that local catalog."
         )
     )
-
     ap.add_argument(
         "--provider",
-        choices=[
-            "opencode",
-            "codex",
-            "all",
-        ],
+        choices=["opencode", "codex", "all"],
         default="all",
+        help=(
+            "Provider inventory to build. Provider-specific runs are cache-only; "
+            "use --all to refresh OpenRouter first."
+        ),
     )
-
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help="Alias for --provider all: refresh OpenRouter once and build both providers.",
+    )
+    ap.add_argument(
+        "--openrouter-only",
+        action="store_true",
+        help="Refresh only .harness/openrouter/model-scores.json.",
+    )
+    ap.add_argument(
+        "--cache-only",
+        action="store_true",
+        help=(
+            "Do not call OpenRouter; rebuild selected provider inventories from "
+            "the existing .harness/openrouter/model-scores.json."
+        ),
+    )
     ap.add_argument(
         "--no-endpoints",
         action="store_true",
-        help=(
-            "Skip per-model latency/uptime "
-            "endpoint requests"
-        ),
+        help="Skip optional per-model latency/uptime endpoint requests.",
     )
-
+    ap.add_argument(
+        "--endpoint-timeout",
+        type=int,
+        default=8,
+        help="Timeout in seconds for each optional endpoint-health request (default: 8).",
+    )
     args = ap.parse_args()
 
-    providers = (
-        ["opencode", "codex"]
-        if args.provider == "all"
-        else [args.provider]
-    )
+    selected = "all" if args.all else args.provider
+    providers = ["opencode", "codex"] if selected == "all" else [selected]
+    api_key = _project_env("OPENROUTER_API_KEY")
 
-    rc = 0
+    if args.openrouter_only and args.cache_only:
+        print(json.dumps({"openrouter": False, "error": "--openrouter-only cannot be combined with --cache-only"}))
+        return 2
 
-    for provider in providers:
+    # --all is the single network refresh path. Provider-specific commands only
+    # consume the already-persisted central score catalog unless the operator
+    # explicitly asks for a full refresh.
+    if (selected == "all" or args.openrouter_only) and not args.cache_only:
         try:
-            payload, dest = (
-                refresh_provider_inventory(
-                    provider,
-                    fetch_endpoints=(
-                        not args.no_endpoints
-                    ),
-                )
-            )
-
+            scores_payload, scores_dest = refresh_openrouter_scores(api_key=api_key)
         except Exception as exc:
-            print(
-                json.dumps(
-                    {
-                        "provider": provider,
-                        "ok": False,
-                        "error": str(exc),
-                    },
-                    ensure_ascii=False,
+            print(json.dumps({"openrouter": False, "error": str(exc)}, ensure_ascii=False))
+            return 1
+
+        if not args.no_endpoints and api_key and not args.openrouter_only:
+            score_idx = _central_score_index(scores_payload)
+            endpoint_ids: list[str] = []
+            for provider in providers:
+                cfg = load_provider_config(provider)
+                candidates = discover_provider(provider, cfg)
+                _resolve_provider_candidates(provider, candidates, score_idx)
+                endpoint_ids.extend(
+                    str(candidate["openrouter_id"])
+                    for candidate in candidates
+                    if candidate.get("openrouter_id")
                 )
+            scores_payload = enrich_openrouter_endpoint_health(
+                scores_payload,
+                endpoint_ids,
+                api_key=api_key,
+                timeout=max(1, args.endpoint_timeout),
             )
-
-            rc = 1
-            continue
-
-        models = payload.get("models", [])
-
-        matched = [
-            m["id"]
-            for m in models
-            if m.get("openrouter_id")
-        ]
-
-        auto_matched = [
-            m["id"]
-            for m in models
-            if str(m.get("openrouter_match", "")).startswith("auto-")
-        ]
-
-        alias_matched = [
-            m["id"]
-            for m in models
-            if m.get("openrouter_match") == "explicit-alias"
-        ]
-
-        ambiguous = [
-            m["id"]
-            for m in models
-            if m.get("openrouter_match") == "ambiguous"
-        ]
-
-        unmatched = [
-            m["id"]
-            for m in models
-            if not m.get("openrouter_id")
-            and m.get("openrouter_match") != "ambiguous"
-        ]
 
         print(
             json.dumps(
                 {
-                    "provider": provider,
-                    "ok": True,
-                    "models": len(models),
-                    "matched": len(matched),
-                    "unmatched": len(unmatched),
-                    "unmatched_models": unmatched,
-                    "auto_matched": len(auto_matched),
-                    "alias_matched": len(alias_matched),
-                    "ambiguous": len(ambiguous),
-                    "ambiguous_models": ambiguous,
-                    "output": str(
-                        dest.relative_to(ROOT)
-                    ),
-                    "openrouter_fetch_error": (
-                        payload.get(
-                            "openrouter_fetch_error"
-                        )
-                    ),
+                    "openrouter": True,
+                    "models": len(scores_payload.get("models", [])),
+                    "output": str(scores_dest.relative_to(ROOT)),
+                    "benchmark_as_of": scores_payload.get("benchmark_as_of"),
+                    "models_fetch_error": scores_payload.get("models_fetch_error"),
+                    "benchmarks_fetch_error": scores_payload.get("benchmarks_fetch_error"),
                 },
                 indent=2,
                 ensure_ascii=False,
             )
         )
+        if args.openrouter_only:
+            return 0
+    else:
+        scores_payload = _load_openrouter_scores()
+        if not _list_payload(scores_payload):
+            print(
+                json.dumps(
+                    {
+                        "provider": selected,
+                        "ok": False,
+                        "error": (
+                            "shared OpenRouter score catalog is missing; run "
+                            "python scripts/openrouter_sync.py --all first"
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 1
 
+    rc = 0
+    for provider in providers:
+        try:
+            payload, dest = build_provider_inventory_from_scores(provider, scores_payload)
+        except Exception as exc:
+            print(json.dumps({"provider": provider, "ok": False, "error": str(exc)}, ensure_ascii=False))
+            rc = 1
+            continue
+        print(json.dumps(_summary(provider, payload, dest), indent=2, ensure_ascii=False))
     return rc
 
 

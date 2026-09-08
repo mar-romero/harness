@@ -15,6 +15,9 @@
     ],
     "allowlist_env": "HARNESS_CODEX_MODELS"
   },
+  "openrouter_aliases": {},
+  "openrouter_catalog": ".harness/openrouter/model-inventory.json",
+  "raw_inventory": ".harness/codex/model-inventory.json",
   "openrouter": {
     "id_prefix": "openai/",
     "benchmark_source": "artificial-analysis",

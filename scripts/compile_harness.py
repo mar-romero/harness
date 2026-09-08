@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, re, shutil
+import argparse, json, re, sys
 from pathlib import Path
 from harnesslib import ROOT, load_manifest
 
@@ -16,6 +16,16 @@ CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
 CODEX_HOOKS = Path(".codex/hooks.json")
 CODEX_ACI_ENTRY = Path(".codex/aci_mcp_entry.py")
 ORCHESTRATOR_ROLE = ROOT / ".agents" / "roles" / "harness-orchestrator.md"
+
+
+def _codex_hook_command(script: str) -> str:
+    """Return a repository-relative, cross-machine Python hook command.
+
+    Codex runs project hooks from the project workspace. Keeping both the
+    interpreter and script relative avoids embedding the compiler host's user,
+    drive, or checkout path into the generated adapter.
+    """
+    return f"python scripts/{script}"
 
 
 def _codex_binding(name):
@@ -189,7 +199,7 @@ if __name__ == "__main__":
                 "matcher": "startup|resume|clear|compact",
                 "hooks": [{
                     "type": "command",
-                    "command": "python3 scripts/codex_context_hook.py",
+                    "command": _codex_hook_command("codex_context_hook.py"),
                     "timeout": 3,
                     "statusMessage": "Loading active harness context",
                 }],
@@ -197,7 +207,7 @@ if __name__ == "__main__":
             "SubagentStart": [{
                 "hooks": [{
                     "type": "command",
-                    "command": "python3 scripts/codex_context_hook.py",
+                    "command": _codex_hook_command("codex_context_hook.py"),
                     "timeout": 3,
                     "statusMessage": "Loading active harness context",
                 }],
@@ -207,7 +217,7 @@ if __name__ == "__main__":
                     "matcher": "^Bash$",
                     "hooks": [{
                         "type": "command",
-                        "command": "python3 scripts/codex_hook.py",
+                        "command": _codex_hook_command("codex_hook.py"),
                         "timeout": 3,
                         "statusMessage": "Checking repository command policy",
                     }],
@@ -216,7 +226,7 @@ if __name__ == "__main__":
                     "matcher": "^apply_patch$",
                     "hooks": [{
                         "type": "command",
-                        "command": "python3 scripts/codex_hook.py",
+                        "command": _codex_hook_command("codex_hook.py"),
                         "timeout": 3,
                         "statusMessage": "Checking repository write policy",
                     }],
@@ -225,7 +235,7 @@ if __name__ == "__main__":
                     "matcher": "^Agent$",
                     "hooks": [{
                         "type": "command",
-                        "command": "python3 scripts/codex_hook.py",
+                        "command": _codex_hook_command("codex_hook.py"),
                         "timeout": 3,
                         "statusMessage": "Checking harness subagent allowlist",
                     }],

@@ -1,14 +1,17 @@
 import json
 import subprocess
 import sys
+import tempfile
 import tomllib
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import aci_core
 from aci_core import call_tool, repo_read_range, repo_search, tool_definitions
 
 
@@ -89,6 +92,15 @@ class ACICoreTests(unittest.TestCase):
         result = call_tool("tests_run", {"command": "echo hacked"})
         self.assertFalse(result["ok"])
         self.assertIn("invalid arguments", result["error"])
+
+    def test_runtime_permission_audit_jsonl_is_readable(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(aci_core, "ROOT", Path(td)):
+            audit = Path(td) / ".harness/opencode/permission-audit.jsonl"
+            audit.parent.mkdir(parents=True)
+            audit.write_text('{"action":"shell"}\n', encoding="utf-8")
+            result = aci_core.repo_read_range(".harness/opencode/permission-audit.jsonl", 1, 2)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["data"]["lines"][0]["text"], '{"action":"shell"}')
 
 
 class ACIMCPProtocolTests(unittest.TestCase):

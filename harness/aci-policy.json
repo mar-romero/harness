@@ -30,7 +30,7 @@
   "text_extensions": [
     ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt",
     ".cs", ".rb", ".php", ".swift", ".md", ".json", ".yaml", ".yml",
-    ".toml", ".sh", ".sql", ".graphql", ".proto", ".html", ".css", ".scss"
+    ".toml", ".sh", ".sql", ".graphql", ".proto", ".html", ".css", ".scss", ".jsonl"
   ],
   "text_names": [
     "Dockerfile", "Makefile", "Justfile", "Procfile", "README", "LICENSE"

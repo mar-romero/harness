@@ -1,0 +1,7 @@
+{
+  "id": "FEATURE-EVALUATOR",
+  "type": "FEATURE",
+  "title": "Evaluator",
+  "description": "Evaluate AST using float64 semantics with division by zero detection.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

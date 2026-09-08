@@ -1,0 +1,7 @@
+{
+  "id": "PROJ-TEST-HARNESS",
+  "type": "PROJECT",
+  "title": "Safe CLI Arithmetic Expression Evaluator",
+  "description": "Create an isolated Python project at examples/test-harness implementing a safe CLI arithmetic expression evaluator with recursive descent parser, float64 semantics, and Spanish error messages.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

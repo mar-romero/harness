@@ -1,21 +1,29 @@
-# Evals
+# Deterministic evaluations
 
-The default suite is deliberately deterministic and credential-free:
-
-1. **behavior fixtures** exercise router and command-gate decisions;
-2. **agent contract evals** cover every canonical role, including single-writer,
-   read-only and no-delegation invariants;
-3. **skill contract evals** cover every canonical skill's portable Agent Skills
-   structure and reject provider-agent paths inside canonical skill bodies.
-
-Run:
+The default evaluation suite is credential-free and deterministic. It checks
+behavior fixtures, canonical role contracts, and canonical skill structure; it
+does not measure live model quality.
 
 ```bash
-python3 scripts/run_evals.py
+python scripts/run_evals.py
 ```
 
-These contract evals catch harness regressions, but they do not measure model
-quality. For release qualification, run the same task corpus through each
-installed provider and collect task success, defect introduction, review
-precision/recall, token/cost/latency and human-intervention metrics. Those
-provider-backed benchmarks are intentionally not faked by this starter.
+```mermaid
+flowchart LR
+    A[Fixtures] --> D[Deterministic eval result]
+    B[Role contracts] --> D
+    C[Skill contracts] --> D
+    D -. not a substitute for .-> E[Authenticated provider evaluation]
+```
+
+For repeated provider-backed evaluation, `scripts/runtime_eval.py` accepts a
+suite and an external adapter command. The adapter owns provider authentication
+and must write a result JSON containing at least `passed: true|false`.
+
+```bash
+python scripts/runtime_eval.py --help
+```
+
+Keep credentials and private holdouts outside the repository. Live provider
+results are external evidence and must record their provider, model, timestamp,
+and execution environment.

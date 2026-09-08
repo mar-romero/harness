@@ -1,0 +1,7 @@
+{
+  "id": "FEATURE-TESTS",
+  "type": "FEATURE",
+  "title": "Test Suite",
+  "description": "Unit tests for lexer, parser, evaluator and integration tests for CLI covering all acceptance criteria.",
+  "discovery_id": "test-harness-arithmetic-evaluator"
+}

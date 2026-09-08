@@ -1,5 +1,8 @@
 # Release lineage
 
+> Historical lineage only. It is not an installation, migration, or provider
+> compatibility contract for a target repository.
+
 This final source tree is already merged; do not re-apply the older ZIPs.
 
 1. **v2 core:** canonical manifest, router, executable gates, evals, worktrees,

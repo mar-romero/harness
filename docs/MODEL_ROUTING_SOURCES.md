@@ -1,5 +1,8 @@
 # External sources used by this design
 
+> External links are mutable. Verify them before changing the implementation;
+> a particular refresh is evidenced by its local score catalog and provenance.
+
 Checked 2026-09-04.
 
 - OpenRouter model catalog API: https://openrouter.ai/docs/api/api-reference/models/get-models

@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_context_hook.py",
+            "command": "python scripts/codex_context_hook.py",
             "timeout": 3,
             "statusMessage": "Loading active harness context"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_context_hook.py",
+            "command": "python scripts/codex_context_hook.py",
             "timeout": 3,
             "statusMessage": "Loading active harness context"
           }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_hook.py",
+            "command": "python scripts/codex_hook.py",
             "timeout": 3,
             "statusMessage": "Checking repository command policy"
           }
@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_hook.py",
+            "command": "python scripts/codex_hook.py",
             "timeout": 3,
             "statusMessage": "Checking repository write policy"
           }
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_hook.py",
+            "command": "python scripts/codex_hook.py",
             "timeout": 3,
             "statusMessage": "Checking harness subagent allowlist"
           }

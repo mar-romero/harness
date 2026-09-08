@@ -1,57 +1,48 @@
-# Provider compatibility notes
+# Provider compatibility
 
-Verification date: **2026-09-02**.
+## Portable core and provider-native boundaries
 
-This harness keeps the portable policy, roles and skill bodies canonical and
-limits provider files to adapters. Provider behavior still depends on the
-installed CLI/version, organization policy, plan and permissions.
+The portable core is the canonical manifest, roles, skills, task artifacts,
+risk policy, and evidence contract. Provider directories are generated adapter
+outputs. The current manifest defines adapters for Codex, OpenCode, Claude,
+Cursor, Gemini, and Copilot.
 
-| Provider | Project agents | Canonical skills | Native gate bridge in this starter | Model policy |
-|---|---|---|---|---|
-| Codex | `.codex/agents/*.toml` | `.agents/skills/` | canonical gate CLI + Codex sandbox/permission layer | inherit |
-| Claude Code | `.claude/agents/*.md` | generated `.claude/skills/*` wrappers -> `.agents/skills/*` | `.claude/settings.json` `PreToolUse` | inherit |
-| Cursor | `.cursor/agents/*.md` | `.agents/skills/` | `.cursor/hooks.json` | inherit |
-| Gemini CLI | `.gemini/agents/*.md` | `.agents/skills/` | `.gemini/settings.json` `BeforeTool` | inherit |
-| OpenCode | `.opencode/agents/*.md` + primary orchestrator | `.agents/skills/` | native `.opencode/plugins/harness/index.ts` permission/shell bridge | live catalog + harness model router |
-| GitHub Copilot CLI | `.github/agents/*.agent.md` | `.agents/skills/` | canonical gate CLI + provider permissions | inherit |
+| Provider | Generated adapter location | Active-task behavior |
+|---|---|---|
+| Codex | `.codex/agents/*.toml` | Task activation persists a Codex binding and injects selected model/effort into regenerated agents. |
+| OpenCode | `.opencode/agents/*.md` and plugin assets | Task activation persists an OpenCode binding consumed by its local integration. |
+| Claude | `.claude/agents/*.md`, `.claude/skills/` | Generated adapter; live behavior depends on the installed CLI. |
+| Cursor | `.cursor/agents/*.md` | Generated adapter; live behavior depends on the installed CLI. |
+| Gemini | `.gemini/agents/*.md` | Generated adapter; live behavior depends on the installed CLI. |
+| Copilot | `.github/agents/*.agent.md` | Generated adapter; live behavior depends on the installed CLI. |
 
-## Why Claude has wrappers
+## Verification level
 
-The skill body still lives once under `.agents/skills/<skill>/SKILL.md`.
-Claude Code discovers project skills under `.claude/skills/`, so the compiler
-generates a small wrapper that imports the canonical skill instead of copying
-its body. `scripts/compile_harness.py --check` rejects wrapper drift.
+```mermaid
+flowchart LR
+    A[Canonical sources] --> B[compile --check]
+    B --> C[Local syntax and drift evidence]
+    C -. does not prove .-> D[Authenticated provider runtime behavior]
+```
+
+`python scripts/compile_harness.py --check` deterministically checks generated
+artifact synchronization. It does not prove that a provider CLI version,
+account, organization policy, or sandbox accepts and invokes every adapter.
+Use the provider's own inspection/runtime command in the target environment.
 
 ## Privilege model
 
-Strict inspection agents (`explorer`, `planner`, `reviewer`,
-`security-reviewer`, `test-auditor`, `docs-researcher`) do not receive shell
-capability where the provider adapter can express that restriction. `debugger`
-and `verifier` are read-only with execution capability: they can reproduce or
-verify behavior but are not given edit tools. `implementer` is the only writer.
+The canonical manifest marks `implementer` as the only writer. Exploration,
+planning, research, review, security review, test audit, debugging, and
+verification are read-only roles; debugger and verifier may execute allowed
+checks. Provider sandboxes and permission prompts remain authoritative where a
+provider supports them.
 
-Provider-native sandboxes and permission prompts remain in force. A harness
-hook blocks unsafe operations but does not auto-authorize safe operations on
-providers where an allow decision would bypass the provider permission UI.
+Hooks provide an additional local policy bridge. They do not silently grant
+provider permissions or replace human approval for external side effects.
 
-## OpenCode-specific integration
+## Current portability limitation
 
-The final build adds a local OpenCode plugin that refreshes the live enabled model catalog, writes a conservative runtime inventory, applies reviewed per-model overrides, injects the active task/progress context and passes edit/shell decisions through the canonical gates. `/harness-request` is the preferred multilingual entry point and `/harness-task` activates an already-normalized task.
-
-## Known portability boundary
-
-The generated files are syntax- and structure-checked locally, but this starter
-cannot prove live discovery/invocation against every provider without those
-CLIs being installed and authenticated. In particular, named custom-agent
-availability can vary by CLI version/surface even when the configuration file
-is valid. Run the provider's own agent/skill inspection command after cloning
-into a real project.
-
-## Authoritative references used for this revision
-
-- OpenAI Codex agents/configuration: https://developers.openai.com/codex/
-- Claude Code subagents, skills and hooks: https://code.claude.com/docs/
-- Cursor subagents and hooks: https://cursor.com/docs/
-- Gemini CLI subagents, skills and hooks: https://geminicli.com/docs/
-- OpenCode agents and skills: https://opencode.ai/docs/
-- GitHub Copilot CLI custom agents and skills: https://docs.github.com/en/copilot/
+This repository has no supported cross-repository installer. See
+[INSTALLATION.md](INSTALLATION.md) for the current source-checkout status and
+the requirements for a future safe installer.

@@ -71,10 +71,42 @@ def build_initial(task: dict, route: dict, impact: dict | None=None):
     }
     return state
 
+
+def _reconcile_existing(state: dict, task: dict, route: dict) -> tuple[dict, bool]:
+    """Rebuild stale routing fields without discarding durable escalation evidence."""
+    impact = _impact_for(task["id"])
+    expected = build_initial(task, route, impact)
+    routing_fields = ("risk", "route_agents", "impact_severity")
+    if all(state.get(field) == expected[field] for field in routing_fields):
+        return state, False
+
+    old_agents = list(state.get("route_agents") or [])
+    old_current = list(state.get("current_agents") or [])
+    expected["created_at"] = state.get("created_at", expected["created_at"])
+    expected["signals"] = list(state.get("signals") or [])
+    expected["escalations"] = list(state.get("escalations") or [])
+    for agent in old_current:
+        if agent in expected["route_agents"] and agent not in expected["mandatory_gate_agents"]:
+            if agent not in expected["current_agents"]:
+                expected["current_agents"].append(agent)
+    expected["history"] = list(state.get("history") or []) + [{
+        "at": now(),
+        "event": "route_reconciled",
+        "old_risk": state.get("risk"),
+        "new_risk": expected["risk"],
+        "old_route_agents": old_agents,
+        "new_route_agents": expected["route_agents"],
+    }]
+    return expected, True
+
 def init(task: dict, route: dict, overwrite: bool=False):
     path=budget_path(task["id"])
     if path.exists() and not overwrite:
-        return json.loads(path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state, changed = _reconcile_existing(state, task, route)
+        if changed:
+            write_json_atomic(path, state)
+        return state
     state=build_initial(task,route,_impact_for(task["id"]))
     write_json_atomic(path,state)
     return state

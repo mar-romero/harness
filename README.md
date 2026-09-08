@@ -1,213 +1,142 @@
-# Portable Agent Engineering Harness — Final v4
+# Portable Agent Engineering Harness
 
-This is the **consolidated project**: v2 core + v3 model routing/evolution + the
-OpenCode native overlay + the requested research-driven upgrades **1, 3, 4, 5,
-8, 9 and 10**. Use this repository as the current version; the previous ZIPs do
-not need to be layered on top of it.
+This repository is a policy-driven engineering harness for AI-assisted work in
+Git repositories. It turns a scoped request into a durable task, routes the
+required roles and risk controls, creates bounded context, isolates the single
+implementation writer, and requires evidence before a task can close.
 
-## Core workflow preserved
+It is **not yet packaged as an installable CLI**. There is no `pyproject.toml`,
+`setup.py`, or supported `harnes init` command in this revision. Run it from a
+clone of this repository. Copying its files into another repository is not a
+supported installation path and may overwrite that repository's policy or
+provider configuration. The planned portable-distribution boundary is recorded
+in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
-`REQUEST → TASK → ROUTE → RISK → CONTEXT → IMPLEMENT → CHECKS → REVIEW → VERIFY → CLOSE`
+## What it does
 
-Language normalization happens inside REQUEST→TASK, and the progress ledger
-controls the existing stages rather than replacing them.
-
-## Providers
-
-- OpenAI Codex
-- Claude Code
-- Cursor
-- Gemini CLI
-- OpenCode (native plugin, permissions, model catalog and task activation)
-- GitHub Copilot CLI
-
-Provider adapters are generated from the same canonical roles. The harness is
-provider-portable; provider runtime behavior must still be tested with the
-actual authenticated CLI/environment.
-
-## Consolidated capabilities
-
-### Existing v2/v3/OpenCode layers
-
-- canonical manifest and generated provider adapters;
-- deterministic task/risk routing;
-- executable command/path/finish gates;
-- 9 capability-based agents and 28 skills;
-- one writer per isolated Git worktree;
-- bounded context packs;
-- hash-chained evidence ledger;
-- dynamic capability-based model routing;
-- proposal-only evolution engine;
-- OpenCode orchestrator, native plugin gates and live model inventory.
-
-### Research-driven additions in this final build
-
-1. **Canonical English request boundary + structured multilingual risk.** The
-   original prompt is immutable; downstream agents use `canonical_english`.
-   Deterministic invariants, a back-translation and an `EXACT_INTENT`
-   attestation are required for non-English prompts. Natural-language
-   translation cannot be mathematically guaranteed to be 100% identical, so
-   ambiguity fails closed rather than being silently accepted.
-3. **Runtime Eval Lab.** Repeated real-provider rollouts record success,
-   `pass_power_k`, tokens, cost, latency, unsafe attempts and human intervention.
-4. **Typed handoffs.** Explorer/planner/implementer/reviewer/verifier outputs
-   validate against JSON contracts before becoming authoritative handoffs.
-5. **Progress Ledger.** Durable orchestration state detects repeated failures,
-   stalls and when to return to debugger/planner instead of looping.
-8. **Signed provenance.** R3 closure requires an Ed25519 attestation over the
-   candidate/control-plane/evidence state; private signing keys must live outside
-   the repository.
-9. **Context + Memory v2.** Context uses token estimates and repository graph
-   neighbors; reusable memory can only be explicitly promoted from a task whose
-   finish gate already passes.
-10. **Champion/challenger evolution.** Runtime-eval runs can be compared on
-   holdout cases with bootstrap confidence estimates and hard safety constraints.
-   Promotion is always human-reviewed and never auto-applied.
-
-## Spanish → canonical English
-
-The safest daily path is to let the primary agent/orchestrator create the task.
-In OpenCode use:
-
-```text
-/harness-request <tu pedido en español>
+```mermaid
+flowchart LR
+    R[Request] --> T[Durable task]
+    T --> RR[Route and risk]
+    RR --> C[Bounded context]
+    C --> W[One writer in a worktree]
+    W --> K[Deterministic checks]
+    K --> V[Independent review and verification]
+    V --> F[Evidence-backed close]
 ```
 
-The harness preserves the Spanish text, creates the English canonical request,
-back-translates it, validates protected literals/negation/constraints and then
-routes the English task. If exact intent is uncertain, it must ask instead of
-guessing.
+The canonical control plane is `harness/manifest.yaml`, with canonical roles in
+`.agents/roles/` and skills in `.agents/skills/`. Provider-specific files are
+generated adapters. Do not edit generated adapters by hand; regenerate them
+with `python scripts/compile_harness.py`.
 
-Manual normalization is also available:
+## Verified local prerequisites
+
+- Python 3.11 or newer (`tomllib` is used by the checked-in scripts).
+- Git for worktree isolation and publication.
+- An authenticated provider CLI only when using that provider.
+- `OPENROUTER_API_KEY` only when explicitly refreshing OpenRouter data.
+
+## Start from this repository
+
+From the repository root, use the interpreter available as `python` on your
+system (replace it with `python3` where that is the local command):
 
 ```bash
-python3 scripts/request_normalizer.py tasks/TASK-001.json \
-  --language es \
-  --english "Exact English rendering produced by the agent" \
-  --back-translation "Traducción inversa para verificar significado" \
-  --equivalence EXACT_INTENT
+python scripts/compile_harness.py --check
+python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/run_evals.py
 ```
 
-For security-sensitive work, also populate `risk_factors`; structured flags take
-precedence over language-dependent keyword inference.
+`scripts/check_harness.py` is a **starter-tree** check. It intentionally fails
+when `.harness/runs/` already contains runtime evidence, so do not use it as a
+general health check in an active workspace.
 
-## Standard task activation
+## Task lifecycle
+
+```mermaid
+sequenceDiagram
+    participant H as Human
+    participant O as Orchestrator
+    participant P as Provider
+    participant E as Evidence ledger
+    H->>O: Approved scoped request
+    O->>O: Normalize, snapshot, route, build context
+    O->>P: Activate immutable task binding
+    P->>P: Read-only specialists and one isolated writer
+    P->>E: Checks, review, verification evidence
+    E-->>H: R3 also requires security review and human gate
+```
+
+For a task JSON, route and create context with:
 
 ```bash
-python3 scripts/compile_harness.py
-bash scripts/check-harness.sh
-python3 scripts/task_router.py tasks/TASK-001.json
-python3 scripts/context_compiler.py tasks/TASK-001.json \
+python scripts/task_router.py tasks/TASK-001.json
+python scripts/context_compiler.py tasks/TASK-001.json \
   --route .harness/runs/TASK-001/route.json
-python3 scripts/orchestrator.py init TASK-001 \
+python scripts/orchestrator.py init TASK-001 \
   --route .harness/runs/TASK-001/route.json
-python3 scripts/evidence.py init TASK-001
+python scripts/evidence.py init TASK-001
 ```
 
-OpenCode performs those runtime bindings through:
-
-```text
-/harness-task tasks/TASK-001.json
-```
-
-## Typed handoffs
-
-Validate/save a specialist result before the next stage consumes it:
+Provider activation also creates the immutable task snapshot and task-scoped
+runtime artifacts. Activate before delegating to that provider, and clear the
+binding before worktree publication:
 
 ```bash
-python3 scripts/handoff.py validate planner /tmp/plan.json
-python3 scripts/handoff.py save planner /tmp/plan.json
+python scripts/providers/codex_activate_task.py tasks/TASK-001.json
+python scripts/providers/codex_activate_task.py --clear
+
+python scripts/providers/opencode_activate_task.py tasks/TASK-001.json
+python scripts/providers/opencode_activate_task.py --clear
 ```
 
-Schemas live under `harness/schema/handoffs/`.
+## Model scores and routing
 
-## Progress / replanning
+Model availability belongs to the provider runtime; OpenRouter is an external
+quality, price, and endpoint-health prior. A refresh is operator-triggered and
+never occurs during task activation.
+
+```mermaid
+flowchart TD
+    A[Explicit operator refresh] --> B[OpenRouter catalog and benchmarks]
+    B --> C[.harness/openrouter/model-scores.json]
+    C --> D[Provider runtime availability]
+    D --> E[Provider inventory]
+    E --> F[Per-role task selection]
+    F --> G[Activation writes local binding]
+```
+
+To refresh once and build both provider inventories:
 
 ```bash
-python3 scripts/orchestrator.py status TASK-001
-python3 scripts/orchestrator.py record TASK-001 --status PASS
-python3 scripts/orchestrator.py record TASK-001 --status FAIL --note "same test still fails"
+OPENROUTER_API_KEY="..." python scripts/openrouter_sync.py --all --no-endpoints
 ```
 
-A repeated failed action becomes `STALLED` and returns an explicit debugger /
-planner / implementer recommendation instead of treating retries as progress.
+On PowerShell, set the environment variable for the current process first:
 
-## Runtime Eval Lab
-
-Provider-specific adapters intentionally remain external-command adapters so
-volatile CLI syntax is not hard-coded into the canonical harness.
-
-```bash
-python3 scripts/runtime_eval.py \
-  --suite harness/runtime-evals/cases/example.json \
-  --adapter python3 path/to/your-provider-adapter.py \
-  --trials 5 --provider opencode --model provider/model --agent implementer
+```powershell
+$env:OPENROUTER_API_KEY = "..."
+python scripts/openrouter_sync.py --all --no-endpoints
 ```
 
-Results are written under `.harness/runtime-evals/runs/` and can feed model
-selection and evolution experiments.
+Use `--cache-only` to rebuild inventories without network access. See
+[docs/MODEL_ROUTING_V2.md](docs/MODEL_ROUTING_V2.md) for the exact source,
+matching, persistence, and failure behavior.
 
-## R3 signed attestation
+## Documentation map
 
-Generate an Ed25519 key **outside the repository**:
+- [Installation and portability status](docs/INSTALLATION.md)
+- [Architecture and trust boundaries](docs/HARNESS_ARCHITECTURE.md)
+- [Model routing and score refresh](docs/MODEL_ROUTING_V2.md)
+- [Provider compatibility](docs/PROVIDER_NOTES.md)
+- [Product discovery](docs/PRODUCT_DISCOVERY.md)
+- [Evaluation and benchmarking](evals/README.md) and [benchmarks/README.md](benchmarks/README.md)
+- [Historical records and limitations](AUDIT.md), [docs/RELEASE_LINEAGE.md](docs/RELEASE_LINEAGE.md)
 
-```bash
-openssl genpkey -algorithm ED25519 -out ~/.config/harness-attest.pem
-openssl pkey -in ~/.config/harness-attest.pem -pubout \
-  -out ~/.config/harness-attest.pub.pem
-```
+## Verification boundary
 
-After all pre-attestation R3 evidence exists:
-
-```bash
-python3 scripts/attest.py create TASK-001 --risk R3 \
-  --private-key ~/.config/harness-attest.pem
-python3 scripts/attest.py verify .harness/runs/TASK-001/attestation.json \
-  --public-key ~/.config/harness-attest.pub.pem
-```
-
-The attestation records the prior evidence-chain head, Git state where available,
-manifest/context/route/model-selection hashes and runtime version. R3 finish now
-requires deterministic `attestation` evidence in addition to security review and
-human approval.
-
-## Verified memory
-
-A task cannot become reusable memory until its own risk-aware finish gate passes:
-
-```bash
-python3 scripts/memory.py promote TASK-001 \
-  --title "Idempotent invoice migration" \
-  --summary "Verified approach and constraints" \
-  --lesson "Keep the migration resumable" \
-  --approved-by "human-reviewer"
-```
-
-The context compiler retrieves only approved local memories by relevance.
-
-## Champion / challenger
-
-Run the same holdout suite against the current champion and an isolated
-challenger, then compare:
-
-```bash
-python3 scripts/evolution_experiment.py \
-  --champion .harness/runtime-evals/runs/CHAMPION.json \
-  --challenger .harness/runtime-evals/runs/CHALLENGER.json
-```
-
-Possible decisions are `PROMOTE_FOR_HUMAN_REVIEW`, `KEEP_CHAMPION`,
-`INCONCLUSIVE`, `INSUFFICIENT_DATA` or `INCOMPARABLE`. There is no auto-apply
-code path.
-
-## Verify the harness
-
-```bash
-python3 scripts/compile_harness.py --check
-bash scripts/check-harness.sh
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-python3 scripts/run_evals.py
-```
-
-See `docs/RELEASE_LINEAGE.md`, `docs/FINAL_UPGRADES.md`, `AUDIT.md` and
-`AUDIT_RESULTS.txt` for scope and residual limitations.
+Commands and paths in the operational documents are derived from checked-in
+script interfaces. Provider discovery, authentication, and OpenRouter responses
+remain external state; those results must be verified in the operator's own
+environment and are never implied by a local documentation check.
