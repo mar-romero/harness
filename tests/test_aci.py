@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tomllib
 import unittest
 import uuid
 from pathlib import Path
@@ -12,6 +13,12 @@ from aci_core import call_tool, repo_read_range, repo_search, tool_definitions
 
 
 class ACICoreTests(unittest.TestCase):
+    def test_codex_project_mcp_starts_from_repository_root(self):
+        config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        server = config["mcp_servers"]["harness-aci"]
+        self.assertEqual(server["cwd"], "..")
+        self.assertEqual(server["args"], ["scripts/aci_mcp.py"])
+
     def test_tool_catalog_is_small_deterministic_and_typed(self):
         tools = tool_definitions()
         names = [item["name"] for item in tools]
@@ -101,6 +108,16 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(len(responses[1]["result"]["tools"]), 10)
         self.assertFalse(responses[2]["result"]["isError"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
+
+    def test_initialize_negotiates_the_client_protocol_version(self):
+        requested = "2025-03-26"
+        response = self._exchange([{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": requested, "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}},
+        }])[0]
+        self.assertEqual(response["result"]["protocolVersion"], requested)
 
     def test_modern_discovery_and_tool_list(self):
         meta = {

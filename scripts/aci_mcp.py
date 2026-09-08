@@ -68,7 +68,13 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "initialize":
         legacy_initialized = True
         requested = params.get("protocolVersion")
-        selected = requested if requested in LEGACY_VERSIONS else LEGACY_VERSIONS[0]
+        if not isinstance(requested, str) or not requested:
+            return _error(req_id, -32602, "initialize requires protocolVersion")
+        # MCP clients send the protocol revision they implement. Returning an
+        # unrelated fixed revision closes the connection during initialization
+        # in newer Codex clients, even though this server uses only the common
+        # JSON-RPC tool surface. Negotiate the client's declared revision.
+        selected = requested
         return _response(req_id, {
             "protocolVersion": selected,
             "capabilities": {"tools": {"listChanged": False}},
