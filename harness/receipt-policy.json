@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "name": "receipt-driven-development",
+  "enabled_by_default": false,
+  "mode_file": ".harness/receipt-review/mode.json",
+  "consent": {
+    "scope": "provider_session",
+    "ask_once_per_session": true,
+    "candidate_receipt_still_required_per_candidate": true,
+    "providers_with_native_session_capture": [
+      "codex",
+      "opencode"
+    ]
+  },
+  "assessment": {
+    "passive_extensions": [
+      ".md",
+      ".txt",
+      ".rst",
+      ".adoc"
+    ],
+    "passive_prefixes": [
+      "docs/",
+      "planning/",
+      "specs/",
+      "sprints/"
+    ],
+    "high_path_fragments": [
+      "/auth/",
+      "/security/",
+      "/permissions/",
+      "/payments/",
+      "/billing/",
+      "/migrations/",
+      "/terraform/",
+      "/infra/",
+      ".github/workflows/",
+      "secrets",
+      "credentials"
+    ],
+    "high_changed_paths": 20,
+    "high_changed_lines": 500,
+    "small_model_name_fragments": [
+      "mini",
+      "small",
+      "nano",
+      "flash",
+      "haiku"
+    ],
+    "small_model_efforts": [
+      "minimal",
+      "low"
+    ]
+  },
+  "verification_when_receipt_rdd_off": {
+    "passive": "structural_readback",
+    "medium": "writer_self_verification; independent verifier when implementer is small/low-effort",
+    "high": "writer_self_verification plus independent verifier",
+    "unknown": "treat as high"
+  },
+  "verification_when_receipt_rdd_on": {
+    "R0_passive": "deterministic structural receipt",
+    "R1": "independent reviewer receipt; separate verifier only when assessment/policy escalates",
+    "R2_R3": "preserve existing harness verifier requirements; Receipt-RDD never weakens mandatory gates"
+  },
+  "receipt": {
+    "hash": "sha256",
+    "subject": "base commit + sorted changed path/mode/content digests",
+    "invalidate_on_any_subject_change": true,
+    "review_handoff_bound": true
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portable-harness.local/schema/research-rdd-artifact.schema.json",
+  "title": "Research-Driven Development durable artifact",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "discovery_id",
+    "artifact_type",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "discovery_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_type": {
+      "enum": [
+        "research",
+        "domain",
+        "decisions",
+        "scenarios"
+      ]
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "complete",
+        "approved",
+        "archived"
+      ]
+    },
+    "sources": {
+      "type": "array"
+    },
+    "findings": {
+      "type": "array"
+    },
+    "assumptions": {
+      "type": "array"
+    },
+    "contrary_evidence": {
+      "type": "array"
+    },
+    "open_questions": {
+      "type": "array"
+    },
+    "vocabulary": {
+      "type": "array"
+    },
+    "relationships": {
+      "type": "array"
+    },
+    "invariants": {
+      "type": "array"
+    },
+    "decisions": {
+      "type": "array"
+    },
+    "scenarios": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "artifact_type": {
+            "const": "research"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "sources",
+          "findings"
+        ],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "minItems": 1
+          },
+          "findings": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifact_type": {
+            "const": "domain"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "vocabulary",
+          "invariants"
+        ],
+        "properties": {
+          "vocabulary": {
+            "type": "array",
+            "minItems": 1
+          },
+          "invariants": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifact_type": {
+            "const": "decisions"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "decisions"
+        ],
+        "properties": {
+          "decisions": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifact_type": {
+            "const": "scenarios"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "scenarios"
+        ],
+        "properties": {
+          "scenarios": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

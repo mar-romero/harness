@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "name": "research-driven-development",
+  "enabled": true,
+  "default_mode": "auto",
+  "modes": [
+    "none",
+    "light",
+    "research",
+    "full"
+  ],
+  "purpose": "Use research depth only when uncertainty, domain novelty, external evidence, or expensive-to-reverse decisions justify it.",
+  "routing": {
+    "full_classifications": [
+      "PROJECT",
+      "EPIC"
+    ],
+    "light_classifications": [
+      "FEATURE"
+    ],
+    "research_signals": [
+      "unfamiliar_domain",
+      "external_contract",
+      "material_unknowns",
+      "conflicting_stakeholders",
+      "evidence_needed",
+      "technical_spike"
+    ],
+    "full_signals": [
+      "irreversible_architecture",
+      "security_privacy_boundary",
+      "regulatory_or_financial",
+      "ambiguous_business_model",
+      "multiple_blocking_assumptions"
+    ],
+    "blocking_question_threshold_for_full": 3
+  },
+  "artifacts": {
+    "light": [],
+    "research": [
+      "planning/research/{id}.json",
+      "planning/decisions/{id}.json"
+    ],
+    "full": [
+      "planning/research/{id}.json",
+      "planning/domain/{id}.json",
+      "planning/decisions/{id}.json",
+      "planning/scenarios/{id}.json"
+    ]
+  },
+  "promotion": {
+    "research_status_required": "complete",
+    "domain_status_required": "complete",
+    "decisions_status_required": "approved",
+    "scenarios_status_required": "complete",
+    "tasks_materialize_only_after_discovery_approval": true
+  },
+  "principles": [
+    "Research changes what is built; it is not decorative documentation.",
+    "Assumptions must be explicit and major assumptions should be inverted or challenged.",
+    "Domain vocabulary and invariants precede architecture in full mode.",
+    "Decisions trace to evidence and record reversibility.",
+    "Behavior scenarios bridge discovery to BDD/TDD.",
+    "No research artifact grants implementation authority by itself."
+  ],
+  "minimum_content": {
+    "research": {
+      "sources": 1,
+      "findings": 1
+    },
+    "domain": {
+      "vocabulary": 1,
+      "invariants": 1
+    },
+    "decisions": {
+      "decisions": 1
+    },
+    "scenarios": {
+      "scenarios": 1
+    }
+  }
+}

@@ -33,7 +33,7 @@ def main():
         if not p.exists(): fail(f'missing generated adapter {rel}',errors)
         elif p.read_text(encoding='utf-8')!=content: fail(f'generated adapter drift {rel}',errors)
     # hooks and policy
-    for p in ['harness/policies/risk-policy.json','harness/context-policy.json','harness/language-policy.json','harness/handoff-policy.json','harness/orchestrator-policy.json','harness/attestation-policy.json','harness/evolution-policy.json','harness/evolution-experiment-policy.json','harness/runtime-evals/config.json','.claude/settings.json','.cursor/hooks.json','.gemini/settings.json']:
+    for p in ['harness/policies/risk-policy.json','harness/context-policy.json','harness/language-policy.json','harness/research-policy.json','harness/receipt-policy.json','harness/handoff-policy.json','harness/orchestrator-policy.json','harness/attestation-policy.json','harness/evolution-policy.json','harness/evolution-experiment-policy.json','harness/runtime-evals/config.json','.claude/settings.json','.cursor/hooks.json','.gemini/settings.json']:
         try: json.loads((ROOT/p).read_text())
         except Exception as e: fail(f'invalid JSON {p}: {e}',errors)
     # final-v4 feature invariants
@@ -54,6 +54,15 @@ def main():
         evo=load_json('harness/evolution-experiment-policy.json')
         if evo.get('auto_apply') is not False or evo.get('human_promotion_required') is not True:
             fail('champion/challenger evolution must remain human-reviewed and non-auto-apply',errors)
+        # DUAL_RDD_CHECK_INVARIANTS_V1:START
+        features=m.get('features') or {}
+        if 'research_driven_development' not in features or 'receipt_driven_development' not in features:
+            fail('dual-RDD manifest features missing',errors)
+        for name in ['research_discovery.py','receipt_review.py']:
+            if not (ROOT/'scripts'/name).exists(): fail(f'missing dual-RDD script {name}',errors)
+        for name in ['research-driven-discovery','domain-modeling']:
+            if not (skills_dir/name/'SKILL.md').exists(): fail(f'missing dual-RDD skill {name}',errors)
+        # DUAL_RDD_CHECK_INVARIANTS_V1:END
         required_scripts=['request_normalizer.py','runtime_eval.py','handoff.py','orchestrator.py','attest.py','context_graph.py','memory.py','evolution_experiment.py']
         for name in required_scripts:
             if not (ROOT/'scripts'/name).exists(): fail(f'missing final-v4 script {name}',errors)

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portable-harness.local/schema/receipt.schema.json",
+  "title": "Candidate-bound review receipt",
+  "type": "object",
+  "required": ["schema_version", "task_id", "subject_hash", "receipt_hash", "kind", "status", "issued_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string"},
+    "subject_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "kind": {"enum": ["review", "structural"]},
+    "status": {"const": "PASS"},
+    "issued_at": {"type": "string"},
+    "review_handoff_sha256": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

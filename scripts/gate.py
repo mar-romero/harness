@@ -7,6 +7,7 @@ from evidence import read as read_evidence
 from handoff import validate as validate_handoff
 from impact_analysis import finish_decision as impact_finish_decision
 from tdd_evidence import finish_decision as tdd_finish_decision
+from receipt_review import finish_decision as receipt_finish_decision
 
 INFERRED_ALLOWED_CATEGORIES={'exploration','planning','test_design','implementation','review','test_audit','verification','security_review'}
 ROLE_EVIDENCE={'explorer':'exploration','planner':'planning','test-designer':'test_design','implementer':'implementation','test-auditor':'test_audit'}
@@ -100,6 +101,8 @@ def _acceptance_decision(task, route, latest):
         return False,reason
 
     requires_verification=bool((route.get('requirements') or {}).get('verification'))
+    if route.get('risk') == 'R0' and not requires_verification and 'reviewer' not in route.get('agents', []):
+        return True,None
     role='verifier' if requires_verification else 'reviewer'
     category='verification' if requires_verification else 'review'
 
@@ -190,6 +193,10 @@ def finish_decision(task,risk,require_publication=True):
     impact=impact_finish_decision(task)
     missing += impact.get('missing',[]); failing += impact.get('failing',[])
     combined_req += list(impact.get('required',[]))
+
+    receipt=receipt_finish_decision(task)
+    missing += receipt.get('missing',[]); failing += receipt.get('failing',[])
+    combined_req += list(receipt.get('required',[]))
 
     if require_publication and route.get('isolation') == 'worktree':
         from worktree import publish_status

@@ -131,6 +131,8 @@ matching, persistence, and failure behavior.
 - [Model routing and score refresh](docs/MODEL_ROUTING_V2.md)
 - [Provider compatibility](docs/PROVIDER_NOTES.md)
 - [Product discovery](docs/PRODUCT_DISCOVERY.md)
+- [Research-Driven Development](docs/RESEARCH_DRIVEN_DEVELOPMENT.md)
+- [Receipt-Driven Development](docs/RECEIPT_DRIVEN_DEVELOPMENT.md)
 - [Evaluation and benchmarking](evals/README.md) and [benchmarks/README.md](benchmarks/README.md)
 - [Historical records and limitations](AUDIT.md), [docs/RELEASE_LINEAGE.md](docs/RELEASE_LINEAGE.md)
 

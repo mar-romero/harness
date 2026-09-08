@@ -1,5 +1,5 @@
 [mcp_servers.harness-aci]
-command = "node"
+command = "node.exe"
 args = ["scripts/aci_mcp_node.js"]
 cwd = "."
 enabled = true
