@@ -1,5 +1,18 @@
 {
-  "schema_version": 1,
-  "description": "Optional reviewed capability scores for models visible in the OpenCode runtime catalog. Keys are provider/model IDs. Leave absent rather than guessing. Scores use the harness 0-5 scale.",
-  "profiles": {}
+  "schema_version": 2,
+  "description": "Reviewed OpenCode model capability overrides. Leave capabilities absent when unknown.",
+  "profiles": {
+    "opencode/nemotron-3-ultra-free": {
+      "runtime_capabilities": {
+        "tool_choice_modes": [
+          "auto",
+          "required"
+        ]
+      },
+      "evidence": {
+        "kind": "vendor_documentation",
+        "note": "Nemotron 3 Ultra vendor documentation demonstrates tool_choice=required; OpenCode gateway compatibility must still be locally confirmed."
+      }
+    }
+  }
 }

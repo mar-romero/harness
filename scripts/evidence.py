@@ -6,8 +6,27 @@ from harnesslib import run_dir, safe_task_id
 
 EVIDENCE_TYPES={'DETERMINISTIC','INFERRED','INSUFFICIENT'}
 STATUSES={'PASS','FAIL','INFO','BLOCKED'}
-CATEGORIES={'acceptance','checks','review','verification','security_review','human_approval','research','routing','context','risk','rollback','attestation'}
-EXPECTED_ACTORS={'review':{'reviewer'},'verification':{'verifier'},'security_review':{'security-reviewer'},'human_approval':{'human'},'attestation':{'ci-attestor','human-attestor'}}
+CATEGORIES={
+    'acceptance','checks',
+    'exploration','planning','test_design','implementation',
+    'review','test_audit','verification','impact_verification',
+    'security_review','human_approval','research','routing','context','risk','rollback','attestation'
+}
+EXPECTED_ACTORS = {
+    "acceptance": {"reviewer", "verifier"},
+    "checks": {"check-runner"},
+    "exploration": {"explorer"},
+    "planning": {"planner"},
+    "test_design": {"test-designer"},
+    "implementation": {"implementer"},
+    "review": {"reviewer"},
+    "test_audit": {"test-auditor"},
+    "verification": {"verifier"},
+    "impact_verification": {"verifier"},
+    "security_review": {"security-reviewer"},
+    "human_approval": {"human"},
+    "attestation": {"ci-attestor", "human-attestor"},
+}
 
 def ledger_path(task): return run_dir(task)/'evidence.jsonl'
 def init(task): safe_task_id(task); d=run_dir(task); d.mkdir(parents=True,exist_ok=True); ledger_path(task).touch(exist_ok=True); return d
@@ -36,6 +55,34 @@ def validate_chain_rows(rows):
 def head_hash(task):
     rows=read(task); return rows[-1]['record_hash'] if rows else 'GENESIS'
 
+def _validate_acceptance_provenance(task,status,actor):
+    if status!='PASS':
+        return
+    route_path=run_dir(task)/'route.json'
+    if not route_path.is_file():
+        raise SystemExit('acceptance PASS requires authoritative route.json')
+    try:
+        route=json.loads(route_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        raise SystemExit(f'acceptance PASS route.json is invalid: {exc}')
+
+    requires_verification=bool((route.get('requirements') or {}).get('verification'))
+    expected_actor='verifier' if requires_verification else 'reviewer'
+    if actor!=expected_actor or actor not in route.get('agents',[]):
+        raise SystemExit(f'acceptance PASS actor must be routed {expected_actor}')
+
+    handoff_path=run_dir(task)/'handoffs'/f'{expected_actor}.json'
+    if not handoff_path.is_file():
+        raise SystemExit(f'acceptance PASS requires persisted {expected_actor} handoff')
+    try:
+        data=json.loads(handoff_path.read_text(encoding='utf-8'))
+        from handoff import validate as validate_handoff
+        validate_handoff(expected_actor,data)
+    except Exception as exc:
+        raise SystemExit(f'acceptance PASS {expected_actor} handoff is invalid: {exc}')
+    if data.get('task_id')!=task or data.get('status')!='PASS':
+        raise SystemExit(f'acceptance PASS requires PASS {expected_actor} handoff for this task')
+
 def append(task,category,etype,claim,status,actor,command=None,exit_code=None,artifact=None,notes=None):
     init(task)
     if category not in CATEGORIES: raise SystemExit(f'invalid evidence category: {category}')
@@ -43,6 +90,8 @@ def append(task,category,etype,claim,status,actor,command=None,exit_code=None,ar
     if status not in STATUSES: raise SystemExit('invalid status')
     expected=EXPECTED_ACTORS.get(category)
     if expected and actor not in expected: raise SystemExit(f'{category} evidence actor must be one of {sorted(expected)}')
+    if category=='acceptance':
+        _validate_acceptance_provenance(safe_task_id(task),status,actor)
     rows=read(task); prev=rows[-1]['record_hash'] if rows else 'GENESIS'
     rec={'timestamp':dt.datetime.now(dt.timezone.utc).isoformat(),'task_id':safe_task_id(task),'category':category,'evidence_type':etype,'claim':claim,'status':status,'actor':actor,'prev_hash':prev}
     if command is not None: rec['command']=command

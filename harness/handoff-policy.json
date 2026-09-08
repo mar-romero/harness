@@ -6,8 +6,11 @@
   "contracts": {
     "explorer": "harness/schema/handoffs/explorer.schema.json",
     "planner": "harness/schema/handoffs/plan.schema.json",
+    "test-designer": "harness/schema/handoffs/test-design.schema.json",
     "implementer": "harness/schema/handoffs/implementation-result.schema.json",
     "reviewer": "harness/schema/handoffs/review.schema.json",
-    "verifier": "harness/schema/handoffs/verification.schema.json"
+    "test-auditor": "harness/schema/handoffs/test-audit.schema.json",
+    "verifier": "harness/schema/handoffs/verification.schema.json",
+    "security-reviewer": "harness/schema/handoffs/security-review.schema.json"
   }
 }

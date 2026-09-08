@@ -6,10 +6,30 @@ from harnesslib import ROOT, load_manifest, safe_task_id, write_json_atomic, run
 from tdd_policy import profile_task as tdd_profile
 
 RISK_RANK={'R0':0,'R1':1,'R2':2,'R3':3}
+RISK_KEYS={
+    'touches_auth','touches_production','uses_secrets','destructive_operation',
+    'irreversible_change','security_boundary','schema_change','database_change',
+    'concurrency','financial','external_contract','migration','persistence',
+    'important_calculation','bug_fix',
+}
 def maxrisk(a,b): return a if RISK_RANK[a]>=RISK_RANK[b] else b
 
-def _factor(task,name): return bool((task.get('risk_factors') or {}).get(name,False))
+def _validate_risk_factors(task):
+    raw=task.get('risk_factors') or {}
+    if not isinstance(raw,dict):
+        raise ValueError('risk_factors must be an object')
+    unknown=sorted(set(raw)-RISK_KEYS)
+    if unknown:
+        raise ValueError('risk_factors contains unknown keys: '+', '.join(unknown))
+    invalid=[(name,value) for name,value in raw.items() if not isinstance(value,bool)]
+    if invalid:
+        rendered=', '.join(f'{name}={value!r}' for name,value in invalid)
+        raise ValueError('risk_factors values must be booleans; invalid: '+rendered)
+    return raw
+
+def _factor(task,name): return (task.get('risk_factors') or {}).get(name,False)
 def route(task):
+    _validate_risk_factors(task)
     m=load_manifest(); req=task.get('request') or {}; canonical=req.get('canonical_english') or task.get('description','')
     original=req.get('original_text','')
     text=' '.join([canonical, original, *task.get('tags',[]), *task.get('files',[])]).lower()

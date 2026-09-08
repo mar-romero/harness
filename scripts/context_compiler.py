@@ -12,6 +12,18 @@ def excluded(rel,policy):
     return any(fnmatch.fnmatch(rel.name,g) or fnmatch.fnmatch(s,g) for g in policy['exclude_globs'])
 def tokens(text): return {t for t in re.findall(r'[a-zA-Z0-9_\-]{3,}',text.lower()) if t not in {'this','that','with','from','into','para','como','esta','este'}}
 def estimate_tokens(size): return max(1,math.ceil(size/4))
+
+def is_test_path(value: str) -> bool:
+    p = Path(value)
+    parts = [part.lower() for part in p.parts]
+    stem = p.stem.lower()
+
+    return (
+        any(part in {"test", "tests", "spec", "specs"} for part in parts[:-1])
+        or stem.startswith(("test_", "spec_"))
+        or stem.endswith(("_test", "_spec"))
+    )
+
 def build(task,route=None):
     p=load_json('harness/context-policy.json'); task_id=safe_task_id(task['id']); req=task.get('request') or {}; query=req.get('canonical_english') or task.get('description',''); wanted=tokens(query)|set(map(str.lower,task.get('tags',[]))); explicit={Path(x).as_posix() for x in task.get('files',[])}
     graph=build_graph(); neighbors=set(neighborhood(graph,explicit,int(p.get('graph_neighbor_depth',2)))) if explicit else set(); candidates=[]
@@ -28,7 +40,8 @@ def build(task,route=None):
         if r in neighbors: score+=int(p.get('graph_neighbor_bonus',350)); reasons.append('dependency-graph-neighbor')
         overlap=wanted & tokens(low)
         if overlap: score+=20*len(overlap); reasons.append('path-token:'+','.join(sorted(overlap)[:5]))
-        if '/test' in low or low.startswith('tests/'): score+=5
+        if is_test_path(r):
+            score += 5
         if score: candidates.append((score,size,r,reasons))
     candidates.sort(key=lambda x:(-x[0],x[2])); selected=[]; total=0; total_tokens=0
     for score,size,r,reasons in candidates:

@@ -87,7 +87,11 @@ def activate(task_path: Path) -> dict:
     route_path = out_dir / "route.json"
     context_path = out_dir / "context.json"
     models_path = out_dir / "model-selections.json"
+    task_snapshot_path = out_dir / "task.json"
 
+    # Freeze the authorized task surface for the lifetime of this run. Publication
+    # must not trust a mutable tasks/*.json file after activation.
+    write_json_atomic(task_snapshot_path, task)
     write_json_atomic(route_path, routed)
     progress = init_progress(task_id, routed)
     context = build_context(task, routed)
@@ -119,6 +123,7 @@ def activate(task_path: Path) -> dict:
         "activated_at": datetime.now(timezone.utc).isoformat(),
         "task_id": task_id,
         "task_path": task_path.relative_to(ROOT).as_posix(),
+        "task_snapshot_path": task_snapshot_path.relative_to(ROOT).as_posix(),
         "risk": routed["risk"],
         "route_path": route_path.relative_to(ROOT).as_posix(),
         "context_path": context_path.relative_to(ROOT).as_posix(),

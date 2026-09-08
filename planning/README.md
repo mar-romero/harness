@@ -1,5 +1,8 @@
 # Product planning artifacts
 
+See `docs/PRODUCT_DISCOVERY.md` for the current approval boundary and command
+interfaces.
+
 This directory is the durable product/discovery layer above executable harness tasks.
 
 - `discovery/` — original idea, clarification, assumptions, challenges, MVP and proposed decomposition.

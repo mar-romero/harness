@@ -2,13 +2,28 @@
   "schema_version": 1,
   "max_attempts_per_step": 2,
   "max_total_failures": 5,
-  "states": ["READY","RUNNING","WAITING","BLOCKED","STALLED","DONE"],
+  "states": [
+    "READY",
+    "RUNNING",
+    "WAITING",
+    "BLOCKED",
+    "STALLED",
+    "DONE"
+  ],
   "failure_actions": {
+    "EXPLORE": "replan_or_report_missing_repository_evidence",
+    "PLAN": "return_to_planner_or_escalate_decision",
+    "TEST_DESIGN": "return_to_planner_or_open_spike",
+    "WORKTREE": "repair_isolation_before_implementation",
     "IMPLEMENT": "return_to_debugger_or_planner",
     "CHECKS": "return_to_debugger_or_implementer",
     "REVIEW": "return_to_implementer_with_typed_findings",
+    "TEST_AUDIT": "return_to_implementer_with_test_gaps",
     "VERIFY": "return_to_debugger_or_implementer",
-    "SECURITY_REVIEW": "block_and_escalate"
+    "IMPACT_VERIFY": "return_to_verifier_or_planner",
+    "SECURITY_REVIEW": "block_and_escalate",
+    "HUMAN_GATE": "await_explicit_human_decision",
+    "CLOSE": "resolve_finish_gate_failures"
   },
   "rules": {
     "no_progress_repetition_is_not_progress": true,

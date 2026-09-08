@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, re, shutil
+import argparse, json, re, sys
 from pathlib import Path
 from harnesslib import ROOT, load_manifest
 
@@ -11,6 +11,21 @@ ACI_INSPECT_TOOLS = [
 ]
 ACI_CHECK_TOOLS = ["tests_run", "lint_run", "diagnostics_get"]
 CODEX_ACTIVE = ROOT / ".harness" / "codex" / "active-task.json"
+CODEX_ORCHESTRATOR = Path(".codex/agents/harness-orchestrator.toml")
+CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
+CODEX_HOOKS = Path(".codex/hooks.json")
+CODEX_ACI_ENTRY = Path(".codex/aci_mcp_entry.py")
+ORCHESTRATOR_ROLE = ROOT / ".agents" / "roles" / "harness-orchestrator.md"
+
+
+def _codex_hook_command(script: str) -> str:
+    """Return a repository-relative, cross-machine Python hook command.
+
+    Codex runs project hooks from the project workspace. Keeping both the
+    interpreter and script relative avoids embedding the compiler host's user,
+    drive, or checkout path into the generated adapter.
+    """
+    return f"python scripts/{script}"
 
 
 def _codex_binding(name):
@@ -117,6 +132,117 @@ def generated():
         for name,meta in m['agents'].items():
             body=(ROOT/m['canonical']['roles_dir']/f'{name}.md').read_text(encoding='utf-8')
             out[target(provider,name)] = front_body(provider,name,meta,body)
+    # The primary orchestration contract is a separate canonical role: it is
+    # not a worker role in manifest.yaml and therefore is not emitted for every
+    # provider. OpenCode has its native primary adapter; Codex receives the
+    # equivalent selectable custom agent.
+    orchestrator_body = ORCHESTRATOR_ROLE.read_text(encoding='utf-8').rstrip()
+    out[CODEX_ORCHESTRATOR] = (
+        'name = "harness-orchestrator"\n'
+        'description = "Coordinate one routed harness task through specialist agents and evidence-backed closure."\n\n'
+        'developer_instructions = """\n'
+        + orchestrator_body
+        + '\n"""\n'
+    )
+    # Codex gives a project custom agent precedence when its name matches a
+    # built-in agent. `default` is the primary fallback agent, so bind it to
+    # the same durable lifecycle without creating a second source of truth.
+    out[CODEX_DEFAULT_AGENT] = (
+        'name = "default"\n'
+        'description = "Primary harness coordinator for routed, evidence-backed work in this repository."\n\n'
+        'developer_instructions = """\n'
+        + orchestrator_body
+        + '\n"""\n'
+    )
+    # Project-local config resolves relative paths from `.codex`. Keep the
+    # stdio entrypoint there, then import the canonical implementation from
+    # `scripts/` so desktop, CLI, and IDE clients start it consistently.
+    out[CODEX_ACI_ENTRY] = '''#!/usr/bin/env python3
+"""Generated entrypoint for the project-scoped Harness ACI MCP server."""
+import json
+import os
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+    path = ROOT / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"event": "entrypoint_started"}) + "\\n")
+
+try:
+    from aci_mcp import main
+except BaseException as exc:
+    if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"event": "entrypoint_import_failed", "error": str(exc), "error_type": type(exc).__name__}) + "\\n")
+    raise
+
+if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"event": "entrypoint_ready"}) + "\\n")
+
+if __name__ == "__main__":
+    exit_code = main()
+    if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"event": "entrypoint_main_returned", "exit_code": exit_code}) + "\\n")
+    raise SystemExit(exit_code)
+'''
+    out[CODEX_HOOKS] = json.dumps({
+        "description": "Run canonical safety gates before Codex shell commands and file patches.",
+        "hooks": {
+            "SessionStart": [{
+                "matcher": "startup|resume|clear|compact",
+                "hooks": [{
+                    "type": "command",
+                    "command": _codex_hook_command("codex_context_hook.py"),
+                    "timeout": 3,
+                    "statusMessage": "Loading active harness context",
+                }],
+            }],
+            "SubagentStart": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": _codex_hook_command("codex_context_hook.py"),
+                    "timeout": 3,
+                    "statusMessage": "Loading active harness context",
+                }],
+            }],
+            "PreToolUse": [
+                {
+                    "matcher": "^Bash$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": _codex_hook_command("codex_hook.py"),
+                        "timeout": 3,
+                        "statusMessage": "Checking repository command policy",
+                    }],
+                },
+                {
+                    "matcher": "^apply_patch$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": _codex_hook_command("codex_hook.py"),
+                        "timeout": 3,
+                        "statusMessage": "Checking repository write policy",
+                    }],
+                },
+                {
+                    "matcher": "^Agent$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": _codex_hook_command("codex_hook.py"),
+                        "timeout": 3,
+                        "statusMessage": "Checking harness subagent allowlist",
+                    }],
+                },
+            ]
+        },
+    }, indent=2) + "\n"
     # Claude Code currently discovers project skills from .claude/skills, while the
     # other supported providers can consume .agents/skills directly. Generate tiny
     # Claude compatibility wrappers so the canonical skill body still lives once.

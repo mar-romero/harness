@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from product_planning import PlanningError, materialize, sprint_priority, validate_bundle
+from product_planning import PlanningError, _risk_factors, materialize, sprint_priority, validate_bundle
 
 POLICY = json.loads((ROOT / "harness" / "product-discovery-policy.json").read_text())
 
@@ -32,6 +32,7 @@ def bundle(status="approved"):
         "tasks": [{
             "id": "TASK-DISC-1", "title": "Implement slice", "description": "Implement one bounded vertical slice.",
             "acceptance_criteria": ["The slice works end to end"], "parent_id": "FEAT-1", "dependencies": [], "size": "M",
+            "files": ["src/feature.py", "tests/test_feature.py"],
             "value": 5, "dependency_unlock": 3, "risk_reduction": 4, "urgency": 3, "confidence": 4,
             "risk_factors": {"external_contract": True}
         }],
@@ -70,6 +71,25 @@ class ProductPlanningTests(unittest.TestCase):
             self.assertTrue(task["risk_factors"]["external_contract"])
             self.assertIn("touches_auth", task["risk_factors"])
             self.assertGreater(task["planning"]["priority_score"], 0)
+
+    def test_non_boolean_risk_factor_is_rejected(self):
+        data = bundle()
+        data["tasks"][0]["risk_factors"] = {"persistence": "none"}
+        with self.assertRaisesRegex(PlanningError, "values must be booleans"):
+            validate_bundle(data, POLICY)
+
+    def test_unknown_risk_factor_key_is_rejected(self):
+        data = bundle()
+        data["tasks"][0]["risk_factors"] = {"correctness": "high"}
+        with self.assertRaisesRegex(PlanningError, "contains unknown keys: correctness"):
+            validate_bundle(data, POLICY)
+
+    def test_risk_materializer_never_truthy_coerces_strings(self):
+        with self.assertRaisesRegex(PlanningError, "values must be booleans"):
+            _risk_factors({"persistence": "none"})
+        normalized = _risk_factors({"persistence": False, "important_calculation": True})
+        self.assertFalse(normalized["persistence"])
+        self.assertTrue(normalized["important_calculation"])
 
     def test_sprint_capacity_is_enforced(self):
         data = bundle()

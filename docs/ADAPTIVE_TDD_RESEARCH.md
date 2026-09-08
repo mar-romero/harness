@@ -1,5 +1,9 @@
 # Adaptive TDD: research basis
 
+> Historical research rationale. The current executable policy is determined by
+> the task route and `.agents/skills/adaptive-tdd/`; verify research references
+> independently before using them outside this repository.
+
 This overlay intentionally implements **adaptive**, not universal, TDD.
 
 Key empirical findings informing the policy:

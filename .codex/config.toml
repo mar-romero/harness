@@ -1,9 +1,9 @@
 [mcp_servers.harness-aci]
-command = "python3"
-args = ["scripts/aci_mcp.py"]
+command = "node"
+args = ["scripts/aci_mcp_node.js"]
 cwd = "."
 enabled = true
-required = false
+required = true
 startup_timeout_sec = 30
 tool_timeout_sec = 180
 

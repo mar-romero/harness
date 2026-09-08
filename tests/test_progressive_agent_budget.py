@@ -1,5 +1,6 @@
-import sys, unittest
+import sys, tempfile, unittest
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import agent_budget as ab
 
@@ -30,6 +31,25 @@ class AgentBudgetUnitTests(unittest.TestCase):
         task={"id":"B3","description":"change","risk_factors":{}}
         s=ab.build_initial(task,self.route("R1"),{"impact":{"severity":"high"}})
         self.assertIn("planner",s["current_agents"])
+
+    def test_existing_budget_reconciles_when_route_escalates_to_r3(self):
+        task={"id":"B4","description":"security-sensitive change","risk_factors":{}}
+        r2=self.route("R2")
+        r3={**self.route("R3"), "agents": self.route("R3")["agents"] + ["security-reviewer"]}
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            with patch.object(ab, "run_dir", return_value=root / task["id"]):
+                original=ab.init(task,r2)
+                original["signals"]=["review_fail"]
+                original["escalations"]=[{"signal":"review_fail"}]
+                ab.write_json_atomic(ab.budget_path(task["id"]),original)
+                reconciled=ab.init(task,r3)
+        self.assertEqual(reconciled["risk"],"R3")
+        self.assertIn("security-reviewer",reconciled["route_agents"])
+        self.assertIn("security-reviewer",reconciled["mandatory_gate_agents"])
+        self.assertEqual(reconciled["signals"],["review_fail"])
+        self.assertEqual(reconciled["escalations"],[{"signal":"review_fail"}])
+        self.assertEqual(reconciled["history"][-1]["event"],"route_reconciled")
 
 if __name__=="__main__":
     unittest.main()

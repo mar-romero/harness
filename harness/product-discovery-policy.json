@@ -78,5 +78,33 @@
     "planning_can_persist_before_approval": true,
     "executable_tasks_require_approved_status": true,
     "explicit_start_after_approval_may_activate_first_ready_task": true
+  },
+  "task_surface": {
+    "ready_for_approval_tasks_require_files": true,
+    "approved_tasks_require_files": true,
+    "allow_prospective_paths": true,
+    "paths_must_be_repo_relative": true
+  },
+  "task_risk_factors": {
+    "allowed_keys": [
+      "touches_auth",
+      "touches_production",
+      "uses_secrets",
+      "destructive_operation",
+      "irreversible_change",
+      "security_boundary",
+      "schema_change",
+      "database_change",
+      "concurrency",
+      "financial",
+      "external_contract",
+      "migration",
+      "persistence",
+      "important_calculation",
+      "bug_fix"
+    ],
+    "values_must_be_boolean": true,
+    "reject_unknown_keys": true,
+    "no_truthy_coercion": true
   }
 }
