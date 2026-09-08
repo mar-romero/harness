@@ -137,6 +137,7 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         inventory=ROOT/'.harness/model-inventories/opencode.json'
 
         old_inventory=inventory.read_text() if inventory.exists() else None
+        task.parent.mkdir(parents=True, exist_ok=True)
 
         task.write_text(json.dumps({
             'id':'TEST-OPENCODE',

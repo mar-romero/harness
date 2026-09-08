@@ -19,9 +19,9 @@ class ACICoreTests(unittest.TestCase):
     def test_codex_project_mcp_starts_from_repository_root(self):
         config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
         server = config["mcp_servers"]["harness-aci"]
-        self.assertEqual(Path(server["cwd"]).resolve(), ROOT)
-        self.assertEqual(Path(server["args"][-1]).resolve(), ROOT / "scripts" / "aci_mcp_node.js")
-        self.assertTrue(server["command"].lower().endswith("node.exe"))
+        self.assertEqual(server["cwd"], ".")
+        self.assertEqual(server["args"][-1], "scripts/aci_mcp_node.js")
+        self.assertIn(server["command"].lower(), {"node", "node.exe"})
         self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
 
     def test_codex_project_mcp_entrypoint_handles_initialize(self):

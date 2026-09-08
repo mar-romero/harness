@@ -1,7 +1,7 @@
 [mcp_servers.harness-aci]
-command = "C:\\Users\\romer\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe"
-args = ["C:\\Users\\romer\\Documents\\GitHub\\harnes\\scripts\\aci_mcp_node.js"]
-cwd = "C:\\Users\\romer\\Documents\\GitHub\\harnes"
+command = "node"
+args = ["scripts/aci_mcp_node.js"]
+cwd = "."
 enabled = true
 required = true
 startup_timeout_sec = 30
