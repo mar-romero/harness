@@ -211,6 +211,70 @@ def validate_bundle(bundle: dict[str, Any], policy: dict[str, Any] | None = None
     }
 
 
+# RESEARCH_RDD_MATERIALIZATION_GUARD_V1:START
+def _validate_research_rdd_materialization(bundle: dict[str, Any], policy: dict[str, Any], root: Path) -> None:
+    from research_discovery import artifact_content_failures
+
+    cfg = policy.get("research_driven_development") or {}
+    if not cfg.get("materialization_requires_research_ready", False):
+        return
+
+    rrdd = bundle.get("research_rdd") or {}
+    mode = rrdd.get("mode", "none")
+    if mode not in {"none", "light", "research", "full"}:
+        raise PlanningError(f"invalid research_rdd.mode: {mode!r}")
+    if mode not in {"research", "full"}:
+        return
+    if rrdd.get("ready") is not True:
+        raise PlanningError(
+            f"Research-RDD mode {mode} is not ready; run scripts/research_discovery.py status before materializing tasks"
+        )
+
+    research_policy_path = root / "harness" / "research-policy.json"
+    if not research_policy_path.is_file():
+        raise PlanningError("Research-RDD policy missing: harness/research-policy.json")
+    research_policy = json.loads(research_policy_path.read_text(encoding="utf-8"))
+    templates = (research_policy.get("artifacts") or {}).get(mode, [])
+    promotion = research_policy.get("promotion") or {}
+    expected_status = {
+        "research": promotion.get("research_status_required", "complete"),
+        "domain": promotion.get("domain_status_required", "complete"),
+        "decisions": promotion.get("decisions_status_required", "approved"),
+        "scenarios": promotion.get("scenarios_status_required", "complete"),
+    }
+    refs = rrdd.get("artifacts") or {}
+    discovery_id = str(bundle.get("discovery_id") or "")
+
+    for template in templates:
+        expected_rel = template.format(id=discovery_id).replace("\\", "/")
+        kind = Path(expected_rel).parent.name
+        if kind not in expected_status:
+            raise PlanningError(f"unsupported Research-RDD artifact kind: {kind}")
+        rel = str(refs.get(kind) or expected_rel).replace("\\", "/")
+        candidate = (root / rel).resolve()
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError as exc:
+            raise PlanningError(f"Research-RDD artifact escapes repository: {rel}") from exc
+        if not candidate.is_file():
+            raise PlanningError(f"Research-RDD artifact missing: {rel}")
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise PlanningError(f"Research-RDD artifact invalid JSON: {rel}: {exc}") from exc
+        if data.get("discovery_id") != discovery_id or data.get("artifact_type") != kind:
+            raise PlanningError(f"Research-RDD artifact discovery/type mismatch: {rel}")
+        required_status = expected_status[kind]
+        if data.get("status") != required_status:
+            raise PlanningError(
+                f"Research-RDD artifact {rel} has status {data.get('status')!r}; requires {required_status!r}"
+            )
+        problems = artifact_content_failures(kind, data, research_policy)
+        if problems:
+            raise PlanningError(f"Research-RDD artifact {rel} is incomplete: " + "; ".join(problems))
+# RESEARCH_RDD_MATERIALIZATION_GUARD_V1:END
+
+
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -253,6 +317,8 @@ def materialize(bundle: dict[str, Any], *, root: Path = ROOT, force_tasks: bool 
     policy = json.loads((root / "harness" / "product-discovery-policy.json").read_text(encoding="utf-8"))
     summary = validate_bundle(bundle, policy)
     discovery_id = bundle["discovery_id"]
+    if bundle.get("status") == "approved":
+        _validate_research_rdd_materialization(bundle, policy, root)
     written: list[str] = []
 
     discovery_path = root / "planning" / "discovery" / f"{discovery_id}.json"

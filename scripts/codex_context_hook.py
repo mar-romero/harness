@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from harnesslib import write_json_atomic
+
 
 def audit_session_boundary(payload: dict) -> None:
     """Create durable proof that the Codex audit hook was active.
@@ -27,6 +29,17 @@ def audit_session_boundary(payload: dict) -> None:
     }
     with audit.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+    # RECEIPT_RDD_SESSION_V1:START
+    if payload.get("hook_event_name") == "SessionStart" and payload.get("session_id"):
+        write_json_atomic(
+            ROOT / ".harness" / "codex" / "session.json",
+            {
+                "schema_version": 1,
+                "session_id": str(payload["session_id"]),
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    # RECEIPT_RDD_SESSION_V1:END
 
 
 def _context() -> str | None:

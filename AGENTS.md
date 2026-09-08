@@ -87,6 +87,32 @@ implementation model whenever the alternative remains within the configured
 relative-score threshold. If independence cannot be achieved, record the weaker
 independence strength explicitly rather than pretending the review is independent.
 
+<!-- DUAL_RDD_POLICY_V1:START -->
+## Dual RDD boundary
+
+This repository uses two distinct opt-in/adaptive concepts:
+
+- **Research-Driven Development** is a pre-task discovery layer. Read `harness/research-policy.json`; for broad or ambiguous work, create/validate the product discovery dossier, run `python3 scripts/research_discovery.py assess <discovery>`, and use `research-driven-discovery` / `domain-modeling` only when the resolved mode is `research` or `full`. Research artifacts never authorize implementation.
+- **Receipt-Driven Development** is a post-implementation review-integrity layer. Its clone-local switch is `python3 scripts/receipt_review.py mode status`; it is off by default. A receipt binds review evidence to the exact candidate subject and becomes invalid if that subject changes.
+
+For every executable task, read Receipt-RDD mode before post-implementation delegation. At `VERIFY_ASSESS`, after authoritative checks, run:
+
+`python3 scripts/receipt_review.py prepare <TASK> --apply`
+
+then:
+
+`python3 scripts/orchestrator.py reconcile <TASK>`
+
+and only then record `VERIFY_ASSESS` PASS. When Receipt-RDD is off or unknown, the deterministic assessment decides whether an additional verifier is routed; it may add verification but never remove an existing R2/R3 verifier requirement.
+
+When the reconciled route contains `REVIEW_CONSENT`, check:
+
+`python3 scripts/receipt_review.py consent status <TASK>`
+
+If consent is absent, ask the human once for the current provider session. Only an explicit yes permits `consent grant`; never grant it on the user's behalf. The grant is reusable for later candidates in the same provider session, but every candidate still requires its own freeze/review/receipt.
+
+When Receipt-RDD is on, do not delegate `reviewer` until `.harness/runs/<TASK>/receipt-frozen.json` exists for the current candidate. The authoritative REVIEW commit issues the candidate receipt from the PASS reviewer handoff. Any byte/mode change after assessment/freeze invalidates closure and requires reassessment/review.
+<!-- DUAL_RDD_POLICY_V1:END -->
 <!-- PRODUCT_DISCOVERY_V1:START -->
 ## Product discovery boundary
 

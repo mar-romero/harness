@@ -87,6 +87,7 @@ export default Plugin.define({
     const inventoryFile = path.join(runtimeDir, "model-inventory.json")
     const catalogFile = path.join(runtimeDir, "catalog-snapshot.json")
     const activeFile = path.join(runtimeDir, "active-task.json")
+    const sessionFile = path.join(runtimeDir, "session.json")
     const auditFile = path.join(runtimeDir, "permission-audit.jsonl")
     const overridesFile = path.join(root, "harness/opencode-model-overrides.json")
 
@@ -203,6 +204,10 @@ export default Plugin.define({
     })
 
     await ctx.permission.hook("evaluate", async (event) => {
+      // RECEIPT_RDD_SESSION_V1: capture provider session identity before the shell/edit runs.
+      if (event.sessionID) {
+        await writeJsonAtomic(sessionFile, { schema_version: 1, session_id: String(event.sessionID), observed_at: nowIso() })
+      }
       await refreshActiveModels()
       let decision
       if (event.action === "shell") {

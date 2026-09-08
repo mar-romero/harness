@@ -291,6 +291,10 @@
     "agent_computer_interface": "mcp-stdio-plus-cli",
     "adaptive_tdd": "risk-aware-red-green-evidence",
     "change_impact_graph": "prechange-plan-plus-postdiff-verification",
-    "progressive_agent_budget": "mandatory-gates-plus-signal-driven-support"
+    "progressive_agent_budget": "mandatory-gates-plus-signal-driven-support",
+    "research_driven_development": "adaptive-none-light-research-full",
+    "receipt_driven_development": "opt-in-candidate-bound-review-receipts",
+    "session_review_consent": "once-per-provider-session",
+    "postimplementation_verification_assessment": "passive-medium-high"
   }
 }

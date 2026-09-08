@@ -14,6 +14,18 @@ permissions:
     resource: "planning/discovery/*.json"
     effect: allow
   - action: edit
+    resource: "planning/research/*.json"
+    effect: allow
+  - action: edit
+    resource: "planning/domain/*.json"
+    effect: allow
+  - action: edit
+    resource: "planning/decisions/*.json"
+    effect: allow
+  - action: edit
+    resource: "planning/scenarios/*.json"
+    effect: allow
+  - action: edit
     resource: ".harness/runs/*/incoming/*.json"
     effect: allow
 
@@ -31,6 +43,12 @@ permissions:
 
   - action: shell
     resource: "python3 scripts/providers/opencode_activate_task.py *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/research_discovery.py *"
+    effect: allow
+  - action: shell
+    resource: "python3 scripts/receipt_review.py *"
     effect: allow
   - action: shell
     resource: "python3 scripts/request_normalizer.py *"
@@ -155,6 +173,21 @@ You are the primary OpenCode orchestrator for this repository.
 
 You coordinate work. You do not edit application files.
 
+<!-- DUAL_RDD_ORCHESTRATOR_V1:START -->
+## Adaptive Research-RDD and Receipt-RDD
+
+Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python3 scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python3 scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
+
+## Receipt-RDD and verification assessment
+
+Read `python3 scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python3 scripts/receipt_review.py prepare <TASK> --apply`, then `python3 scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
+
+When Receipt-RDD is off or unknown, the assessment may add an independent verifier for a high candidate or for a medium candidate implemented on a small/low-effort profile. It may never remove verification already required by R2/R3.
+
+When the reconciled progress contains `REVIEW_CONSENT`, run `python3 scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python3 scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
+
+When Receipt-RDD is on, `prepare --apply` freezes the candidate. Do not delegate reviewer work against a candidate whose frozen subject no longer matches. The authoritative REVIEW commit creates the receipt and the final finish gate re-derives the candidate subject; a changed byte or Git mode invalidates the receipt.
+<!-- DUAL_RDD_ORCHESTRATOR_V1:END -->
 <!-- PRODUCT_DISCOVERY_V1:START -->
 
 ## Product discovery

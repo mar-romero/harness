@@ -68,8 +68,11 @@ def steps_for(route):
     if route.get('isolation') == 'worktree':
         out.append('WORKTREE')
 
-    out.extend(['IMPLEMENT', 'CHECKS'])
+    out.extend(['IMPLEMENT', 'CHECKS', 'VERIFY_ASSESS'])
 
+    receipt_review = route.get('receipt_review') or {}
+    if receipt_review.get('consent_required'):
+        out.append('REVIEW_CONSENT')
     if 'reviewer' in agents:
         out.append('REVIEW')
     if 'test-auditor' in agents:
@@ -244,6 +247,26 @@ def _validate_pass_prerequisites(task, step, via_commit=False):
             raise ValueError(
                 'CHECKS authoritative report does not contain a PASS for this task'
             )
+    # DUAL_RDD_CONTROL_STAGES_V1:START
+    if step == 'VERIFY_ASSESS':
+        from receipt_review import verification_finish_decision
+        decision = verification_finish_decision(task)
+        if not decision.get('allow'):
+            raise ValueError(
+                'VERIFY_ASSESS cannot PASS until receipt/verification assessment is current: '
+                + json.dumps(decision, ensure_ascii=False, sort_keys=True)
+            )
+
+    if step == 'REVIEW_CONSENT':
+        from receipt_review import consent_decision
+        decision = consent_decision(task)
+        if not decision.get('allow'):
+            raise ValueError(
+                'REVIEW_CONSENT cannot PASS without explicit current-session consent: '
+                + json.dumps(decision, ensure_ascii=False, sort_keys=True)
+            )
+    # DUAL_RDD_CONTROL_STAGES_V1:END
+
     if step == 'IMPACT_VERIFY':
         decision = impact_finish_decision(task)
         if not decision.get('allow'):
@@ -370,6 +393,15 @@ def commit(task, role, handoff_file, note=None):
 
     canonical = save_handoff(role, data)
     status = _normalize_handoff_status(data.get('status'))
+    # DUAL_RDD_REVIEW_RECEIPT_V1:START
+    if step == 'REVIEW' and status == 'PASS':
+        route = _route(task)
+        receipt_cfg = route.get('receipt_review') or {}
+        if receipt_cfg.get('receipt_required') and receipt_cfg.get('receipt_kind') == 'review':
+            from receipt_review import issue_review
+            issue_review(task, canonical)
+    # DUAL_RDD_REVIEW_RECEIPT_V1:END
+
     evidence_status = 'PASS' if status == 'PASS' else ('FAIL' if status == 'FAIL' else 'BLOCKED')
 
     artifact = canonical.relative_to(ROOT).as_posix()
@@ -417,6 +449,19 @@ def resume(task, step=None, note=None):
     return s
 
 
+
+# DUAL_RDD_RECONCILE_V1:START
+def reconcile(task):
+    task = safe_task_id(task)
+    route = _route(task)
+    state = load(task)
+    state, changed = _reconcile_progress(state, route)
+    if changed:
+        write_json_atomic(path(task), state)
+    return state
+# DUAL_RDD_RECONCILE_V1:END
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -427,6 +472,9 @@ def main():
     p.add_argument('--overwrite', action='store_true')
 
     p = sub.add_parser('status')
+    p.add_argument('task')
+
+    p = sub.add_parser('reconcile')
     p.add_argument('task')
 
     p = sub.add_parser('record')
@@ -452,6 +500,8 @@ def main():
             s = init_progress(a.task, json.loads(Path(a.route).read_text(encoding='utf-8')), a.overwrite)
         elif a.cmd == 'status':
             s = load(a.task)
+        elif a.cmd == 'reconcile':
+            s = reconcile(a.task)
         elif a.cmd == 'record':
             s = record(a.task, a.status, a.step, a.note)
         elif a.cmd == 'commit':

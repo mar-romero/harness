@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portable-harness.local/schema/receipt-assessment.schema.json",
+  "title": "Receipt-RDD candidate assessment",
+  "type": "object",
+  "required": ["schema_version", "task_id", "risk", "reasons", "subject_hash", "changed_paths", "changed_lines"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string"},
+    "risk": {"enum": ["passive", "medium", "high"]},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "subject_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "changed_paths": {"type": "integer", "minimum": 0},
+    "changed_lines": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": true
+}
