@@ -816,9 +816,50 @@ def run_to_completion(task_path: Path, *, io: RunnerIO | None = None, providers:
 
         if step == "WORKTREE":
             wt = worktree_status(task_id)
+
             if not wt.get("exists") or not wt.get("lock"):
-                create_worktree(task_id, execute=True)
-            record(task_id, "PASS", step="WORKTREE", note="neutral orchestrator created isolated writer worktree")
+                try:
+                    create_worktree(task_id, execute=True)
+                except Exception as exc:
+                    state2 = record(
+                        task_id,
+                        "BLOCKED",
+                        step="WORKTREE",
+                        note=f"failed to create isolated writer worktree: {exc}",
+                    )
+                    return {
+                        "task_id": task_id,
+                        "status": state2.get("state"),
+                        "progress": state2,
+                        "reason": str(exc),
+                    }
+
+                wt = worktree_status(task_id)
+
+            if not wt.get("exists") or not wt.get("lock"):
+                reason = (
+                    "isolated writer worktree validation failed after creation: "
+                    f"exists={wt.get('exists')} lock={wt.get('lock')}"
+                )
+                state2 = record(
+                    task_id,
+                    "BLOCKED",
+                    step="WORKTREE",
+                    note=reason,
+                )
+                return {
+                    "task_id": task_id,
+                    "status": state2.get("state"),
+                    "progress": state2,
+                    "reason": reason,
+                }
+
+            record(
+                task_id,
+                "PASS",
+                step="WORKTREE",
+                note="neutral orchestrator verified isolated writer worktree",
+            )
             continue
 
         if step == "CHECKS":
