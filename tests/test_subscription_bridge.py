@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from model_router import selections_for_task
 from subscription_bridge import build_inventory
 from subscription_runtime import build_command, execute, sanitized_environment
+import subscription_runtime
 
 
 class SubscriptionBridgeTests(unittest.TestCase):
@@ -54,6 +55,49 @@ class SubscriptionBridgeTests(unittest.TestCase):
 
             self.assertEqual(result["exit_code"], 0)
             self.assertEqual(result["final_text"], "saw-large-prompt")
+
+    def test_execute_uses_utf8_for_subprocess_text_transport(self):
+
+        completed = subprocess.CompletedProcess(
+            args=["fake"],
+            returncode=0,
+            stdout='{"response":"ok"}',
+            stderr="",
+        )
+
+        with patch.object(subscription_runtime, "find_executable", return_value="fake-cli"), \
+            patch.object(
+                subscription_runtime,
+                "probe_capabilities",
+                return_value={"probe_ok": True, "features": {}},
+            ), \
+            patch.object(subscription_runtime, "hook_pre_agent", return_value={"allow": True}), \
+            patch.object(
+                subscription_runtime,
+                "hook_post_agent",
+                side_effect=lambda **kwargs: {"exit_code": kwargs["exit_code"]},
+            ), \
+            patch.object(subscription_runtime, "git_fingerprint", return_value="same"), \
+            patch.object(subscription_runtime.subprocess, "run", return_value=completed) as run_mock:
+
+            result = subscription_runtime.execute(
+                provider="cursor",
+                prompt="Leé: á é í ó ú ñ ¿ ¡",
+                model="auto",
+                effort=None,
+                role="reviewer",
+                mode="read-only",
+                cwd=Path("."),
+                max_turns=1,
+                timeout=10,
+            )
+
+        self.assertEqual(result["exit_code"], 0)
+
+        kwargs = run_mock.call_args.kwargs
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "strict")
+        self.assertIn("á é í ó ú ñ ¿ ¡", kwargs["input"])
 
     def test_strict_environment_removes_direct_model_api_keys(self):
         base = {

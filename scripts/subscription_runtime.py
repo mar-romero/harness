@@ -345,6 +345,8 @@ def execute(*, provider: str, prompt: str, model: str, effort: str | None, role:
                 cwd=cwd,
                 env=env,
                 text=True,
+                encoding="utf-8",
+                errors="strict",
                 input=stdin_prompt,
                 capture_output=True,
                 timeout=timeout,
