@@ -15,6 +15,57 @@ import worktree
 
 
 class WorktreePublishTests(unittest.TestCase):
+    def test_cleanup_recovers_when_git_remove_unregisters_but_leaves_residual_directory(self):
+        self._runtime(["src/app.py"])
+        created = worktree.create(self.task, execute=True)
+        path = Path(created["worktree"])
+
+        (path / "src").mkdir(parents=True)
+        (path / "src/app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+        with patch(
+            "gate.finish_decision",
+            return_value={"allow": True, "missing": [], "failing": []},
+        ):
+            original_git = worktree.git
+
+            def flaky_git(*args, **kwargs):
+                if args[:2] == ("worktree", "remove"):
+                    # Simulate Windows behavior observed in production:
+                    # Git successfully unregisters/removes the worktree, but a
+                    # residual directory remains and the command reports failure.
+                    original_git(*args, **kwargs)
+
+                    path.mkdir(parents=True, exist_ok=True)
+                    (path / "residual.tmp").write_text(
+                        "cleanup residue\n",
+                        encoding="utf-8",
+                    )
+
+                    raise subprocess.CalledProcessError(
+                        255,
+                        ["git", *args],
+                    )
+
+                return original_git(*args, **kwargs)
+
+            with patch.object(worktree, "git", side_effect=flaky_git):
+                result = worktree.publish(self.task, execute=True)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertFalse(path.exists())
+        self.assertFalse(worktree.lock(self.task).exists())
+
+        listed = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=self.repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+
+        self.assertNotIn(str(path), listed)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
