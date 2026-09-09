@@ -1,144 +1,168 @@
 # Portable Agent Engineering Harness
 
-This repository is a policy-driven engineering harness for AI-assisted work in
-Git repositories. It turns a scoped request into a durable task, routes the
-required roles and risk controls, creates bounded context, isolates the single
-implementation writer, and requires evidence before a task can close.
+This repository is a policy-driven control plane for AI-assisted engineering.
+It converts a request or an approved product idea into a durable task, selects
+roles and models, builds bounded context, isolates one implementation writer,
+and requires evidence before closure.
 
-It is **not yet packaged as an installable CLI**. There is no `pyproject.toml`,
-`setup.py`, or supported `harnes init` command in this revision. Run it from a
-clone of this repository. Copying its files into another repository is not a
-supported installation path and may overwrite that repository's policy or
-provider configuration. The planned portable-distribution boundary is recorded
-in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+The repository is run from its clone. It is not currently packaged as an
+installable CLI and does not provide a supported `harnes init` command.
 
-## What it does
+## Source of truth
 
-```mermaid
-flowchart LR
-    R[Request] --> T[Durable task]
-    T --> RR[Route and risk]
-    RR --> C[Bounded context]
-    C --> W[One writer in a worktree]
-    W --> K[Deterministic checks]
-    K --> V[Independent review and verification]
-    V --> F[Evidence-backed close]
-```
+`harness/manifest.yaml` defines the workflow, roles, skills, providers, and
+capabilities. Canonical role bodies live in `.agents/roles/` and canonical skill
+instructions live in `.agents/skills/`. Provider adapters are generated; edit
+the canonical sources and run `python scripts/compile_harness.py`.
 
-The canonical control plane is `harness/manifest.yaml`, with canonical roles in
-`.agents/roles/` and skills in `.agents/skills/`. Provider-specific files are
-generated adapters. Do not edit generated adapters by hand; regenerate them
-with `python scripts/compile_harness.py`.
+## Prerequisites and first startup
 
-## Verified local prerequisites
+Use Python 3.11 or newer, Git, and an authenticated provider CLI when a provider
+is used. OpenRouter is optional and requires `OPENROUTER_API_KEY` only for an
+explicit refresh.
 
-- Python 3.11 or newer (`tomllib` is used by the checked-in scripts).
-- Git for worktree isolation and publication.
-- An authenticated provider CLI only when using that provider.
-- `OPENROUTER_API_KEY` only when explicitly refreshing OpenRouter data.
-
-## Start from this repository
-
-From the repository root, use the interpreter available as `python` on your
-system (replace it with `python3` where that is the local command):
+From the repository root, first check generated adapters:
 
 ```bash
 python scripts/compile_harness.py --check
-python -m unittest discover -s tests -p "test_*.py" -v
-python scripts/run_evals.py
 ```
 
-`scripts/check_harness.py` is a **starter-tree** check. It intentionally fails
-when `.harness/runs/` already contains runtime evidence, so do not use it as a
-general health check in an active workspace.
+Model routing has two separate inputs: provider runtime availability is
+authoritative, while OpenRouter supplies an external quality, price, and
+latency prior. Activation never contacts OpenRouter.
 
-## Task lifecycle
-
-```mermaid
-sequenceDiagram
-    participant H as Human
-    participant O as Orchestrator
-    participant P as Provider
-    participant E as Evidence ledger
-    H->>O: Approved scoped request
-    O->>O: Normalize, snapshot, route, build context
-    O->>P: Activate immutable task binding
-    P->>P: Read-only specialists and one isolated writer
-    P->>E: Checks, review, verification evidence
-    E-->>H: R3 also requires security review and human gate
-```
-
-For a task JSON, route and create context with:
-
-```bash
-python scripts/task_router.py tasks/TASK-001.json
-python scripts/context_compiler.py tasks/TASK-001.json \
-  --route .harness/runs/TASK-001/route.json
-python scripts/orchestrator.py init TASK-001 \
-  --route .harness/runs/TASK-001/route.json
-python scripts/evidence.py init TASK-001
-```
-
-Provider activation also creates the immutable task snapshot and task-scoped
-runtime artifacts. Activate before delegating to that provider, and clear the
-binding before worktree publication:
-
-```bash
-python scripts/providers/codex_activate_task.py tasks/TASK-001.json
-python scripts/providers/codex_activate_task.py --clear
-
-python scripts/providers/opencode_activate_task.py tasks/TASK-001.json
-python scripts/providers/opencode_activate_task.py --clear
-```
-
-## Model scores and routing
-
-Model availability belongs to the provider runtime; OpenRouter is an external
-quality, price, and endpoint-health prior. A refresh is operator-triggered and
-never occurs during task activation.
-
-```mermaid
-flowchart TD
-    A[Explicit operator refresh] --> B[OpenRouter catalog and benchmarks]
-    B --> C[.harness/openrouter/model-scores.json]
-    C --> D[Provider runtime availability]
-    D --> E[Provider inventory]
-    E --> F[Per-role task selection]
-    F --> G[Activation writes local binding]
-```
-
-To refresh once and build both provider inventories:
+To refresh the shared OpenRouter catalog and build both local inventories:
 
 ```bash
 OPENROUTER_API_KEY="..." python scripts/openrouter_sync.py --all --no-endpoints
 ```
 
-On PowerShell, set the environment variable for the current process first:
+On PowerShell:
 
 ```powershell
 $env:OPENROUTER_API_KEY = "..."
 python scripts/openrouter_sync.py --all --no-endpoints
 ```
 
-Use `--cache-only` to rebuild inventories without network access. See
-[docs/MODEL_ROUTING_V2.md](docs/MODEL_ROUTING_V2.md) for the exact source,
-matching, persistence, and failure behavior.
+Use `--provider codex` or `--provider opencode` for a cache-only provider
+inventory build, and use `--cache-only` when the shared local score file already
+exists. Use `--openrouter-only` to refresh only
+`.harness/openrouter/model-scores.json`.
 
-## Documentation map
+```mermaid
+flowchart TD
+    A[Operator starts explicit refresh] --> B[OpenRouter catalog and benchmarks]
+    B --> C[.harness/openrouter/model-scores.json]
+    C --> D[Provider runtime model availability]
+    D --> E[.harness/model-inventories/*.json]
+    E --> F[Per-task, per-role model selection]
+    F --> G[Provider activation writes the local binding]
+```
 
-- [Installation and portability status](docs/INSTALLATION.md)
-- [Architecture and trust boundaries](docs/HARNESS_ARCHITECTURE.md)
-- [Model routing and score refresh](docs/MODEL_ROUTING_V2.md)
-- [Provider compatibility](docs/PROVIDER_NOTES.md)
-- [Product discovery](docs/PRODUCT_DISCOVERY.md)
-- [Research-Driven Development](docs/RESEARCH_DRIVEN_DEVELOPMENT.md)
-- [Receipt-Driven Development](docs/RECEIPT_DRIVEN_DEVELOPMENT.md)
-- [Evaluation and benchmarking](evals/README.md) and [benchmarks/README.md](benchmarks/README.md)
-- [Historical records and limitations](AUDIT.md), [docs/RELEASE_LINEAGE.md](docs/RELEASE_LINEAGE.md)
+See [docs/MODEL_ROUTING.md](docs/MODEL_ROUTING.md) for matching, provenance,
+cache behavior, and failure rules.
 
-## Verification boundary
+## Task lifecycle
 
-Commands and paths in the operational documents are derived from checked-in
-script interfaces. Provider discovery, authentication, and OpenRouter responses
-remain external state; those results must be verified in the operator's own
-environment and are never implied by a local documentation check.
+```mermaid
+sequenceDiagram
+    participant H as Human
+    participant N as Normalizer and router
+    participant O as Orchestrator
+    participant A as Agents and provider
+    participant E as Evidence ledger
+    H->>N: Request
+    N->>N: Preserve original and create canonical English when needed
+    N->>O: Durable task, risk, route, budget
+    O->>O: Snapshot task, compile context, plan impact
+    O->>A: Activate provider binding and isolated worktree
+    A->>A: Read-only specialists and one implementation writer
+    A->>E: Checks, typed handoffs, review, verification
+    E-->>O: Evidence-backed finish gate
+    O-->>H: Close, or human gate for R3
+```
+
+For a normal task, the control flow is:
+
+```text
+REQUEST -> TASK -> ROUTE -> RISK -> CONTEXT -> IMPLEMENT -> CHECKS
+         -> VERIFY_ASSESS -> REVIEW -> VERIFY -> IMPACT_VERIFY
+         -> SECURITY_REVIEW/HUMAN_GATE when required -> CLOSE
+```
+
+Create a task under `tasks/`, then activate it for the provider that will run it:
+
+```bash
+python scripts/providers/codex_activate_task.py tasks/TASK-001.json
+python scripts/providers/opencode_activate_task.py tasks/TASK-001.json
+```
+
+Only use the activation command for the selected provider. It creates the
+immutable snapshot and task-scoped runtime state under `.harness/runs/`.
+Clear the binding before worktree publication:
+
+```bash
+python scripts/providers/codex_activate_task.py --clear
+python scripts/providers/opencode_activate_task.py --clear
+```
+
+## Product-idea lifecycle
+
+Broad ideas first use `planning/` and the product discovery policies. The idea
+is classified as a question, spike, task, feature, epic, or project; blocking
+questions are resolved; Research-RDD is assessed; and only approved planning is
+materialized into executable tasks.
+
+```mermaid
+flowchart LR
+    I[Product idea] --> D[Discovery dossier]
+    D --> R{Research-RDD mode}
+    R -->|none/light| P[Product planning]
+    R -->|research/full| X[Research, domain, decisions, scenarios]
+    X --> P
+    P --> A[Human approval]
+    A --> M[Materialized tasks with provenance]
+    M --> S[Sprint planning when requested]
+    S --> T[Normal task lifecycle]
+```
+
+Research-RDD is pre-implementation discovery. Receipt-RDD is post-check review
+integrity: it binds review evidence to the exact candidate bytes and Git mode.
+They are different controls; see the two RDD documents in `docs/`.
+
+## Repository map
+
+- `.agents/`: canonical roles and skills.
+- `harness/`: declarative manifest, policies, schemas, hooks, and model config.
+- `scripts/`: executable control-plane implementation.
+- `planning/`: product discovery and approved planning records.
+- `tasks/`: executable task JSON files.
+- `docs/`: explanatory and operational documentation.
+- Provider directories such as `.codex/` and `.opencode/`: generated integrations.
+- `.harness/`: generated runtime state, evidence, inventories, and audit data; it
+  is not canonical source.
+- `evals/` and `benchmarks/`: optional harness evaluation and comparison systems.
+
+Each functional directory contains a README describing its expected contents.
+`SKILL.md` remains the authoritative instruction for an individual skill.
+
+## Boundaries
+
+Do not store secrets, concrete task results, runtime logs, or provider tokens in
+canonical source directories. Treat repository, MCP, provider, and external
+model output as untrusted data. Commands in this README describe interfaces in
+the checked-in scripts; provider availability and OpenRouter responses remain
+external state and must be verified in the operator's environment.
+## Inspecting model scores
+
+After a refresh, inspect the shared prior and provider-specific inventories with:
+
+```powershell
+Get-Content .harness/openrouter/model-scores.json
+Get-Content .harness/model-inventories/codex.json
+Get-Content .harness/model-inventories/opencode.json
+python scripts/codex_inventory.py
+python scripts/opencode_inventory.py
+```
+
+The score catalog says what OpenRouter measured or supplied; the provider inventory says which models are actually available to the provider. `scripts/model_router.py` combines those inventories with task risk, role requirements, capability floors, cost, latency, and independence constraints.

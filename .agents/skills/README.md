@@ -1,0 +1,46 @@
+# Canonical skills
+
+This folder contains reusable process contracts selected by task route and role.
+
+- `adaptive-tdd/`: adaptive RED/GREEN/REFACTOR evidence.
+- `agent-computer-interface/`: bounded repository and Git inspection.
+- `architecture-decision/`: durable records for hard-to-reverse choices.
+- `bounded-review/`: bounded review of a frozen candidate.
+- `chained-work/`: dependent work-unit coordination.
+- `change-impact-analysis/`: reverse-dependent and blast-radius analysis.
+- `code-quality/`: correctness, clarity, security, and maintainability review.
+- `cognitive-doc-design/`: documentation structure and retrieval guidance.
+- `context-engineering/`: bounded context-pack construction.
+- `debugging/`: reproduction and hypothesis discrimination.
+- `decision-escalation/`: human escalation for material decisions.
+- `domain-modeling/`: vocabulary, relationships, and invariants.
+- `evidence-ledger/`: append-only evidence recording.
+- `github-issue/`: structured issue creation.
+- `grounded-evidence/`: deterministic, inferred, or insufficient evidence.
+- `harness-request/`: request normalization and task creation.
+- `harness-task/`: execution of an existing durable task.
+- `idea-to-work/`: product idea discovery and decomposition.
+- `implementation-loop/`: small edit, check, inspect, and evidence cycle.
+- `independent-review/`: writer/reviewer independence.
+- `judgment-day/`: adversarial R3 review.
+- `portable-skill-authoring/`: creation of provider-neutral skills.
+- `pr-creation/`: pull request preparation.
+- `progressive-agent-budget/`: staged agent escalation.
+- `prompt-injection-defense/`: untrusted-content defense.
+- `research-driven-discovery/`: research before executable work.
+- `software-engineering/`: general engineering principles.
+- `source-research/`: first-party source verification.
+- `sprint-planning/`: approved-task batching.
+- `systemic-defect-triage/`: isolated versus systemic defect analysis.
+- `task-close/`: evidence-backed finish gating.
+- `task-intake/`: scoped task definition.
+- `task-router/`: deterministic route selection.
+- `technical-spike/`: bounded uncertainty reduction.
+- `test-strategy/`: failure-mode and boundary strategy.
+- `tool-output-validation/`: validation of untrusted tool output.
+- `verification/`: independent acceptance verification.
+- `web-dogfood/`: user-visible product exercise.
+- `work-unit-commits/`: small reviewable commits.
+- `worktree-isolation/`: single-writer worktree rules.
+- `SKILL.md` in each skill folder: the authoritative contract for that skill.
+- `REFERENCE.md` and `references/`: optional detailed material for selected skills.

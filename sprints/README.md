@@ -1,6 +1,11 @@
 # Sprints
 
-A sprint is an execution batch, not a substitute for task acceptance criteria
-or evidence.
+This folder contains bounded execution batches.
 
-Optional planning artifacts. Do not use sprint documents as a substitute for task acceptance criteria or evidence.
+- `README.md`: defines sprint purpose and boundaries.
+- Future sprint files: approved task IDs, waves, capacity, rationale, and
+  deferred work.
+
+A sprint groups approved tasks by dependency, value, and risk reduction; it does
+not replace task acceptance criteria, technical checks, independent review, or
+closure evidence.

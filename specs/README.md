@@ -1,5 +1,10 @@
-# Specs
+# Specifications
 
-Store task-specific designs here when an explicit specification reduces risk.
+This folder contains technical specifications associated with tasks.
 
-Use for R2/R3 work or any change where an explicit design reduces correctness risk.
+- `README.md`: defines when a specification is needed.
+- Future specification files: architecture, contracts, invariants, migrations,
+  rollback plans, or technical decisions.
+
+Specifications are especially useful for R2 and R3 changes, but they do not
+replace acceptance criteria, checks, review, verification, or evidence.

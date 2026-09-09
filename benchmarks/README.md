@@ -1,26 +1,9 @@
 # Benchmarks
 
-Public benchmark case descriptors belong under `benchmarks/cases/`. Private
-oracles and hidden tests must remain outside this repository; committed examples
-are format demonstrations, not secret evaluation data.
+This folder contains public benchmark inputs for comparing harness variants.
 
-```text
-private-benchmark-root/
-└── BENCH-EXAMPLE/
-    ├── oracle.json
-    └── hidden_test.py
-```
+- `examples/`: optional public examples and placeholders.
+- `README.md`: defines the public benchmark boundary.
 
-Validate, run, or render a benchmark through the checked-in interface:
-
-```bash
-python scripts/harness_benchmark.py --help
-python scripts/harness_benchmark.py validate <suite.json>
-python scripts/harness_benchmark.py run <suite.json> --provider codex
-python scripts/harness_benchmark.py report <report.json>
-```
-
-Benchmark runs use temporary workspaces. They do not prove general provider
-quality, and their metrics should be interpreted with the provider/model,
-repetition count, private-oracle status, and environment recorded alongside the
-result.
+Private or hidden oracles must remain outside the repository. Benchmarks are not
+part of a normal task and are run explicitly through `scripts/harness_benchmark.py`.

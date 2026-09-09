@@ -1,9 +1,20 @@
-# Product planning artifacts
+# Planning
 
-See `docs/PRODUCT_DISCOVERY.md` for the current approval boundary and command
-interfaces.
+This folder contains product discovery and approved planning before executable
+tasks are created.
 
-This directory is the durable product/discovery layer above executable harness tasks.
+- `discovery/`: original ideas, questions, assumptions, challenges, and MVP.
+- `research/`: source-backed Research-RDD findings and contrary evidence.
+- `domain/`: domain vocabulary, relationships, lifecycle, and invariants.
+- `decisions/`: evidence-traced decisions, alternatives, and reversibility.
+- `scenarios/`: observable scenarios bridging discovery into implementation.
+- `projects/`: product or initiative records.
+- `epics/`: multi-feature outcomes.
+- `features/`: user-visible capabilities.
+- `spikes/`: bounded uncertainty-reduction work.
+- `sprints/`: bounded execution batches made from approved tasks.
+- `examples/`: non-live reference dossiers.
+- `README.md`: explains the planning boundary.
 
 - `discovery/` — original idea, clarification, assumptions, challenges, MVP and proposed decomposition.
 - `research/` — source-backed findings and contrary evidence for Research-RDD.
