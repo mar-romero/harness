@@ -5,6 +5,7 @@ import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import tempfile
 
 from scripts import autonomous_orchestrator as ao
 from scripts import harness_chat as hc
@@ -14,6 +15,40 @@ from scripts.harnesslib import ROOT, run_dir, write_json_atomic
 
 
 class NeutralChatTests(unittest.TestCase):
+    def test_explorer_localization_keeps_valid_greenfield_prospective_paths(self):
+        task_id = "TASK-GREENFIELD-LOCALIZE"
+        task = {
+            "id": task_id,
+            "files": [],
+        }
+
+        handoff = {
+            "status": "PASS",
+            "relevant_files": [
+                "docs/HARNESS_SMOKE_TEST.md",
+            ],
+        }
+
+        def fake_update_task(received_task_id, mutate, reactivate=True):
+            self.assertEqual(received_task_id, task_id)
+            self.assertTrue(reactivate)
+            return mutate(task)
+
+        with tempfile.TemporaryDirectory() as td, \
+            patch.object(ao, "ROOT", Path(td)), \
+            patch.object(ao, "_update_task", side_effect=fake_update_task):
+
+            ao.localize_from_explorer(
+                task_id,
+                handoff,
+                io=ao.RunnerIO(emit=lambda _: None),
+            )
+
+        self.assertEqual(
+            task["files"],
+            ["docs/HARNESS_SMOKE_TEST.md"],
+        )
+    
     def test_quota_failure_cools_provider_for_later_roles(self):
         task_id = "TASK-QUOTA-COOLDOWN"
 

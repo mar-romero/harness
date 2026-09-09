@@ -587,31 +587,60 @@ def _update_task(task_id: str, mutator: Callable[[dict[str, Any]], bool], *, rea
     return True
 
 
-def localize_from_explorer(task_id: str, handoff: dict[str, Any], *, io: RunnerIO) -> None:
-    files = [str(x) for x in handoff.get("relevant_files", []) if isinstance(x, str)]
-    existing = []
+def localize_from_explorer(
+    task_id: str,
+    handoff: dict[str, Any],
+    *,
+    io: RunnerIO,
+) -> None:
+    files = [
+        str(x)
+        for x in handoff.get("relevant_files", [])
+        if isinstance(x, str)
+    ]
+
+    localized = []
+    root = ROOT.resolve()
+
     for rel in files:
+        candidate = Path(rel)
+
+        if candidate.is_absolute():
+            continue
+
         try:
-            p = (ROOT / rel).resolve()
-            p.relative_to(ROOT.resolve())
+            resolved = (ROOT / candidate).resolve()
+            resolved.relative_to(root)
         except Exception:
             continue
-        if p.is_file():
-            existing.append(Path(rel).as_posix())
-    if not existing:
+
+        # Existing directories are not publication files.
+        # Nonexistent paths are allowed as prospective/greenfield files.
+        if resolved.exists() and not resolved.is_file():
+            continue
+
+        localized.append(candidate.as_posix())
+
+    if not localized:
         return
 
     def mutate(task: dict[str, Any]) -> bool:
         current = list(task.get("files") or [])
-        merged = list(dict.fromkeys(current + existing))[: int(policy().get("max_localized_files", 24))]
+        merged = list(
+            dict.fromkeys(current + localized)
+        )[: int(policy().get("max_localized_files", 24))]
+
         if merged == current:
             return False
+
         task["files"] = merged
         return True
 
     if _update_task(task_id, mutate, reactivate=True):
-        io.emit(f"    localized task surface: {len(existing)} file(s); route/context/models refreshed")
-
+        io.emit(
+            f"    localized task surface: {len(localized)} file(s); "
+            "route/context/models refreshed"
+        )
 
 def acceptance_from_planner(task_id: str, handoff: dict[str, Any]) -> None:
     criteria = [str(x) for x in handoff.get("acceptance_criteria", []) if str(x).strip()]
