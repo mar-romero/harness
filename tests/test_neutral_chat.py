@@ -17,15 +17,13 @@ from scripts.harnesslib import ROOT, run_dir, write_json_atomic
 class NeutralChatTests(unittest.TestCase):
     def test_explorer_localization_keeps_valid_greenfield_prospective_paths(self):
         task_id = "TASK-GREENFIELD-LOCALIZE"
-        task = {
-            "id": task_id,
-            "files": [],
-        }
-
+        task = {"id": task_id, "files": []}
         handoff = {
             "status": "PASS",
             "relevant_files": [
                 "docs/HARNESS_SMOKE_TEST.md",
+                ".harness/runs/TASK-GREENFIELD-LOCALIZE/task.json",
+                "../outside.py",
             ],
         }
 
@@ -37,7 +35,6 @@ class NeutralChatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, \
             patch.object(ao, "ROOT", Path(td)), \
             patch.object(ao, "_update_task", side_effect=fake_update_task):
-
             ao.localize_from_explorer(
                 task_id,
                 handoff,
@@ -48,7 +45,7 @@ class NeutralChatTests(unittest.TestCase):
             task["files"],
             ["docs/HARNESS_SMOKE_TEST.md"],
         )
-    
+        
     def test_quota_failure_cools_provider_for_later_roles(self):
         task_id = "TASK-QUOTA-COOLDOWN"
 

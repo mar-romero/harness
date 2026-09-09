@@ -23,7 +23,8 @@ SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harnesslib import load_manifest, run_dir, safe_task_id, write_json_atomic  # noqa: E402
+from harnesslib import load_json, load_manifest, run_dir, safe_task_id, write_json_atomic  # noqa: E402
+from context_compiler import excluded as context_excluded  # noqa: E402
 from handoff import validate as validate_handoff  # noqa: E402
 from orchestrator import SUBAGENT_STAGES, commit as commit_handoff, load as load_progress, record, reconcile, resume  # noqa: E402
 from subscription_bridge import (  # noqa: E402
@@ -601,6 +602,7 @@ def localize_from_explorer(
 
     localized = []
     root = ROOT.resolve()
+    context_policy = load_json("harness/context-policy.json")
 
     for rel in files:
         candidate = Path(rel)
@@ -614,12 +616,15 @@ def localize_from_explorer(
         except Exception:
             continue
 
-        # Existing directories are not publication files.
-        # Nonexistent paths are allowed as prospective/greenfield files.
+        normalized = Path(candidate.as_posix())
+
+        if context_excluded(normalized, context_policy):
+            continue
+
         if resolved.exists() and not resolved.is_file():
             continue
 
-        localized.append(candidate.as_posix())
+        localized.append(normalized.as_posix())
 
     if not localized:
         return
