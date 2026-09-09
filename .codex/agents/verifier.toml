@@ -1,5 +1,7 @@
 name = "verifier"
 description = "Independently verify observable acceptance criteria on the frozen candidate."
+model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 
 developer_instructions = """

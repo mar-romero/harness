@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "provider": "subscriptions",
+  "availability": {
+    "source": "official authenticated coding CLIs",
+    "authoritative": true
+  },
+  "effort": {
+    "mode": "separate-runner",
+    "unknown_model_supported": ["low", "medium", "high"],
+    "model_rules": [
+      {"pattern": "^codex/", "supported": ["none", "minimal", "low", "medium", "high", "xhigh"]},
+      {"pattern": "^claude/", "supported": ["low", "medium", "high", "xhigh"]},
+      {"pattern": "^copilot/", "supported": ["low", "medium", "high", "xhigh"]},
+      {"pattern": "^grok/", "supported": ["low", "medium", "high", "xhigh"]},
+      {"pattern": "^cursor/", "supported": []},
+      {"pattern": "^gemini/", "supported": []}
+    ]
+  }
+}

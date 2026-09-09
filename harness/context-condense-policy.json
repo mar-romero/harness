@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "max_prior_handoff_chars": 18000,
+  "max_string_chars": 1400,
+  "max_list_items": 14,
+  "max_dict_items": 24,
+  "preserve_keys": [
+    "task_id", "producer", "status", "relevant_files", "risk_signals",
+    "steps", "acceptance_criteria", "risks", "rollback", "tdd_mode",
+    "behaviors", "oracle", "cases", "changed_files", "checks",
+    "residual_risks", "findings", "gaps", "criteria", "trust_boundaries",
+    "evidence_refs", "unknowns", "unresolved", "assumptions", "facts"
+  ]
+}

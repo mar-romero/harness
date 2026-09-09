@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness subscription CLI run",
+  "type": "object",
+  "required": ["schema_version", "task_id", "role", "runtime_provider", "model", "exit_code", "integrity"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string"},
+    "role": {"type": "string"},
+    "runtime_provider": {"type": "string"},
+    "model": {"type": "string"},
+    "reasoning_effort": {"type": ["string", "null"]},
+    "exit_code": {"type": "integer"},
+    "final_text": {"type": "string"},
+    "integrity": {"type": "object", "required": ["mode", "changed"]},
+    "usage": {"type": ["object", "null"]}
+  }
+}

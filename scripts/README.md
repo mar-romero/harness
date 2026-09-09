@@ -16,6 +16,8 @@ This folder contains the executable control-plane implementation.
 - `model_task_profile.py`: profiles task capability requirements.
 - `model_router.py`: selects a model per routed agent.
 - `openrouter_sync.py`: explicitly refreshes external scores and local inventories.
+- `subscription_bridge.py`: builds a cross-provider subscription inventory, activates tasks, and runs routed roles through official authenticated coding CLIs.
+- `subscription_runtime.py`: shell-free CLI adapters, API-key environment sanitization, output normalization, and read-only integrity checks.
 - `orchestrator.py`: advances task stages and validates prerequisites.
 - `worktree.py`: creates, publishes, and cleans isolated worktrees.
 - `task_checks.py`: runs authorized deterministic task checks.
@@ -49,3 +51,8 @@ This folder contains the executable control-plane implementation.
 - `README.md`: explains the executable control-plane boundary.
 
 Scripts read policy from `harness/`; they must not contain project-specific logic or secrets.
+
+## Neutral terminal orchestrator
+
+- `scripts/harness_chat.py`: provider-neutral terminal chat. Plain text becomes a task and the harness drives the workflow automatically.
+- `scripts/autonomous_orchestrator.py`: deterministic stage runner behind the chat; executes canonical roles through the Subscription Bridge and commits typed handoffs/control-plane gates.

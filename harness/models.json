@@ -404,7 +404,7 @@
       "xhigh",
       "max"
     ],
-    "fallback": "nearest-lower-then-higher"
+    "fallback": "nearest-higher-then-lower"
   },
   "independence": {
     "roles": {
@@ -447,7 +447,24 @@
     "default_no_eligible_action": "inherit",
     "prefer_provider_native_on_exact_tie": true,
     "deterministic_tie_break": "model_id_ascending",
-    "unknown_capability_is_zero": true
+    "unknown_capability_is_zero": true,
+    "strategy": "minimum_sufficient",
+    "minimum_sufficient": {
+      "target_ratio": 0.9,
+      "fallback_by_risk": {
+        "R0": "closest_eligible",
+        "R1": "closest_eligible",
+        "R2": "closest_eligible",
+        "R3": "block"
+      },
+      "burden_weights": {
+        "capability_surplus": 0.6,
+        "quota": 0.25,
+        "latency": 0.1,
+        "local_evidence": 0.05
+      },
+      "meaning": "Choose the least-resource model that meets dynamic task/role capability targets; use hard-floor fallback only for R0-R2 when no exact sufficient model exists."
+    }
   },
   "inventory": {
     "max_age_hours": null,

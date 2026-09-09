@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PYTHON_BIN=${PYTHON:-python3}
+exec "$PYTHON_BIN" "$HERE/scripts/harness_chat.py" "$@"

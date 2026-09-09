@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "harness-aci",
   "root_mode": "repository",
   "max_file_bytes": 120000,
@@ -10,6 +10,7 @@
   "exclude_dirs": [
     ".git",
     ".worktrees",
+    ".codegraph",
     ".harness/runs",
     "node_modules",
     "dist",
@@ -28,31 +29,91 @@
     "secrets.*"
   ],
   "text_extensions": [
-    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt",
-    ".cs", ".rb", ".php", ".swift", ".md", ".json", ".yaml", ".yml",
-    ".toml", ".sh", ".sql", ".graphql", ".proto", ".html", ".css", ".scss", ".jsonl"
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".sql",
+    ".graphql",
+    ".proto",
+    ".html",
+    ".css",
+    ".scss",
+    ".jsonl"
   ],
   "text_names": [
-    "Dockerfile", "Makefile", "Justfile", "Procfile", "README", "LICENSE"
+    "Dockerfile",
+    "Makefile",
+    "Justfile",
+    "Procfile",
+    "README",
+    "LICENSE"
   ],
   "pass_env": [
-    "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "PYTHONPATH", "CI"
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "PYTHONPATH",
+    "CI"
   ],
   "profiles": {
     "tests.unit": {
       "kind": "test",
-      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
       "timeout_seconds": 180
     },
     "lint.python-compile": {
       "kind": "lint",
-      "argv": ["python3", "-m", "compileall", "-q", "scripts", "tests"],
+      "argv": [
+        "python3",
+        "-m",
+        "compileall",
+        "-q",
+        "scripts",
+        "tests"
+      ],
       "timeout_seconds": 120
     },
     "diagnostics.harness": {
       "kind": "diagnostic",
-      "argv": ["bash", "scripts/check-harness.sh"],
+      "argv": [
+        "bash",
+        "scripts/check-harness.sh"
+      ],
       "timeout_seconds": 180
     }
-  }
+  },
+  "repo_explore_max_files": 12,
+  "repo_explore_max_tokens": 7000,
+  "repo_explore_max_lines_per_symbol": 70,
+  "read_once_cache": true,
+  "read_once_cache_force_supported": true,
+  "read_once_cache_dir": ".harness/cache/aci"
 }

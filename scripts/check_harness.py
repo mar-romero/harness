@@ -72,7 +72,20 @@ def main():
         fail(f'final-v4 feature invariant error: {e}',errors)
 
     # no accidental runtime evidence committed in starter
-    if (ROOT/'.harness/runs').exists() and any((ROOT/'.harness/runs').iterdir()): fail('starter contains runtime evidence',errors)
+    runs_dir = ROOT / '.harness/runs'
+    if runs_dir.exists():
+        tracked_runs = subprocess.run(
+            ['git', 'ls-files', '--', '.harness/runs'],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if tracked_runs.returncode != 0:
+            fail('unable to verify whether runtime evidence is committed', errors)
+        elif tracked_runs.stdout.strip():
+            fail('starter contains committed runtime evidence', errors)
     if errors:
         print('HARNESS CHECK FAILED')
         for e in errors: print(' -',e)

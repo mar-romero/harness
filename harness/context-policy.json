@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "always_include": [
     "AGENTS.md",
     "AI_POLICY.md",
@@ -10,6 +10,7 @@
     ".git",
     ".worktrees",
     ".harness/runs",
+    ".codegraph",
     "node_modules",
     "dist",
     "build",
@@ -56,5 +57,42 @@
     ".sql",
     ".graphql",
     ".proto"
+  ],
+  "graph_backend": "auto",
+  "structured_retrieval_risks": [
+    "R2",
+    "R3"
+  ],
+  "direct_file_count_threshold": 1,
+  "direct_file_token_threshold": 3500,
+  "query_token_retrieval_threshold": 10,
+  "tag_retrieval_threshold": 4,
+  "codegraph_max_files": 8,
+  "codegraph_max_tokens": 7000,
+  "codegraph_file_bonus": 500,
+  "repo_map_tokens": 1600,
+  "symbol_snippet_tokens": 6500,
+  "compact_context_max_tokens": 12000,
+  "max_symbols_per_file": 3,
+  "max_lines_per_symbol": 80,
+  "code_extensions": [
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".hpp"
   ]
 }

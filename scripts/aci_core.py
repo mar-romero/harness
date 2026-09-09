@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from codegraph_bridge import explore as codegraph_explore, status as codegraph_status
+from context_graph import build_graph
+from symbol_context import build_repo_map, build_snippets, query_tokens
+from hook_bus import pre_tool as hook_pre_tool, post_tool as hook_post_tool
+
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "harness" / "aci-policy.json"
 
@@ -166,7 +171,39 @@ def repo_search(query: str, path: str = ".", regex: bool = False, max_results: i
         return _failure(tool, str(exc))
 
 
-def repo_read_range(path: str, start_line: int = 1, end_line: int = 200) -> dict[str, Any]:
+def _read_cache_path() -> Path | None:
+    if not POLICY.get("read_once_cache", True):
+        return None
+    session = os.environ.get("HARNESS_ACI_SESSION_ID")
+    if not session or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", session):
+        return None
+    rel = str(POLICY.get("read_once_cache_dir", ".harness/cache/aci"))
+    path = ROOT / rel / f"{session}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _read_cache_load() -> dict[str, Any]:
+    path = _read_cache_path()
+    if not path or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _read_cache_save(data: dict[str, Any]) -> None:
+    path = _read_cache_path()
+    if not path:
+        return
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(path)
+
+
+def repo_read_range(path: str, start_line: int = 1, end_line: int = 200, force: bool = False) -> dict[str, Any]:
     tool = "repo_read_range"
     try:
         file_path = _resolve_repo_path(path)
@@ -179,18 +216,40 @@ def repo_read_range(path: str, start_line: int = 1, end_line: int = 200) -> dict
             end = start + limit - 1
         lines = _read_text(file_path).splitlines()
         actual_end = min(end, len(lines))
+        digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        rel = _rel(file_path)
+        cache_key = f"{rel}:{start}:{actual_end}:{digest}"
+        cache = _read_cache_load()
+        if not force and cache_key in cache:
+            return _result(tool, {
+                "path": rel,
+                "start_line": start,
+                "end_line": actual_end,
+                "total_lines": len(lines),
+                "sha256": digest,
+                "lines": [],
+                "cache_hit": True,
+                "instruction": "Exact unchanged range was already delivered in this agent run. Reuse it; call again with force=true only if the content is genuinely no longer available in context.",
+            }, truncated=end < int(end_line))
         selected = [
             {"line": idx, "text": lines[idx - 1]}
             for idx in range(start, actual_end + 1)
             if idx <= len(lines)
         ]
+        if _read_cache_path():
+            cache[cache_key] = {"path": rel, "start_line": start, "end_line": actual_end, "sha256": digest}
+            # Keep this tiny and per-run; older keys are harmless but cap them.
+            if len(cache) > 256:
+                cache = dict(list(cache.items())[-256:])
+            _read_cache_save(cache)
         return _result(tool, {
-            "path": _rel(file_path),
+            "path": rel,
             "start_line": start,
             "end_line": actual_end,
             "total_lines": len(lines),
-            "sha256": hashlib.sha256(file_path.read_bytes()).hexdigest(),
+            "sha256": digest,
             "lines": selected,
+            "cache_hit": False,
         }, truncated=end < int(end_line))
     except (ACIError, ValueError) as exc:
         return _failure(tool, str(exc))
@@ -290,6 +349,81 @@ def repo_dependencies(path: str) -> dict[str, Any]:
                     break
         return _result(tool, {"path": _rel(file_path), "dependencies": deps, "mode": "lexical"})
     except ACIError as exc:
+        return _failure(tool, str(exc))
+
+
+def repo_explore(query: str, max_files: int = 8) -> dict[str, Any]:
+    """Return a compact semantic/repository exploration without whole-file dumps.
+
+    Prefer CodeGraph when an index is available. Otherwise use the harness's
+    local graph + declaration/snippet fallback, keeping the same bounded ACI
+    surface for every provider.
+    """
+    tool = "repo_explore"
+    query = (query or "").strip()
+    if not query:
+        return _failure(tool, "query must be non-empty")
+    try:
+        max_files = min(max(1, int(max_files)), int(POLICY.get("repo_explore_max_files", 12)))
+        max_tokens = int(POLICY.get("repo_explore_max_tokens", 7000))
+        cg = codegraph_explore(query, max_files=max_files, max_chars=max_tokens * 4)
+        if cg.get("ok"):
+            return _result(tool, {
+                "backend": "codegraph",
+                "query": query,
+                "paths": cg.get("paths") or [],
+                "source_and_call_paths": cg.get("text") or "",
+                "estimated_tokens": max(1, len(str(cg.get("text") or "")) // 4),
+                "instruction": "Treat returned source as already read. Use repo_read_range only for a detail not present here.",
+            }, truncated=bool(cg.get("truncated")))
+
+        # Offline/zero-dependency fallback. Localize by query terms in paths and
+        # lexical matches, then build a symbol-level map/snippet pack.
+        wanted = list(sorted(query_tokens(query), key=lambda x: (-len(x), x)))[:6]
+        candidate_paths: list[str] = []
+        seen: set[str] = set()
+        for token in wanted:
+            search = repo_search(token, max_results=max_files * 3)
+            if search.get("ok"):
+                for item in (search.get("data") or {}).get("matches", []):
+                    rel = str(item.get("path") or "")
+                    if rel and rel not in seen:
+                        seen.add(rel)
+                        candidate_paths.append(rel)
+                        if len(candidate_paths) >= max_files:
+                            break
+            if len(candidate_paths) >= max_files:
+                break
+        graph = build_graph()
+        if len(candidate_paths) < max_files:
+            for rel in graph:
+                low = rel.lower()
+                if any(token in low for token in wanted) and rel not in seen:
+                    seen.add(rel)
+                    candidate_paths.append(rel)
+                    if len(candidate_paths) >= max_files:
+                        break
+        repo_map = build_repo_map(
+            candidate_paths, query, [], graph,
+            token_budget=min(1400, max_tokens // 4),
+        )
+        snippets = build_snippets(
+            candidate_paths, query, [], graph,
+            token_budget=max(1000, max_tokens - int(repo_map.get("estimated_tokens") or 0)),
+            max_symbols_per_file=2,
+            max_lines_per_symbol=int(POLICY.get("repo_explore_max_lines_per_symbol", 70)),
+        )
+        return _result(tool, {
+            "backend": "builtin-symbol",
+            "query": query,
+            "codegraph_status": codegraph_status(),
+            "paths": sorted(set(repo_map.get("files") or []) | set(snippets.get("files") or [])),
+            "repo_map": repo_map.get("text") or "",
+            "symbol_snippets": snippets.get("snippets") or [],
+            "estimated_tokens": int(repo_map.get("estimated_tokens") or 0) + int(snippets.get("estimated_tokens") or 0),
+            "instruction": "Use these snippets first; do not read complete files unless a missing detail requires it.",
+        })
+    except (ACIError, ValueError, OSError) as exc:
         return _failure(tool, str(exc))
 
 
@@ -423,6 +557,7 @@ def diagnostics_get(profile: str = "diagnostics.harness") -> dict[str, Any]:
 
 
 TOOLS = {
+    "repo_explore": repo_explore,
     "repo_search": repo_search,
     "repo_read_range": repo_read_range,
     "repo_symbol": repo_symbol,
@@ -443,10 +578,17 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
     args = arguments or {}
     if not isinstance(args, dict):
         raise ACIError("tool arguments must be a JSON object")
+    decision = hook_pre_tool(name, args)
+    if not decision.get("allow", False):
+        result = _failure(name, str(decision.get("reason") or "canonical hook bus denied ACI tool"))
+        hook_post_tool(name, result)
+        return result
     try:
-        return fn(**args)
+        result = fn(**args)
     except TypeError as exc:
-        return _failure(name, f"invalid arguments: {exc}")
+        result = _failure(name, f"invalid arguments: {exc}")
+    hook_post_tool(name, result)
+    return result
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -476,6 +618,22 @@ def tool_definitions() -> list[dict[str, Any]]:
     }
     defs = [
         {
+            "name": "repo_explore",
+            "title": "Explore Repository Semantically",
+            "description": "Return a token-bounded repository map plus relevant symbol source/call paths. Uses CodeGraph when indexed and a local symbol-graph fallback otherwise. Prefer this before repeated search/read loops.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1},
+                    "max_files": {"type": "integer", "minimum": 1, "maximum": 12, "default": 8},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            "outputSchema": object_output,
+            "annotations": read_annotations,
+        },
+        {
             "name": "repo_search",
             "title": "Repository Search",
             "description": "Search allowed repository text files with bounded structured output. Prefer this over grep/rg/find.",
@@ -503,6 +661,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "path": {"type": "string", "minLength": 1},
                     "start_line": {"type": "integer", "minimum": 1, "default": 1},
                     "end_line": {"type": "integer", "minimum": 1, "default": 200},
+                    "force": {"type": "boolean", "default": False, "description": "Re-send an unchanged range that was already delivered in this agent run."},
                 },
                 "required": ["path"],
                 "additionalProperties": False,

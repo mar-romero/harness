@@ -16,7 +16,7 @@ from harnesslib import ROOT, load_json, run_dir, safe_task_id, write_json_atomic
 from worktree import status as worktree_status, wt as worktree_path
 
 
-PROVIDERS = ("codex", "opencode")
+PROVIDERS = ("codex", "opencode", "subscriptions")
 
 
 def _load_active_task(task_id: str) -> tuple[dict, Path]:
@@ -30,7 +30,7 @@ def _load_active_task(task_id: str) -> tuple[dict, Path]:
             bindings.append((provider, active, active_path))
 
     if not bindings:
-        raise ValueError("no active Codex or OpenCode task binding matches this task")
+        raise ValueError("no active Codex, OpenCode, or subscription task binding matches this task")
     if len(bindings) != 1:
         providers = ", ".join(provider for provider, _, _ in bindings)
         raise ValueError(f"ambiguous active task binding for {task_id}: {providers}")
@@ -99,13 +99,14 @@ def _project_root(task: dict) -> Path:
         elif path.endswith("/pyproject.toml"):
             roots.add(path.rsplit("/", 1)[0])
 
-    if len(roots) != 1:
-        raise ValueError(
-            "cannot infer one project root from task.files: "
-            + ", ".join(sorted(roots))
-        )
+    if len(roots) == 1:
+        return Path(next(iter(roots)))
 
-    return Path(next(iter(roots)))
+    # Neutral chat tasks are localized by Explorer and may target a repository
+    # whose project root is the Git root (for example src/foo.py or package.json).
+    # Fall back to the repository root instead of forcing the user to predeclare
+    # a monorepo project prefix.
+    return Path(".")
 
 
 def _module_name(task: dict) -> str | None:
@@ -261,6 +262,10 @@ def run_checks(task_id: str) -> dict:
 
     env = _safe_env(project)
     commands: list[dict] = []
+
+    # Language-agnostic safety check. This is intentionally deterministic and
+    # does not execute project-defined scripts.
+    commands.append(_run(["git", "diff", "--check"], execution_root, env))
 
     src = project / "src"
     tests = project / "tests"

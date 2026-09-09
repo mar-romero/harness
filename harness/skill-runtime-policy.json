@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "max_skill_tokens_per_agent": 4200,
+  "max_skill_chars_per_agent": 16800,
+  "always_include": ["agent-computer-interface"],
+  "dynamic_role_skills": {
+    "explorer": ["grounded-evidence", "change-impact-analysis", "source-research", "context-engineering"],
+    "planner": ["task-intake", "architecture-decision", "change-impact-analysis", "research-driven-discovery", "source-research", "domain-modeling"],
+    "test-designer": ["adaptive-tdd", "test-strategy", "grounded-evidence"],
+    "implementer": ["software-engineering", "adaptive-tdd", "code-quality", "implementation-loop", "evidence-ledger", "worktree-isolation", "change-impact-analysis"],
+    "reviewer": ["bounded-review", "independent-review", "change-impact-analysis", "code-quality", "grounded-evidence"],
+    "security-reviewer": ["prompt-injection-defense", "tool-output-validation", "grounded-evidence"],
+    "test-auditor": ["test-strategy", "adaptive-tdd", "grounded-evidence"],
+    "docs-researcher": ["source-research", "grounded-evidence", "research-driven-discovery"],
+    "debugger": ["debugging", "systemic-defect-triage", "grounded-evidence"],
+    "verifier": ["verification", "change-impact-analysis", "grounded-evidence", "test-strategy"]
+  }
+}

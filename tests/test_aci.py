@@ -54,7 +54,7 @@ class ACICoreTests(unittest.TestCase):
         tools = tool_definitions()
         names = [item["name"] for item in tools]
         self.assertEqual(names, sorted(names))
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 11)
         self.assertIn("repo_search", names)
         self.assertIn("tests_run", names)
         for tool in tools:
@@ -145,7 +145,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 2}}},
         ])
         self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
-        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 11)
         self.assertFalse(responses[2]["result"]["isError"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
 
@@ -173,7 +173,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(responses[0]["result"]["resultType"], "complete")
         self.assertEqual(responses[1]["result"]["resultType"], "complete")
         self.assertEqual(responses[1]["result"]["cacheScope"], "private")
-        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 11)
 
 
 if __name__ == "__main__":

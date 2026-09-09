@@ -20,8 +20,9 @@
       ],
       "cwd": ".",
       "timeout": 30000,
-      "trust": false,
+      "trust": true,
       "includeTools": [
+        "repo_explore",
         "repo_search",
         "repo_read_range",
         "repo_symbol",
