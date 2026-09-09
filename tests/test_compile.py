@@ -1,9 +1,51 @@
-import sys, tomllib, unittest
+import tomllib
+import json
+import tempfile
+import unittest
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from unittest.mock import patch
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import compile_harness
 from compile_harness import generated
 from harnesslib import load_manifest
+
 class CompileTests(unittest.TestCase):
+    def test_codex_generated_adapters_do_not_depend_on_active_task_runtime_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            active = Path(td) / "active-task.json"
+
+            with patch.object(compile_harness, "CODEX_ACTIVE", active):
+                without_active_task = compile_harness.generated()[
+                    Path(".codex/agents/explorer.toml")
+                ]
+
+                active.write_text(
+                    json.dumps(
+                        {
+                            "task_id": "TASK-test",
+                            "selections": [
+                                {
+                                    "agent": "explorer",
+                                    "status": "selected",
+                                    "action": "use",
+                                    "base_model_id": "gpt-5.6-sol",
+                                    "reasoning_effort": "high",
+                                }
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                with_active_task = compile_harness.generated()[
+                    Path(".codex/agents/explorer.toml")
+                ]
+
+            self.assertEqual(without_active_task, with_active_task)
+
     def test_all_provider_agent_pairs_and_claude_wrappers_generated(self):
         m=load_manifest(); out=generated()
         agents=len(m['agents']); providers=len(m['providers']); skills=len([p for p in (Path(__file__).resolve().parents[1]/'.agents/skills').iterdir() if p.is_dir()])

@@ -67,17 +67,19 @@ def front_body(provider,name,meta,body):
     desc=meta['description']; mode=meta['mode']; turns=meta.get('max_turns',20); skills=meta.get('skills',[])
     readonly = mode=='read-only'
     shell = (not readonly) or ('shell' in meta.get('capabilities', []))
-    if provider=='codex':
-        # Codex custom agents support per-agent model and model_reasoning_effort.
-        # Omit them unless a durable Codex task activation selected explicit values.
+    if provider == 'codex':
+        # Generated adapters must be deterministic and independent of mutable
+        # task/runtime state. Model and reasoning effort are supplied at execution
+        # time by the runtime/orchestrator.
         sandbox = 'sandbox_mode = "read-only"\n' if readonly else ''
-        binding = _codex_binding(name)
-        runtime = ''
-        if binding:
-            runtime += f'model = {q(binding["model"])}\n'
-            if binding.get('effort'):
-                runtime += f'model_reasoning_effort = {q(binding["effort"])}\n'
-        return f'name = {q(name)}\ndescription = {q(desc)}\n{runtime}{sandbox}\ndeveloper_instructions = """\n{body.rstrip()}\n"""\n'
+        return (
+            f'name = {q(name)}\n'
+            f'description = {q(desc)}\n'
+            f'{sandbox}'
+            f'developer_instructions = """\n'
+            f'{body.rstrip()}\n'
+            f'"""\n'
+        )
     if provider=='claude':
         if readonly:
             builtins=['Read','Glob','Grep'] + (['Bash'] if shell else [])
