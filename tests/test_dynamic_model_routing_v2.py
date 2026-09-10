@@ -37,9 +37,9 @@ class DynamicModelRoutingV2Tests(unittest.TestCase):
             'provider': 'codex', 'generated_at': '2099-01-01T00:00:00Z',
             'models': [
                 {'id':'model-a','enabled':True,'native':True,'family':'family-a','vendor':'openai','supported_efforts':['low','medium','high'],
-                 'capabilities':{'reasoning':5,'coding':5,'tool_use':5,'reliability':5},'cost':3,'latency':3},
+                 'capabilities':{'reasoning':4.5,'coding':4,'tool_use':4,'reliability':4.5},'cost':3,'latency':3},
                 {'id':'model-b','enabled':True,'native':True,'family':'family-b','vendor':'openai','supported_efforts':['low','medium','high'],
-                 'capabilities':{'reasoning':4.9,'coding':4.8,'tool_use':5,'reliability':5},'cost':3,'latency':3},
+                 'capabilities':{'reasoning':5,'coding':5,'tool_use':5,'reliability':5},'cost':3,'latency':3},
             ]
         }
         target = {'reasoning':4.5,'coding':4,'tool_use':4,'reliability':4.5}
@@ -47,7 +47,11 @@ class DynamicModelRoutingV2Tests(unittest.TestCase):
                               inventory=inventory, policy=self.policy, target=target,
                               avoid_models={'model-a'}, avoid_families={'family-a'}, avoid_vendors=set())
         self.assertEqual(result['base_model_id'], 'model-b')
-        self.assertIn(result['independence']['strength'], {'different_model','different_family'})
+        self.assertEqual(result['independence']['baseline_model'], 'model-a')
+        self.assertEqual(result['independence']['selected_model'], 'model-b')
+        self.assertEqual(result['independence']['strength'], 'different_family')
+        self.assertIn('different_model', result['independence']['rules_applied'])
+        self.assertIn('different_family', result['independence']['rules_applied'])
 
 
 if __name__ == '__main__': unittest.main()

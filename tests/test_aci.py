@@ -93,6 +93,11 @@ class ACICoreTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("invalid arguments", result["error"])
 
+    def test_python_profiles_use_the_current_interpreter(self):
+        self.assertEqual(aci_core._portable_argv(["python", "-m", "unittest"])[0], sys.executable)
+        self.assertEqual(aci_core._portable_argv(["python", "-m", "compileall"])[0], sys.executable)
+        self.assertEqual(aci_core._portable_argv(["git", "status"]), ["git", "status"])
+
     def test_runtime_permission_audit_jsonl_is_readable(self):
         with tempfile.TemporaryDirectory() as td, patch.object(aci_core, "ROOT", Path(td)):
             audit = Path(td) / ".harness/opencode/permission-audit.jsonl"

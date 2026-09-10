@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Bind one durable task to the OpenCode harness runtime.
 
 The OpenCode plugin remains authoritative for runtime model availability. OpenRouter
@@ -58,7 +58,7 @@ def _select_inventory() -> tuple[dict | None, Path | None, dict]:
         "available_models": None,
     }
     if not ENRICHED_INVENTORY.exists():
-        status["reason"] = "scored inventory missing; run python3 scripts/openrouter_sync.py --provider opencode"
+        status["reason"] = "scored inventory missing; run python scripts/openrouter_sync.py --provider opencode"
         return None, None, status
     inventory, path = load_inventory("opencode", str(ENRICHED_INVENTORY))
     try:

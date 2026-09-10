@@ -8,11 +8,14 @@ const ROOT = path.resolve(__dirname, "..");
 const SERVER_INFO = { name: "portable-harness-aci", version: "1.0.0" };
 
 function python() {
-  const user = process.env.USERPROFILE;
+  const user = process.env.USERPROFILE || process.env.HOME;
+  const bundled = user && (process.platform === "win32"
+    ? path.join(user, ".cache", "codex-runtimes", "codex-primary-runtime", "dependencies", "python", "python.exe")
+    : path.join(user, ".cache", "codex-runtimes", "codex-primary-runtime", "dependencies", "python", "bin", "python"));
   const candidates = [
     process.env.HARNESS_ACI_PYTHON,
-    user && path.join(user, ".local", "bin", "python.exe"),
-    user && path.join(user, ".local", "bin", "python3.exe"),
+    bundled,
+    process.env.PYTHON,
     "python",
   ].filter(Boolean);
   for (const candidate of candidates) {

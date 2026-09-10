@@ -2,16 +2,16 @@
   "version": 1,
   "events": {
     "pre_shell": {
-      "command": "python3 scripts/gate.py hook --event pre-shell"
+      "command": "python scripts/gate.py hook --event pre-shell"
     },
     "pre_write": {
-      "command": "python3 scripts/gate.py hook --event pre-write"
+      "command": "python scripts/gate.py hook --event pre-write"
     },
     "post_write": {
-      "command": "python3 scripts/gate.py hook --event post-write"
+      "command": "python scripts/gate.py hook --event post-write"
     },
     "pre_finish": {
-      "command": "python3 scripts/gate.py hook --event pre-finish"
+      "command": "python scripts/gate.py hook --event pre-finish"
     }
   }
 }

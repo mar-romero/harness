@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import fnmatch
@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -39,6 +40,14 @@ def _result(tool: str, data: Any, *, truncated: bool = False) -> dict[str, Any]:
         "error": None,
         "meta": {"root": str(ROOT), "truncated": truncated},
     }
+
+
+def _portable_argv(argv: list[str]) -> list[str]:
+    """Resolve Python aliases to the interpreter hosting the ACI worker."""
+    command = list(argv)
+    if command and Path(command[0]).name.lower() in {"python", "python", "python.exe", "python.exe"}:
+        command[0] = sys.executable
+    return command
 
 
 def _failure(tool: str, message: str) -> dict[str, Any]:
@@ -294,6 +303,7 @@ def repo_dependencies(path: str) -> dict[str, Any]:
 
 
 def _run(argv: list[str], *, timeout: int, max_chars: int | None = None) -> dict[str, Any]:
+    argv = _portable_argv(argv)
     env = {key: os.environ[key] for key in POLICY.get("pass_env", []) if key in os.environ}
     # Ensure subprocesses can resolve common binaries even in an unusually sparse environment.
     env.setdefault("PATH", os.defpath)

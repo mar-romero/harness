@@ -27,6 +27,16 @@ class TaskChecksRunnerTests(unittest.TestCase):
             self.assertEqual(result['files_checked'], 1)
             self.assertFalse(any(src.rglob('__pycache__')))
 
+    def test_project_root_accepts_root_relative_tests_path(self):
+        task = {
+            'files': [
+                'scripts/task_checks.py',
+                'harness/models.json',
+                'tests/test_model_router.py',
+            ],
+        }
+        self.assertEqual(task_checks._project_root(task), Path('.'))
+
     def test_codex_binding_uses_immutable_snapshot(self):
         with tempfile.TemporaryDirectory() as td, patch.object(task_checks, 'ROOT', Path(td)):
             root = Path(td)

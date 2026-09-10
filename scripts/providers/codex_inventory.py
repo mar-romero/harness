@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Inspect or refresh the Codex runtime model inventory."""
 from __future__ import annotations
 

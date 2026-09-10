@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Analyze harness evaluation history and emit human-reviewed proposals only.
 
 This engine has no code path that edits agents, skills, policies, hooks, tests,

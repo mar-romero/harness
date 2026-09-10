@@ -54,7 +54,7 @@ async function appendJsonLine(file, value) {
 
 function runPython(root, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn("python3", args, {
+    const child = spawn("python", args, {
       cwd: root,
       env: { ...process.env, HARNESS_MODEL_INVENTORY_OPENCODE: path.join(root, ".harness/opencode/model-inventory.json") },
       stdio: ["ignore", "pipe", "pipe"],

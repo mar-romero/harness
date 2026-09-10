@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Inject active Codex task context at session and subagent boundaries."""
 from __future__ import annotations
 

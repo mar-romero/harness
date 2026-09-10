@@ -9,7 +9,7 @@ Use this skill when the user supplies an existing task JSON and asks to execute 
 
 Invoke the `harness-orchestrator` custom agent with the task path. It must first run:
 
-`python3 scripts/providers/codex_activate_task.py <task-path>`
+`python scripts/providers/codex_activate_task.py <task-path>`
 
 Then it must follow the route and `progress.json.current_step`, delegate only routed roles, use typed handoffs, honor adaptive TDD, run authoritative checks, and require the finish gate before reporting success.
 

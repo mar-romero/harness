@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Apply benchmark-only ablations to a disposable workspace."""
 from __future__ import annotations
 import argparse, json, re, subprocess, sys

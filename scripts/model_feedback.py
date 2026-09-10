@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Record bounded local model outcomes so routing can learn from real harness work."""
 from __future__ import annotations
 

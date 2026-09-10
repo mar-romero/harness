@@ -7,15 +7,15 @@ You are the primary Codex orchestrator for this repository. Coordinate one durab
 <!-- DUAL_RDD_ORCHESTRATOR_V1:START -->
 ## Adaptive Research-RDD before task activation
 
-Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python3 scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python3 scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
+Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
 
 ## Receipt-RDD and verification assessment
 
-Read `python3 scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python3 scripts/receipt_review.py prepare <TASK> --apply`, then `python3 scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
+Read `python scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python scripts/receipt_review.py prepare <TASK> --apply`, then `python scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
 
 When Receipt-RDD is off or unknown, the assessment may add an independent verifier for a high candidate or for a medium candidate implemented on a small/low-effort profile. It may never remove verification already required by R2/R3.
 
-When the reconciled progress contains `REVIEW_CONSENT`, run `python3 scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python3 scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
+When the reconciled progress contains `REVIEW_CONSENT`, run `python scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
 
 When Receipt-RDD is on, `prepare --apply` freezes the candidate. Do not delegate reviewer work against a candidate whose frozen subject no longer matches. The authoritative REVIEW commit creates the receipt and the final finish gate re-derives the candidate subject; a changed byte or Git mode invalidates the receipt.
 <!-- DUAL_RDD_ORCHESTRATOR_V1:END -->
@@ -24,7 +24,7 @@ When Receipt-RDD is on, `prepare --apply` freezes the candidate. Do not delegate
 
 For a meaningful executable task, preserve the original request, require a durable task JSON with acceptance criteria and structured risk factors, then run:
 
-`python3 scripts/providers/codex_activate_task.py <task-path>`
+`python scripts/providers/codex_activate_task.py <task-path>`
 
 Read the resulting route, context, model selections, impact plan, agent budget and progress state. Treat them as authoritative. Do not delegate work before activation succeeds. If the task is non-English, use the request normalizer and fail closed if exact intent cannot be established.
 
@@ -48,7 +48,7 @@ Follow `progress.json.current_step` exactly. Do not skip or reorder stages. Dele
 
 For every typed subagent stage, require exactly one JSON handoff conforming to that role's schema. Stage the unchanged result at `.harness/runs/<TASK>/incoming/<role>.json`, then run:
 
-`python3 scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`
+`python scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`
 
 Never use `orchestrator.py record --status PASS` for a typed subagent stage. A subagent's claim is not sufficient: the control plane must validate and persist the handoff, evidence, and progress transition.
 
@@ -58,7 +58,7 @@ Honor `route.json.tdd`. When it requires RED/GREEN evidence, obtain valid behavi
 
 For R1+, require deterministic checks and independent review. For R2+, require independent verification. For R3, require security review and explicit human approval. Do not weaken risk, permissions, TDD, evidence, review, verification, or finish-gate requirements to make a task pass.
 
-At `CLOSE`, a Codex worktree task must clear its task-scoped model binding with `python3 scripts/providers/codex_activate_task.py --clear` before publication. Then publish only through `python3 scripts/worktree.py publish <TASK> --execute`, and run `python3 scripts/gate.py finish <TASK> --risk <RISK>`. Report the exact blocking reason if either fails. Do not claim completion unless the finish gate allows it.
+At `CLOSE`, a Codex worktree task must clear its task-scoped model binding with `python scripts/providers/codex_activate_task.py --clear` before publication. Then publish only through `python scripts/worktree.py publish <TASK> --execute`, and run `python scripts/gate.py finish <TASK> --risk <RISK>`. Report the exact blocking reason if either fails. Do not claim completion unless the finish gate allows it.
 
 Codex support for provider-neutral task checks, immutable snapshots, impact baselines, and binding cleanup is required for this workflow to complete. If the control plane reports that a capability is OpenCode-only, stop and report the failed-closed limitation; never substitute mutable task input or manual evidence.
 """

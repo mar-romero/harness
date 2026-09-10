@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 import json, re, subprocess, sys
 from pathlib import Path
@@ -8,6 +8,7 @@ from compile_harness import generated
 def fail(msg, errors): errors.append(msg)
 def main():
     errors=[]; m=load_manifest()
+    allow_runtime_evidence='--allow-runtime-evidence' in sys.argv[1:]
     if m.get('schema_version')!=2: fail('manifest schema_version must be 2',errors)
     agents=m.get('agents',{}); skills_dir=ROOT/m['canonical']['skills_dir']; roles_dir=ROOT/m['canonical']['roles_dir']
     if len(agents)<9: fail('expected at least 9 canonical agents',errors)
@@ -72,7 +73,8 @@ def main():
         fail(f'final-v4 feature invariant error: {e}',errors)
 
     # no accidental runtime evidence committed in starter
-    if (ROOT/'.harness/runs').exists() and any((ROOT/'.harness/runs').iterdir()): fail('starter contains runtime evidence',errors)
+    if not allow_runtime_evidence and (ROOT/'.harness/runs').exists() and any((ROOT/'.harness/runs').iterdir()):
+        fail('starter contains runtime evidence',errors)
     if errors:
         print('HARNESS CHECK FAILED')
         for e in errors: print(' -',e)

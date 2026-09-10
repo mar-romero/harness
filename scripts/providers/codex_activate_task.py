@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Bind one durable task to Codex and materialize per-agent model/effort TOMLs.
 
 Codex custom agents can override `model` and `model_reasoning_effort`. This
@@ -60,7 +60,7 @@ def _select_inventory() -> tuple[dict | None, Path | None, dict]:
         "available_models": None,
     }
     if not ENRICHED_INVENTORY.exists():
-        status["reason"] = "scored inventory missing; run python3 scripts/openrouter_sync.py --provider codex"
+        status["reason"] = "scored inventory missing; run python scripts/openrouter_sync.py --provider codex"
         return None, None, status
     inventory, path = load_inventory("codex", str(ENRICHED_INVENTORY))
     try:

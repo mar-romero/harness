@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import argparse
@@ -92,10 +92,16 @@ def _project_root(task: dict) -> Path:
     for raw in task.get("files", []):
         path = raw.replace("\\", "/")
 
-        if "/src/" in path:
+        if path == "src" or path.startswith("src/"):
+            roots.add(".")
+        elif path == "tests" or path.startswith("tests/"):
+            roots.add(".")
+        elif "/src/" in path:
             roots.add(path.split("/src/", 1)[0])
         elif "/tests/" in path:
             roots.add(path.split("/tests/", 1)[0])
+        elif path == "pyproject.toml":
+            roots.add(".")
         elif path.endswith("/pyproject.toml"):
             roots.add(path.rsplit("/", 1)[0])
 
@@ -335,7 +341,7 @@ def run_checks(task_id: str) -> dict:
         "Allowlisted task check suite executed in authoritative task workspace",
         "PASS" if passed else "FAIL",
         "check-runner",
-        command=f"python3 scripts/task_checks.py run {task_id}",
+        command=f"python scripts/task_checks.py run {task_id}",
         exit_code=0 if passed else 1,
         artifact=report_path.relative_to(ROOT).as_posix(),
     )

@@ -72,7 +72,9 @@
         "reasoning": 3.3,
         "tool_use": 3.0,
         "reliability": 4.0
-      }
+      },
+      "no_inventory_action": "block",
+      "no_eligible_action": "block"
     },
     "R3": {
       "required_floor": {
@@ -85,6 +87,7 @@
         "tool_use": 4.0,
         "reliability": 4.8
       },
+      "no_inventory_action": "block",
       "no_eligible_action": "block"
     }
   },
@@ -443,6 +446,19 @@
     "different_vendor_min_relative_score": 0.94
   },
   "selection": {
+    "strategy": "minimum_sufficient",
+    "minimum_coverage_by_risk": {
+      "R0": 0.75,
+      "R1": 0.8,
+      "R2": 0.9,
+      "R3": 0.95
+    },
+    "no_sufficient_action_by_risk": {
+      "R0": "inherit",
+      "R1": "block",
+      "R2": "block",
+      "R3": "block"
+    },
     "default_no_inventory_action": "inherit",
     "default_no_eligible_action": "inherit",
     "prefer_provider_native_on_exact_tie": true,

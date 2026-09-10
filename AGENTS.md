@@ -25,7 +25,7 @@ infrastructure or abstractions without a current, concrete need.
 The source of truth is `harness/manifest.yaml` plus canonical role bodies under
 `.agents/roles/` and canonical skills under `.agents/skills/`. Provider-specific
 agent files are generated artifacts. Do not hand-edit generated adapters; change
-the canonical source and run `python3 scripts/compile_harness.py`.
+the canonical source and run `python scripts/compile_harness.py`.
 
 For code design, implementation or refactoring, use
 `.agents/skills/software-engineering/SKILL.md` and only relevant references.
@@ -70,14 +70,14 @@ external prior but must retain sample counts and may not silently override R3
 minimum requirements.
 OpenRouter refresh is operator-triggered only. Task activation must never contact
 OpenRouter or mutate the scored provider inventory. Generate/update scores explicitly
-with `python3 scripts/openrouter_sync.py --provider <opencode|codex|all>`. Every task
+with `python scripts/openrouter_sync.py --provider <opencode|codex|all>`. Every task
 reads the last local scored inventory and may intersect it with host-local model
 availability before selection. Inventory age is informational in this manual mode.
 
 Before OpenCode delegation, activate the durable task with
-`python3 scripts/providers/opencode_activate_task.py <task-path>`. Before Codex
+`python scripts/providers/opencode_activate_task.py <task-path>`. Before Codex
 subagent delegation, activate it with
-`python3 scripts/providers/codex_activate_task.py <task-path>`. Codex activation
+`python scripts/providers/codex_activate_task.py <task-path>`. Codex activation
 regenerates `.codex/agents/*.toml` from canonical roles with the selected `model`
 and `model_reasoning_effort`; `--clear` restores normal model inheritance.
 
@@ -92,22 +92,22 @@ independence strength explicitly rather than pretending the review is independen
 
 This repository uses two distinct opt-in/adaptive concepts:
 
-- **Research-Driven Development** is a pre-task discovery layer. Read `harness/research-policy.json`; for broad or ambiguous work, create/validate the product discovery dossier, run `python3 scripts/research_discovery.py assess <discovery>`, and use `research-driven-discovery` / `domain-modeling` only when the resolved mode is `research` or `full`. Research artifacts never authorize implementation.
-- **Receipt-Driven Development** is a post-implementation review-integrity layer. Its clone-local switch is `python3 scripts/receipt_review.py mode status`; it is off by default. A receipt binds review evidence to the exact candidate subject and becomes invalid if that subject changes.
+- **Research-Driven Development** is a pre-task discovery layer. Read `harness/research-policy.json`; for broad or ambiguous work, create/validate the product discovery dossier, run `python scripts/research_discovery.py assess <discovery>`, and use `research-driven-discovery` / `domain-modeling` only when the resolved mode is `research` or `full`. Research artifacts never authorize implementation.
+- **Receipt-Driven Development** is a post-implementation review-integrity layer. Its clone-local switch is `python scripts/receipt_review.py mode status`; it is off by default. A receipt binds review evidence to the exact candidate subject and becomes invalid if that subject changes.
 
 For every executable task, read Receipt-RDD mode before post-implementation delegation. At `VERIFY_ASSESS`, after authoritative checks, run:
 
-`python3 scripts/receipt_review.py prepare <TASK> --apply`
+`python scripts/receipt_review.py prepare <TASK> --apply`
 
 then:
 
-`python3 scripts/orchestrator.py reconcile <TASK>`
+`python scripts/orchestrator.py reconcile <TASK>`
 
 and only then record `VERIFY_ASSESS` PASS. When Receipt-RDD is off or unknown, the deterministic assessment decides whether an additional verifier is routed; it may add verification but never remove an existing R2/R3 verifier requirement.
 
 When the reconciled route contains `REVIEW_CONSENT`, check:
 
-`python3 scripts/receipt_review.py consent status <TASK>`
+`python scripts/receipt_review.py consent status <TASK>`
 
 If consent is absent, ask the human once for the current provider session. Only an explicit yes permits `consent grant`; never grant it on the user's behalf. The grant is reusable for later candidates in the same provider session, but every candidate still requires its own freeze/review/receipt.
 

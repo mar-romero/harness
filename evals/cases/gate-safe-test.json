@@ -1,5 +1,5 @@
 {
   "kind": "gate",
-  "command": "python3 -m unittest",
+  "command": "python -m unittest",
   "expect_allow": true
 }

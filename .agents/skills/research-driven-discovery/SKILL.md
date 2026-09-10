@@ -18,4 +18,4 @@ Use this skill only when `harness/research-policy.json` resolves the discovery t
 
 Persist only evidence-backed material. Unknowns remain explicit. Research artifacts do not authorize implementation; approved product discovery must still materialize bounded tasks through the existing planning control plane.
 
-Use `python3 scripts/research_discovery.py status <planning/discovery/...json>` to determine whether the required Research-RDD artifacts are complete.
+Use `python scripts/research_discovery.py status <planning/discovery/...json>` to determine whether the required Research-RDD artifacts are complete.

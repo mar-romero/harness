@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/pretool.py"
+            "command": "python .claude/hooks/pretool.py"
           }
         ]
       }

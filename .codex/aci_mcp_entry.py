@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Generated entrypoint for the project-scoped Harness ACI MCP server."""
 import json
 import os

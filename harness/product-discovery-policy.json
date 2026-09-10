@@ -115,8 +115,8 @@
       "research",
       "full"
     ],
-    "assessment_command": "python3 scripts/research_discovery.py assess <planning/discovery/...json>",
-    "status_command": "python3 scripts/research_discovery.py status <planning/discovery/...json>",
+    "assessment_command": "python scripts/research_discovery.py assess <planning/discovery/...json>",
+    "status_command": "python scripts/research_discovery.py status <planning/discovery/...json>",
     "materialization_requires_research_ready": true
   }
 }

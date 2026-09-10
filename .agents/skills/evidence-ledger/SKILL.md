@@ -5,4 +5,4 @@ description: Record machine-readable claims, checks, artifacts and verdicts in t
 
 # evidence-ledger
 
-Initialize with `python3 scripts/evidence.py init TASK-ID`. Add evidence with type, claim and exact command/result or source artifact. Do not edit historical entries to change outcomes; append superseding evidence. Completion gates consume the ledger.
+Initialize with `python scripts/evidence.py init TASK-ID`. Add evidence with type, claim and exact command/result or source artifact. Do not edit historical entries to change outcomes; append superseding evidence. Completion gates consume the ledger.

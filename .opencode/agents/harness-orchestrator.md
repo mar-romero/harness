@@ -42,61 +42,61 @@ permissions:
     effect: deny
 
   - action: shell
-    resource: "python3 scripts/providers/opencode_activate_task.py *"
+    resource: "python scripts/providers/opencode_activate_task.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/research_discovery.py *"
+    resource: "python scripts/research_discovery.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/receipt_review.py *"
+    resource: "python scripts/receipt_review.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/request_normalizer.py *"
+    resource: "python scripts/request_normalizer.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/product_planning.py validate *"
+    resource: "python scripts/product_planning.py validate *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/product_planning.py materialize *"
+    resource: "python scripts/product_planning.py materialize *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/orchestrator.py *"
+    resource: "python scripts/orchestrator.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/evidence.py summary *"
+    resource: "python scripts/evidence.py summary *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/evidence.py validate *"
+    resource: "python scripts/evidence.py validate *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/agent_budget.py *"
+    resource: "python scripts/agent_budget.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/impact_analysis.py *"
+    resource: "python scripts/impact_analysis.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/tdd_evidence.py *"
+    resource: "python scripts/tdd_evidence.py *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/gate.py finish *"
+    resource: "python scripts/gate.py finish *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/worktree.py create *"
+    resource: "python scripts/worktree.py create *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/worktree.py status *"
+    resource: "python scripts/worktree.py status *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/worktree.py publish *"
+    resource: "python scripts/worktree.py publish *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/task_checks.py run *"
+    resource: "python scripts/task_checks.py run *"
     effect: allow
   - action: shell
-    resource: "python3 scripts/check_harness.py*"
+    resource: "python scripts/check_harness.py*"
     effect: allow
   - action: shell
-    resource: "python3 scripts/run_evals.py*"
+    resource: "python scripts/run_evals.py*"
     effect: allow
 
   # ---------------------------------------------------------------------------
@@ -176,15 +176,15 @@ You coordinate work. You do not edit application files.
 <!-- DUAL_RDD_ORCHESTRATOR_V1:START -->
 ## Adaptive Research-RDD and Receipt-RDD
 
-Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python3 scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python3 scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
+Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
 
 ## Receipt-RDD and verification assessment
 
-Read `python3 scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python3 scripts/receipt_review.py prepare <TASK> --apply`, then `python3 scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
+Read `python scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python scripts/receipt_review.py prepare <TASK> --apply`, then `python scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
 
 When Receipt-RDD is off or unknown, the assessment may add an independent verifier for a high candidate or for a medium candidate implemented on a small/low-effort profile. It may never remove verification already required by R2/R3.
 
-When the reconciled progress contains `REVIEW_CONSENT`, run `python3 scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python3 scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
+When the reconciled progress contains `REVIEW_CONSENT`, run `python scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
 
 When Receipt-RDD is on, `prepare --apply` freezes the candidate. Do not delegate reviewer work against a candidate whose frozen subject no longer matches. The authoritative REVIEW commit creates the receipt and the final finish gate re-derives the candidate subject; a changed byte or Git mode invalidates the receipt.
 <!-- DUAL_RDD_ORCHESTRATOR_V1:END -->
@@ -219,7 +219,7 @@ The orchestrator remains forbidden from directly editing application code, task 
 
 Validate discovery with:
 
-`python3 scripts/product_planning.py validate <path>`
+`python scripts/product_planning.py validate <path>`
 
 Planning may remain draft, but executable tasks require:
 
@@ -228,7 +228,7 @@ Planning may remain draft, but executable tasks require:
 
 After approval, materialize bounded planning artifacts with:
 
-`python3 scripts/product_planning.py materialize <path>`
+`python scripts/product_planning.py materialize <path>`
 
 The materializer is responsible for creating planning records and derived `tasks/*.json` with provenance.
 
@@ -258,7 +258,7 @@ Never combine shell commands using:
 
 Never use any of the following as a file-edit transport:
 
-- `python3 -c`;
+- `python -c`;
 - `python -c`;
 - `echo`;
 - shell redirection;
@@ -268,7 +268,7 @@ For discovery dossier creation or correction:
 
 1. use the direct `edit` permission restricted to `planning/discovery/*.json`;
 2. persist the file;
-3. run `python3 scripts/product_planning.py validate <path>` as a separate shell invocation.
+3. run `python scripts/product_planning.py validate <path>` as a separate shell invocation.
 
 Do not ask the user to broaden shell permissions merely because a non-allowlisted command was denied.
 
@@ -298,7 +298,7 @@ ACI test/lint/diagnostics profiles itself.
 
 At CHECKS, use the allowlisted task check control plane:
 
-python3 scripts/task_checks.py run <TASK>
+python scripts/task_checks.py run <TASK>
 
 The check runner resolves the authoritative task workspace/worktree, executes only
 its built-in deterministic profiles, persists checks-report.json and deterministic
@@ -308,7 +308,7 @@ If task_checks exits non-zero, do not record CHECKS PASS.
 
 Only after task_checks returns PASS may the orchestrator run:
 
-python3 scripts/orchestrator.py record <TASK> --status PASS
+python scripts/orchestrator.py record <TASK> --status PASS
 
 Delegate controlled checks to the routed execution or audit agents.
 
@@ -333,7 +333,7 @@ For every meaningful executable task:
 
 4. Run:
 
-   `python3 scripts/providers/opencode_activate_task.py <task-path>`
+   `python scripts/providers/opencode_activate_task.py <task-path>`
 
    before delegating implementation work.
 
@@ -378,7 +378,7 @@ For every meaningful executable task:
 
 15. At `CLOSE`, routes using `isolation: worktree` must publish the validated task candidate before final closure by running exactly:
 
-    `python3 scripts/worktree.py publish <TASK> --execute`
+    `python scripts/worktree.py publish <TASK> --execute`
 
     `worktree.py publish` is the only allowed delivery mechanism. It verifies the pre-publication finish requirements, the writer lock, frozen `task.files` surface, task branch/base commit, canonical branch cleanliness, creates the task commit, fast-forwards the canonical branch, writes `publish.json`, removes the worktree and releases the lock. Never run ad-hoc `git add`, `git commit`, `git merge`, `git cherry-pick`, or copy application files from one worktree to another.
 
@@ -408,7 +408,7 @@ For every typed subagent stage, use this sequence:
 1. delegate the agent named by the current stage;
 2. require one JSON handoff conforming to that role's schema;
 3. write that exact returned JSON only to `.harness/runs/<TASK>/incoming/<role>.json`;
-4. run exactly one control-plane command: `python3 scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`;
+4. run exactly one control-plane command: `python scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`;
 5. inspect the command result and re-read progress before delegating anything else.
 
 `orchestrator.py commit` is responsible for typed handoff validation, canonical handoff persistence, evidence persistence, evidence-chain validation, progress recording and advancing. If any operation fails it exits non-zero and the stage must not advance.
@@ -501,7 +501,7 @@ For high or critical impact:
 
 After implementation run:
 
-`python3 scripts/impact_analysis.py verify <task-id>`
+`python scripts/impact_analysis.py verify <task-id>`
 
 Impact verification must evaluate changes relative to the task activation baseline, not merely all differences from repository `HEAD`.
 

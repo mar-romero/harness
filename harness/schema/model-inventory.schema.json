@@ -21,6 +21,11 @@
           "vendor": {"type": ["string", "null"]},
           "family": {"type": ["string", "null"]},
           "supported_efforts": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "size_tier": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Lower values indicate a smaller resource tier; optional when the provider cannot declare model size."
+          },
           "capabilities": {
             "type": "object",
             "required": ["reasoning", "coding", "tool_use", "reliability"],
@@ -32,8 +37,18 @@
             },
             "additionalProperties": false
           },
-          "cost": {"type": "number", "minimum": 0, "maximum": 5},
-          "latency": {"type": "number", "minimum": 0, "maximum": 5},
+          "cost": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Normalized cost-efficiency score; higher values are better."
+          },
+          "latency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Normalized latency-efficiency score; higher values are better."
+          },
           "context_window": {"type": "integer", "minimum": 0},
           "raw_metrics": {"type": "object"},
           "provenance": {"type": "object"},

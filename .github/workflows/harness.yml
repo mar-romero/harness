@@ -14,6 +14,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify generated adapters
-        run: python3 scripts/compile_harness.py --check
+        run: python scripts/compile_harness.py --check
       - name: Run harness audit, unit tests and deterministic evals
         run: bash scripts/check-harness.sh
