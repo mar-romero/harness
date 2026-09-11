@@ -75,11 +75,11 @@ Discovery may be persisted as `draft` or `ready_for_approval`, but executable ta
 
 Store the dossier under `planning/discovery/<DISCOVERY-ID>.json`, validate it with:
 
-`python3 scripts/product_planning.py validate planning/discovery/<DISCOVERY-ID>.json`
+`python scripts/product_planning.py validate planning/discovery/<DISCOVERY-ID>.json`
 
 After approval, set `status` to `approved` and run:
 
-`python3 scripts/product_planning.py materialize planning/discovery/<DISCOVERY-ID>.json`
+`python scripts/product_planning.py materialize planning/discovery/<DISCOVERY-ID>.json`
 
 Derived task files intentionally omit `request.translation`: they are derived from an approved planning artifact rather than falsely claiming that each derived task was the user's original sentence. The materializer records provenance in each task's `origin` field.
 

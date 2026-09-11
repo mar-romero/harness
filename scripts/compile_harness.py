@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
@@ -157,7 +157,7 @@ def generated():
     # Project-local config resolves relative paths from `.codex`. Keep the
     # stdio entrypoint there, then import the canonical implementation from
     # `scripts/` so desktop, CLI, and IDE clients start it consistently.
-    out[CODEX_ACI_ENTRY] = '''#!/usr/bin/env python3
+    out[CODEX_ACI_ENTRY] = '''#!/usr/bin/env python
 """Generated entrypoint for the project-scoped Harness ACI MCP server."""
 import json
 import os

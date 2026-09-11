@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Record deterministic harness checks plus optional benchmark metrics.
 
 The recorder is read-only with respect to the project control plane. It writes
@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,8 +90,8 @@ def main() -> int:
         "git_commit": git_commit(),
         "snapshot_sha256": snapshot_hash(),
         "deterministic": {
-            "unit_tests": run_check(["python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"]),
-            "evals": run_check(["python3", "scripts/run_evals.py"]),
+            "unit_tests": run_check([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"]),
+            "evals": run_check([sys.executable, "scripts/run_evals.py"]),
         },
         "metrics": load_metrics(args.metrics),
     }

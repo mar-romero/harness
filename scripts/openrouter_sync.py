@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Build provider runtime model inventories enriched with OpenRouter metadata.
 
 Availability is discovered from the host (OpenCode catalog or Codex model cache).

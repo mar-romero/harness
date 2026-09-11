@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .gemini/hooks/gate.py"
+            "command": "python .gemini/hooks/gate.py"
           }
         ]
       }
@@ -14,7 +14,7 @@
   },
   "mcpServers": {
     "harness-aci": {
-      "command": "python3",
+      "command": "python",
       "args": [
         "scripts/aci_mcp.py"
       ],

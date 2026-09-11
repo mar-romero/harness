@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Codex ``PreToolUse`` bridge for the canonical safety gates.
 
 The hook deliberately blocks only unsafe operations. Safe operations return no

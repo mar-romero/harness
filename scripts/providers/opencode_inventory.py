@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Inspect the OpenCode runtime inventory produced by the harness plugin."""
 from __future__ import annotations
 import argparse, json

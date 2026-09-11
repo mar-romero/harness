@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
-import argparse, datetime as dt, json, math, statistics, subprocess, tempfile, time, uuid
+import argparse, datetime as dt, json, math, statistics, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
 from harnesslib import ROOT, write_json_atomic
 
@@ -24,13 +24,26 @@ def summarize(results,trials):
         if v: out['mean_'+k]=statistics.fmean(v)
     return out
 
+def _portable_adapter(adapter):
+    """Use the current Python when an adapter requests a Python alias.
+
+    Provider/task configuration commonly uses ``python`` on POSIX. On
+    Windows that alias can resolve to an unrelated, application-controlled
+    executable even when the interpreter running this harness is valid.
+    Reusing ``sys.executable`` keeps the adapter in the same trusted runtime.
+    """
+    command=list(adapter)
+    if command and Path(command[0]).name.lower() in {'python', 'python', 'python.exe', 'python.exe'}:
+        command[0]=sys.executable
+    return command
+
 def run_suite(suite_path,adapter,trials,timeout,provider=None,model=None,agent=None):
     suite=load_suite(suite_path); results=[]
     for case in suite['cases']:
         for trial in range(1,trials+1):
             with tempfile.TemporaryDirectory(prefix='harness-eval-') as td:
                 inp=Path(td)/'case.json'; out=Path(td)/'result.json'; inp.write_text(json.dumps(case,ensure_ascii=False),encoding='utf-8')
-                start=time.monotonic(); cp=subprocess.run([*adapter,str(inp),str(out)],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout,check=False); elapsed=time.monotonic()-start
+                start=time.monotonic(); cp=subprocess.run([*_portable_adapter(adapter),str(inp),str(out)],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout,check=False); elapsed=time.monotonic()-start
                 payload={}
                 if out.exists():
                     try: payload=json.loads(out.read_text(encoding='utf-8'))
@@ -40,7 +53,7 @@ def run_suite(suite_path,adapter,trials,timeout,provider=None,model=None,agent=N
                 for k,v in payload.items():
                     if k not in row: row[k]=v
                 results.append(row)
-    hcheck=subprocess.run(['python3','scripts/check_harness.py'],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False)
+    hcheck=subprocess.run([sys.executable,'scripts/check_harness.py','--allow-runtime-evidence'],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False)
     rid='RTE-'+now().replace(':','').replace('-','').replace('.','')+'-'+uuid.uuid4().hex[:6]
     return {'schema_version':1,'run_id':rid,'harness_check':{'returncode':hcheck.returncode,'output_tail':hcheck.stdout[-4000:]},'created_at':now(),'suite':suite.get('suite') or Path(suite_path).stem,'provider':provider,'model':model,'agent':agent,'adapter':adapter,'results':results,'summary':summarize(results,trials)}
 

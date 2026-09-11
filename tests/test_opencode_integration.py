@@ -60,23 +60,23 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         self.assertEqual(text.count(shell_deny), 1)
 
         allowed=(
-            'python3 scripts/providers/opencode_activate_task.py *',
-            'python3 scripts/request_normalizer.py *',
-            'python3 scripts/product_planning.py validate *',
-            'python3 scripts/product_planning.py materialize *',
-            'python3 scripts/orchestrator.py *',
-            'python3 scripts/evidence.py summary *',
-            'python3 scripts/evidence.py validate *',
-            'python3 scripts/agent_budget.py *',
-            'python3 scripts/impact_analysis.py *',
-            'python3 scripts/tdd_evidence.py *',
-            'python3 scripts/gate.py finish *',
-            'python3 scripts/worktree.py create *',
-            'python3 scripts/worktree.py status *',
-            'python3 scripts/worktree.py publish *',
-            'python3 scripts/task_checks.py run *',
-            'python3 scripts/check_harness.py*',
-            'python3 scripts/run_evals.py*',
+            'python scripts/providers/opencode_activate_task.py *',
+            'python scripts/request_normalizer.py *',
+            'python scripts/product_planning.py validate *',
+            'python scripts/product_planning.py materialize *',
+            'python scripts/orchestrator.py *',
+            'python scripts/evidence.py summary *',
+            'python scripts/evidence.py validate *',
+            'python scripts/agent_budget.py *',
+            'python scripts/impact_analysis.py *',
+            'python scripts/tdd_evidence.py *',
+            'python scripts/gate.py finish *',
+            'python scripts/worktree.py create *',
+            'python scripts/worktree.py status *',
+            'python scripts/worktree.py publish *',
+            'python scripts/task_checks.py run *',
+            'python scripts/check_harness.py*',
+            'python scripts/run_evals.py*',
         )
 
         deny_pos=text.index(shell_deny)
@@ -91,14 +91,14 @@ class OpenCodeIntegrationTests(unittest.TestCase):
             self.assertGreater(text.index(rule), deny_pos)
 
         self.assertNotIn(
-            'resource: "python3 scripts/product_planning.py *"',
+            'resource: "python scripts/product_planning.py *"',
             text,
         )
-        self.assertNotIn('resource: "python3 scripts/evidence.py *"', text)
-        self.assertNotIn('resource: "python3 scripts/evidence.py add *"', text)
-        self.assertNotIn('resource: "python3 scripts/worktree.py *"', text)
-        self.assertNotIn('resource: "python3 scripts/task_checks.py *"', text)
-        self.assertNotIn('resource: "python3 -c *"', text)
+        self.assertNotIn('resource: "python scripts/evidence.py *"', text)
+        self.assertNotIn('resource: "python scripts/evidence.py add *"', text)
+        self.assertNotIn('resource: "python scripts/worktree.py *"', text)
+        self.assertNotIn('resource: "python scripts/task_checks.py *"', text)
+        self.assertNotIn('resource: "python -c *"', text)
         self.assertNotIn('resource: "python -c *"', text)
         self.assertNotIn('resource: "echo *"', text)
 

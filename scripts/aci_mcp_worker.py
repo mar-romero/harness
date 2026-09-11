@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """One-request worker used by the Node stdio MCP bridge on Windows."""
 from __future__ import annotations
 

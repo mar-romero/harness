@@ -41,12 +41,12 @@
   "profiles": {
     "tests.unit": {
       "kind": "test",
-      "argv": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+      "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
       "timeout_seconds": 180
     },
     "lint.python-compile": {
       "kind": "lint",
-      "argv": ["python3", "-m", "compileall", "-q", "scripts", "tests"],
+      "argv": ["python", "-m", "compileall", "-q", "scripts", "tests"],
       "timeout_seconds": 120
     },
     "diagnostics.harness": {

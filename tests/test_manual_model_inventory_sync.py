@@ -8,6 +8,22 @@ from model_router import select_model, load_policy
 
 
 class ManualModelInventorySyncTests(unittest.TestCase):
+    def test_production_policy_selects_minimum_sufficient_and_blocks_high_risk_without_inventory(self):
+        policy = load_policy()
+        self.assertEqual(policy["selection"]["strategy"], "minimum_sufficient")
+        self.assertEqual(policy["selection"]["minimum_coverage_by_risk"]["R3"], 0.95)
+        result = select_model(
+            task_id="R2-no-inventory",
+            provider="codex",
+            agent="implementer",
+            model_class="coding",
+            risk="R2",
+            inventory=None,
+            policy=policy,
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["action"], "block")
+
     def test_task_activators_do_not_refresh_openrouter(self):
         for rel in ("scripts/providers/opencode_activate_task.py", "scripts/providers/codex_activate_task.py"):
             text = (ROOT / rel).read_text()

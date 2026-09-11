@@ -5,4 +5,4 @@ description: Classify task type, risk, required capabilities, agents and skills 
 
 # task-router
 
-Use `python3 scripts/task_router.py <task.json>`. Treat the output as the default execution graph. If confidence is low, contradictory, or R3, escalate. Do not downgrade risk to avoid review. Explicit task metadata overrides keyword heuristics only within policy.
+Use `python scripts/task_router.py <task.json>`. Treat the output as the default execution graph. If confidence is low, contradictory, or R3, escalate. Do not downgrade risk to avoid review. Explicit task metadata overrides keyword heuristics only within policy.

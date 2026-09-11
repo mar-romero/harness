@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 import argparse, dataclasses, datetime as dt, html, json, os, re, shutil
 import statistics, subprocess, sys, tempfile, time, uuid

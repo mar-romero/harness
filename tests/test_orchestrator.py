@@ -338,7 +338,7 @@ class OrchestratorTests(unittest.TestCase):
             "authoritative checks",
             "PASS",
             "check-runner",
-            command=f"python3 scripts/task_checks.py run {self.task}",
+            command=f"python scripts/task_checks.py run {self.task}",
             exit_code=0,
             artifact=f".harness/runs/{self.task}/checks-report.json",
         )

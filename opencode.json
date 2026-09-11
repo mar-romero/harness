@@ -77,7 +77,7 @@
       "harness-aci": {
         "type": "local",
         "command": [
-          "python3",
+          "python",
           "scripts/aci_mcp.py"
         ],
         "cwd": ".",
