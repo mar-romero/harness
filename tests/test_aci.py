@@ -109,9 +109,9 @@ class ACICoreTests(unittest.TestCase):
 
 
 class ACIMCPProtocolTests(unittest.TestCase):
-    def _exchange(self, messages):
+    def _exchange(self, messages, command=None):
         proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "scripts" / "aci_mcp.py")],
+            command or [sys.executable, str(ROOT / "scripts" / "aci_mcp.py")],
             cwd=ROOT,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -152,6 +152,26 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
         self.assertEqual(len(responses[1]["result"]["tools"]), 10)
         self.assertFalse(responses[2]["result"]["isError"])
+        self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
+
+    def test_mcp_bridge_reuses_a_worker_for_multiple_requests(self):
+        responses = self._exchange([
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 1}}},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 2, "end_line": 2}}},
+        ])
+        self.assertEqual(len(responses[0]["result"]["tools"]), 10)
+        self.assertTrue(responses[1]["result"]["structuredContent"]["ok"])
+        self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
+
+    def test_node_bridge_reuses_persistent_worker_for_multiple_requests(self):
+        responses = self._exchange([
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 1}}},
+        ], command=["node", str(ROOT / "scripts" / "aci_mcp_node.js")])
+        self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
+        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
 
     def test_initialize_negotiates_the_client_protocol_version(self):

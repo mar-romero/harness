@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Windows-safe stdio transport for Harness ACI. Tool execution remains Python.
-const { spawnSync } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const path = require("node:path");
 const readline = require("node:readline");
 
@@ -25,12 +25,75 @@ function python() {
   throw new Error("no supported Python interpreter found for Harness ACI");
 }
 
-function worker(request) {
-  const child = spawnSync(python(), ["-u", path.join(ROOT, "scripts", "aci_mcp_worker.py")], {
-    cwd: ROOT, input: JSON.stringify(request), encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024,
+let workerProcess = null;
+let workerBuffer = "";
+let workerStderr = "";
+const workerQueue = [];
+
+function rejectWorkerQueue(error) {
+  while (workerQueue.length) workerQueue.shift().reject(error);
+}
+
+function startWorker() {
+  if (workerProcess) return;
+  const child = spawn(python(), ["-u", path.join(ROOT, "scripts", "aci_mcp_worker.py")], {
+    cwd: ROOT,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   });
-  if (child.error || child.status !== 0) throw new Error((child.stderr || child.error?.message || "ACI worker failed").trim());
-  return JSON.parse(child.stdout);
+  workerProcess = child;
+  workerBuffer = "";
+  workerStderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    workerBuffer += chunk;
+    let newline;
+    while ((newline = workerBuffer.indexOf("\n")) >= 0) {
+      const line = workerBuffer.slice(0, newline).trim();
+      workerBuffer = workerBuffer.slice(newline + 1);
+      if (!line) continue;
+      const request = workerQueue.shift();
+      if (!request) continue;
+      try {
+        request.resolve(JSON.parse(line));
+      } catch (error) {
+        request.reject(new Error(`invalid ACI worker response: ${error.message}`));
+      }
+    }
+  });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { workerStderr += chunk; });
+  const fail = (error) => {
+    if (workerProcess !== child) return;
+    workerProcess = null;
+    rejectWorkerQueue(error);
+  };
+  child.once("error", fail);
+  child.once("exit", (code, signal) => {
+    const detail = workerStderr.trim();
+    const suffix = detail ? `: ${detail}` : "";
+    fail(new Error(`ACI worker exited (${code ?? "signal"} ${signal || ""})${suffix}`.trim()));
+  });
+}
+
+function worker(request) {
+  startWorker();
+  return new Promise((resolve, reject) => {
+    workerQueue.push({ resolve, reject });
+    try {
+      workerProcess.stdin.write(JSON.stringify(request) + "\n");
+    } catch (error) {
+      workerQueue.pop();
+      reject(error);
+    }
+  });
+}
+
+function stopWorker() {
+  if (!workerProcess) return;
+  workerProcess.kill();
+  workerProcess = null;
+  rejectWorkerQueue(new Error("ACI worker stopped"));
 }
 
 function response(id, result) { return { jsonrpc: "2.0", id, result }; }
@@ -49,15 +112,22 @@ function handle(message) {
       instructions: "Use Harness ACI tools before raw shell for matching repository inspection/check operations." }));
   }
   if (method === "ping") return send(response(id, {}));
-  if (method === "tools/list") return send(response(id, worker({ operation: "tools/list" })));
+  if (method === "tools/list") {
+    return worker({ operation: "tools/list" })
+      .then((result) => send(response(id, result)))
+      .catch((err) => send(error(id, -32603, `Harness ACI bridge error: ${err.message}`)));
+  }
   if (method === "tools/call") {
-    const result = worker({ operation: "tools/call", name: params.name, arguments: params.arguments || {} });
-    return send(result.error ? error(id, -32602, result.error) : response(id, result));
+    return worker({ operation: "tools/call", name: params.name, arguments: params.arguments || {} })
+      .then((result) => send(result.error ? error(id, -32602, result.error) : response(id, result)))
+      .catch((err) => send(error(id, -32603, `Harness ACI bridge error: ${err.message}`)));
   }
   if (Object.prototype.hasOwnProperty.call(message, "id")) send(error(id, -32601, `Method not found: ${method}`));
 }
 
-readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
-  try { handle(JSON.parse(line)); }
+const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+input.on("line", (line) => {
+  try { Promise.resolve(handle(JSON.parse(line))).catch((err) => send(error(null, -32603, `Harness ACI bridge error: ${err.message}`))); }
   catch (err) { send(error(null, -32603, `Harness ACI bridge error: ${err.message}`)); }
 });
+input.on("close", stopWorker);
