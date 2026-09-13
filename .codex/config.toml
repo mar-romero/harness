@@ -1,10 +1,9 @@
 [mcp_servers.harness-aci]
 command = "powershell.exe"
-# Codex starts this project-scoped MCP process in the repository root.  Keep
-# both the working directory and launcher path relative so another checkout
-# does not inherit the compiler host's user or drive path.
+# Project MCP paths are resolved from this config directory.  `..` selects the
+# repository root, so the relative launcher works when Desktop starts elsewhere.
 args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/start_aci_mcp.ps1"]
-cwd = "."
+cwd = ".."
 enabled = true
 required = true
 startup_timeout_sec = 30

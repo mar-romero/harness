@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+CODEX_CONFIG = ROOT / ".codex" / "config.toml"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import aci_core
@@ -35,7 +36,7 @@ EXPECTED_TOOL_NAMES = [
 
 class ACIConfiguredLauncherTests(unittest.TestCase):
     def _server_config(self):
-        config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
         return config["mcp_servers"]["harness-aci"]
 
     def _codex_child_cwd(self, server, host_cwd):
@@ -43,9 +44,10 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
         self.assertIsNotNone(configured)
         configured_path = Path(configured)
         self.assertFalse(configured_path.is_absolute())
-        # Codex resolves a project MCP cwd from the selected project, not the
-        # Desktop application's own working directory.
-        return (ROOT / configured_path).resolve()
+        # Codex resolves this project MCP cwd relative to config.toml, not
+        # Desktop's outer working directory.
+        self.assertNotEqual(host_cwd.resolve(), CODEX_CONFIG.parent.resolve())
+        return (CODEX_CONFIG.parent / configured_path).resolve()
 
     def _configured_launcher_command(self):
         server = self._server_config()
@@ -60,12 +62,11 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             proc.kill()
             self.fail("timed out waiting for configured MCP launcher response")
 
-    def _exchange(self, host_cwd, env=None, command=None):
+    def _exchange(self, host_cwd, env=None):
         server = self._server_config()
-        command = command or self._configured_launcher_command()
         try:
             proc = subprocess.Popen(
-                command,
+                self._configured_launcher_command(),
                 cwd=self._codex_child_cwd(server, host_cwd),
                 env=env,
                 stdin=subprocess.PIPE,
@@ -251,11 +252,11 @@ class ACICoreTests(unittest.TestCase):
     def test_codex_project_mcp_starts_from_repository_root(self):
         config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
         server = config["mcp_servers"]["harness-aci"]
-        self.assertEqual(server["cwd"], ".")
+        self.assertEqual(server["cwd"], "..")
         launcher = Path(server["args"][-1])
         self.assertFalse(launcher.is_absolute())
         self.assertEqual(launcher, Path("scripts/start_aci_mcp.ps1"))
-        self.assertTrue((ROOT / launcher).is_file())
+        self.assertTrue((CODEX_CONFIG.parent / server["cwd"] / launcher).resolve().is_file())
         self.assertEqual(server["command"].lower(), "powershell.exe")
         self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
 
