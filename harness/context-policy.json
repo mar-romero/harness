@@ -71,5 +71,15 @@
     ".sql",
     ".graphql",
     ".proto"
-  ]
+  ],
+  "snippet_rollout": {
+    "default_delivery": "file-level",
+    "automatic_enable": false,
+    "benchmark_requirements": {
+      "deterministic": true,
+      "minimum_relevant_surface_recall": 1.0,
+      "maximum_omissions": 0
+    },
+    "human_approval_required": true
+  }
 }

@@ -146,3 +146,37 @@ count invariants. This is a restricted schema vocabulary, not a general Draft
 2020-12 validator: unsupported keywords, unresolved or recursive references, and
 malformed rules fail the check even when the graph has no records. Extending the
 schema requires extending the oracle and its negative tests in the same change.
+
+## Context-retrieval benchmark
+
+Run the fixed offline measurement from the repository root:
+
+```sh
+uv run python scripts/context_benchmark.py --fixture tests/fixtures/context_benchmark
+```
+
+The fixture supplies a miniature repository, its task, its required source/test and
+policy paths, required Python symbols, and an entire lexical-only context policy.
+It does not read task memory, use an optional graph backend, contact a service, use
+clock/random input, or inspect the host checkout. The benchmark builds the existing
+file-level pack twice and compares canonical JSON bytes; either a different result
+or a missing required surface fails with a nonzero exit and a path/symbol diagnostic.
+
+`baseline_tokens` is the sum of the selected complete-file records. It deliberately
+does **not** use the context pack's additive `estimated_tokens`, which includes both
+file and snippet records. `candidate_tokens` is the effective delivery material:
+each selected file remains complete exactly once unless it is a Python file with a
+nonempty declared required-symbol surface entirely covered by selected non-fallback
+snippets. In that one case only the required snippets are counted. Any partial or
+fallback snippet keeps the complete file. The report also gives the source and
+effective candidate selections, fallback count, recall across required paths and
+symbols, omissions, a deterministic-run status, and the percentage reduction. A
+complete-file fallback avoids incomplete delivery but does not certify symbol
+retrieval: a required symbol must still have a selected non-fallback snippet for
+the recall report to accept it.
+
+The benchmark is evidence, not a delivery switch. `snippet_rollout` in
+`harness/context-policy.json` keeps `file-level` as the default, disables automatic
+enablement, and requires deterministic zero-omission/100%-recall evidence plus
+explicit human approval before any future rollout. Existing context delivery does
+not consume this benchmark and remains unchanged.
