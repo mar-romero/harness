@@ -40,17 +40,16 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
 
     def _codex_child_cwd(self, server, host_cwd):
         configured = server.get("cwd")
-        if configured is None:
-            return host_cwd
+        self.assertIsNotNone(configured)
         configured_path = Path(configured)
-        return configured_path if configured_path.is_absolute() else host_cwd / configured_path
+        self.assertFalse(configured_path.is_absolute())
+        # Codex resolves a project MCP cwd from the selected project, not the
+        # Desktop application's own working directory.
+        return (ROOT / configured_path).resolve()
 
-    def _candidate_launcher_command(self):
+    def _configured_launcher_command(self):
         server = self._server_config()
-        args = list(server.get("args", []))
-        file_index = args.index("-File")
-        args[file_index + 1] = str(ROOT / "scripts" / "start_aci_mcp.ps1")
-        return [server["command"], *args]
+        return [server["command"], *server.get("args", [])]
 
     def _readline(self, stream, proc, timeout=15):
         result = queue.Queue(maxsize=1)
@@ -63,7 +62,7 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
 
     def _exchange(self, host_cwd, env=None, command=None):
         server = self._server_config()
-        command = command or [server["command"], *server.get("args", [])]
+        command = command or self._configured_launcher_command()
         try:
             proc = subprocess.Popen(
                 command,
@@ -130,11 +129,13 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             external_cwd = Path(td)
             self.assertNotEqual(external_cwd, ROOT)
             self.assertNotIn(ROOT, external_cwd.parents)
+            server = self._server_config()
+            self.assertEqual(self._codex_child_cwd(server, external_cwd), ROOT)
             result = self._exchange(external_cwd)
         self._assert_legacy_handshake(*result)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows launcher regression")
-    def test_launcher_ignores_transient_fnm_multishell_node(self):
+    def test_configured_launcher_prefers_system_node_over_transient_path_node(self):
         server = self._server_config()
         powershell = shutil.which(server["command"])
         system_node = shutil.which("node.exe")
@@ -145,10 +146,6 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             external_cwd = Path(td)
-            appdata = external_cwd / "AppData" / "Roaming"
-            installed_node = appdata / "fnm" / "node-versions" / "v22.0.0" / "installation" / "node.exe"
-            installed_node.parent.mkdir(parents=True)
-            shutil.copy2(system_node, installed_node)
             hostile_path = external_cwd / "AppData" / "Local" / "fnm_multishells" / "12345_1"
             hostile_path.mkdir(parents=True)
             (hostile_path / "node.exe").write_bytes(b"not a Windows executable")
@@ -159,8 +156,8 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             local_appdata.mkdir(parents=True)
 
             env = os.environ.copy()
-            env["PATH"] = os.pathsep.join([str(hostile_path), str(Path(powershell).parent)])
-            env["APPDATA"] = str(appdata)
+            env["PATH"] = os.pathsep.join([str(hostile_path), str(Path(system_node).parent), str(Path(powershell).parent)])
+            env["APPDATA"] = str(external_cwd / "empty-appdata")
             env["LOCALAPPDATA"] = str(local_appdata)
             env["ProgramFiles"] = str(empty_program_files)
             env["ProgramW6432"] = str(empty_program_files)
@@ -168,7 +165,6 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             result = self._exchange(
                 external_cwd,
                 env=env,
-                command=self._candidate_launcher_command(),
             )
         self._assert_legacy_handshake(*result)
 
@@ -213,7 +209,6 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             result = self._exchange(
                 external_cwd,
                 env=env,
-                command=self._candidate_launcher_command(),
             )
         self._assert_legacy_handshake(*result)
 
@@ -233,7 +228,7 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
             env["ProgramFiles"] = str(empty_program_files)
             env["ProgramW6432"] = str(empty_program_files)
             env["ProgramFiles(x86)"] = str(empty_program_files)
-            command = self._candidate_launcher_command()
+            command = self._configured_launcher_command()
             try:
                 proc = subprocess.Popen(
                     command,
@@ -256,9 +251,11 @@ class ACICoreTests(unittest.TestCase):
     def test_codex_project_mcp_starts_from_repository_root(self):
         config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
         server = config["mcp_servers"]["harness-aci"]
-        self.assertNotIn("cwd", server)
-        self.assertTrue(Path(server["args"][-1]).is_absolute())
-        self.assertEqual(Path(server["args"][-1]).name, "start_aci_mcp.ps1")
+        self.assertEqual(server["cwd"], ".")
+        launcher = Path(server["args"][-1])
+        self.assertFalse(launcher.is_absolute())
+        self.assertEqual(launcher, Path("scripts/start_aci_mcp.ps1"))
+        self.assertTrue((ROOT / launcher).is_file())
         self.assertEqual(server["command"].lower(), "powershell.exe")
         self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
 

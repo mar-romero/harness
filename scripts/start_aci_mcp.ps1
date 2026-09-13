@@ -21,21 +21,6 @@ function Test-TransientNodePath($candidate) {
     return $candidate -match '(?i)(^|[\\/])fnm_multishells([\\/]|$)'
 }
 
-function Get-PersistentFnmNodeCandidates {
-    if ([string]::IsNullOrWhiteSpace($env:APPDATA)) {
-        return
-    }
-
-    $fnmRoot = Join-Path $env:APPDATA "fnm\node-versions"
-    if (-not (Test-Path -LiteralPath $fnmRoot -PathType Container)) {
-        return
-    }
-
-    Get-ChildItem -LiteralPath $fnmRoot -Directory -ErrorAction SilentlyContinue |
-        Sort-Object Name -Descending |
-        ForEach-Object { Join-Path $_.FullName "installation\node.exe" }
-}
-
 function Get-CodexRuntimeNodeCandidates {
     if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         return
@@ -58,18 +43,14 @@ function Get-InstalledNodeCandidates {
         }
     }
 
-    $pathNode = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($pathNode) {
-        $pathNode.Source
-    }
+    Get-Command node.exe -CommandType Application -All -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.Source }
 }
 
 $node = $null
 foreach ($candidate in (@(
-    Get-PersistentFnmNodeCandidates
-    Get-CodexRuntimeNodeCandidates
     Get-InstalledNodeCandidates
+    Get-CodexRuntimeNodeCandidates
 ) | Select-Object -Unique)) {
     if (-not (Test-TransientNodePath $candidate) -and (Test-NodeCandidate $candidate)) {
         $node = $candidate

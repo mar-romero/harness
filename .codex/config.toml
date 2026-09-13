@@ -1,8 +1,10 @@
 [mcp_servers.harness-aci]
 command = "powershell.exe"
-# Codex passes MCP arguments through unchanged.  Keep -File absolute so Desktop
-# can start the server even when its process cwd is outside this repository.
-args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\romer\\Documents\\GitHub\\harnes\\scripts\\start_aci_mcp.ps1"]
+# Codex starts this project-scoped MCP process in the repository root.  Keep
+# both the working directory and launcher path relative so another checkout
+# does not inherit the compiler host's user or drive path.
+args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/start_aci_mcp.ps1"]
+cwd = "."
 enabled = true
 required = true
 startup_timeout_sec = 30
