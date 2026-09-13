@@ -21,6 +21,17 @@ function Test-TransientNodePath($candidate) {
     return $candidate -match '(?i)(^|[\\/])fnm_multishells([\\/]|$)'
 }
 
+function Write-LauncherError($message) {
+    $writer = [System.IO.StreamWriter]::new([Console]::OpenStandardError())
+    try {
+        $writer.WriteLine($message)
+        $writer.Flush()
+    }
+    finally {
+        $writer.Dispose()
+    }
+}
+
 function Get-CodexRuntimeNodeCandidates {
     if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         return
@@ -59,7 +70,7 @@ foreach ($candidate in (@(
 }
 
 if (-not $node) {
-    [Console]::Error.WriteLine("harness-aci: no usable stable Node.js runtime found")
+    Write-LauncherError "harness-aci: no usable stable Node.js runtime found"
     exit 127
 }
 

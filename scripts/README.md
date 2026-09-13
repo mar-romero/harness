@@ -35,7 +35,12 @@ This folder contains the executable control-plane implementation.
 - `aci_mcp.py`: JSON-RPC MCP server for ACI.
 - `aci_mcp_worker.py`: persistent ACI worker used by the Windows-safe Node bridge.
 - `aci_mcp_node.js`: Windows-safe Node-to-Python MCP bridge.
-- `start_aci_mcp.ps1`: locates Node and starts the MCP bridge.
+- `start_aci_mcp.ps1`: locates a stable Node runtime and starts the MCP bridge.
+
+Codex Desktop starts `harness-aci` from the absolute checkout configured in
+`.codex/config.toml`. If the repository is moved or cloned elsewhere, update
+that server's `cwd` before using Desktop; its relative launcher argument is then
+resolved from that configured checkout.
 - `benchmark_variant.py`: creates disposable benchmark variants.
 - `harness_benchmark.py`: executes benchmark suites.
 - `eval_recorder.py`: records deterministic and runtime evaluation results.
