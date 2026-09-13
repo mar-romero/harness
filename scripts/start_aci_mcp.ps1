@@ -1,85 +1,86 @@
 $ErrorActionPreference = "Stop"
 
-$log = Join-Path $PSScriptRoot "harness-aci-startup.log"
 $bridge = Join-Path $PSScriptRoot "aci_mcp_node.js"
 
-function Log($message) {
-    Add-Content -Path $log -Value "$(Get-Date -Format o) $message"
+function Test-NodeCandidate($candidate) {
+    if ([string]::IsNullOrWhiteSpace($candidate) -or
+        -not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        & $candidate --version *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        return $false
+    }
 }
 
-try {
-    Log "=== START ==="
-    Log "PID=$PID"
-    Log "PWD=$PWD"
-    Log "PSScriptRoot=$PSScriptRoot"
-    Log "bridge=$bridge"
-    Log "APPDATA=$env:APPDATA"
-    Log "LOCALAPPDATA=$env:LOCALAPPDATA"
-    Log "PATH=$env:PATH"
+function Test-TransientNodePath($candidate) {
+    return $candidate -match '(?i)(^|[\\/])fnm_multishells([\\/]|$)'
+}
 
-    # 1. Node disponible en PATH
-    $node = Get-Command node.exe -ErrorAction SilentlyContinue
-
-    if ($node) {
-        Log "Using PATH node: $($node.Source)"
-        & $node.Source $bridge 2>> $log
-        $code = $LASTEXITCODE
-        Log "Node exited code=$code"
-        exit $code
+function Get-PersistentFnmNodeCandidates {
+    if ([string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        return
     }
 
-    # 2. Node instalado por fnm
     $fnmRoot = Join-Path $env:APPDATA "fnm\node-versions"
-    Log "Checking fnm root: $fnmRoot"
+    if (-not (Test-Path -LiteralPath $fnmRoot -PathType Container)) {
+        return
+    }
 
-    if (Test-Path $fnmRoot) {
-        $fnmNode = Get-ChildItem $fnmRoot -Directory -ErrorAction SilentlyContinue |
-            Sort-Object Name -Descending |
-            ForEach-Object {
-                $candidate = Join-Path $_.FullName "installation\node.exe"
-                if (Test-Path $candidate) {
-                    $candidate
-                }
-            } |
-            Select-Object -First 1
+    Get-ChildItem -LiteralPath $fnmRoot -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        ForEach-Object { Join-Path $_.FullName "installation\node.exe" }
+}
 
-        if ($fnmNode) {
-            Log "Using fnm node: $fnmNode"
-            & $fnmNode $bridge 2>> $log
-            $code = $LASTEXITCODE
-            Log "Node exited code=$code"
-            exit $code
+function Get-CodexRuntimeNodeCandidates {
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        return
+    }
+
+    $runtimeRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\runtimes\cua_node"
+    if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $runtimeRoot -Directory -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        ForEach-Object { Join-Path $_.FullName "bin\node.exe" }
+}
+
+function Get-InstalledNodeCandidates {
+    foreach ($root in @($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if (-not [string]::IsNullOrWhiteSpace($root)) {
+            Join-Path $root "nodejs\node.exe"
         }
     }
 
-    # 3. Node incluido con Codex Desktop
-    $codexRuntimeRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\runtimes\cua_node"
-    Log "Checking Codex runtime: $codexRuntimeRoot"
-
-    if (Test-Path $codexRuntimeRoot) {
-        $codexNode = Get-ChildItem $codexRuntimeRoot -Directory -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            ForEach-Object {
-                $candidate = Join-Path $_.FullName "bin\node.exe"
-                if (Test-Path $candidate) {
-                    $candidate
-                }
-            } |
-            Select-Object -First 1
-
-        if ($codexNode) {
-            Log "Using Codex node: $codexNode"
-            & $codexNode $bridge 2>> $log
-            $code = $LASTEXITCODE
-            Log "Node exited code=$code"
-            exit $code
-        }
+    $pathNode = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($pathNode) {
+        $pathNode.Source
     }
+}
 
-    Log "ERROR: No Node runtime found"
+$node = $null
+foreach ($candidate in (@(
+    Get-PersistentFnmNodeCandidates
+    Get-CodexRuntimeNodeCandidates
+    Get-InstalledNodeCandidates
+) | Select-Object -Unique)) {
+    if (-not (Test-TransientNodePath $candidate) -and (Test-NodeCandidate $candidate)) {
+        $node = $candidate
+        break
+    }
+}
+
+if (-not $node) {
+    [Console]::Error.WriteLine("harness-aci: no usable stable Node.js runtime found")
     exit 127
 }
-catch {
-    Log "EXCEPTION: $($_.Exception.ToString())"
-    exit 126
-}
+
+& $node $bridge
+exit $LASTEXITCODE

@@ -1,7 +1,11 @@
 import json
+import os
+import queue
+import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import tomllib
 import unittest
 import uuid
@@ -15,13 +19,247 @@ import aci_core
 from aci_core import call_tool, repo_read_range, repo_search, tool_definitions
 
 
+EXPECTED_TOOL_NAMES = [
+    "diagnostics_get",
+    "git_diff",
+    "git_status",
+    "lint_run",
+    "repo_callers",
+    "repo_dependencies",
+    "repo_read_range",
+    "repo_search",
+    "repo_symbol",
+    "tests_run",
+]
+
+
+class ACIConfiguredLauncherTests(unittest.TestCase):
+    def _server_config(self):
+        config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        return config["mcp_servers"]["harness-aci"]
+
+    def _codex_child_cwd(self, server, host_cwd):
+        configured = server.get("cwd")
+        if configured is None:
+            return host_cwd
+        configured_path = Path(configured)
+        return configured_path if configured_path.is_absolute() else host_cwd / configured_path
+
+    def _candidate_launcher_command(self):
+        server = self._server_config()
+        args = list(server.get("args", []))
+        file_index = args.index("-File")
+        args[file_index + 1] = str(ROOT / "scripts" / "start_aci_mcp.ps1")
+        return [server["command"], *args]
+
+    def _readline(self, stream, proc, timeout=15):
+        result = queue.Queue(maxsize=1)
+        threading.Thread(target=lambda: result.put(stream.readline()), daemon=True).start()
+        try:
+            return result.get(timeout=timeout)
+        except queue.Empty:
+            proc.kill()
+            self.fail("timed out waiting for configured MCP launcher response")
+
+    def _exchange(self, host_cwd, env=None, command=None):
+        server = self._server_config()
+        command = command or [server["command"], *server.get("args", [])]
+        try:
+            proc = subprocess.Popen(
+                command,
+                cwd=self._codex_child_cwd(server, host_cwd),
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except OSError as exc:
+            self.fail(f"configured MCP launcher could not start: {exc}")
+        assert proc.stdin and proc.stdout and proc.stderr
+        messages = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "codex-launch-test", "version": "1"},
+                },
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        ]
+        responses = []
+        try:
+            for message in messages:
+                proc.stdin.write(json.dumps(message) + "\n")
+                proc.stdin.flush()
+                if "id" in message:
+                    line = self._readline(proc.stdout, proc)
+                    self.assertTrue(
+                        line.strip(),
+                        "configured MCP launcher closed before a JSON-RPC response",
+                    )
+                    responses.append(json.loads(line))
+        finally:
+            if not proc.stdin.closed:
+                proc.stdin.close()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+            stdout_tail = proc.stdout.read()
+            stderr = proc.stderr.read()
+            proc.stdout.close()
+            proc.stderr.close()
+        return responses, proc.returncode, stdout_tail, stderr
+
+    def _assert_legacy_handshake(self, responses, returncode, stdout_tail, stderr):
+        self.assertEqual(returncode, 0, stderr)
+        self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-06-18")
+        names = [tool["name"] for tool in responses[1]["result"]["tools"]]
+        self.assertEqual(names, EXPECTED_TOOL_NAMES)
+        self.assertEqual(stdout_tail, "", "MCP stdout contained non-JSON-RPC output")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher regression")
+    def test_codex_configured_launcher_initializes_from_non_repository_cwd(self):
+        with tempfile.TemporaryDirectory() as td:
+            external_cwd = Path(td)
+            self.assertNotEqual(external_cwd, ROOT)
+            self.assertNotIn(ROOT, external_cwd.parents)
+            result = self._exchange(external_cwd)
+        self._assert_legacy_handshake(*result)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher regression")
+    def test_launcher_ignores_transient_fnm_multishell_node(self):
+        server = self._server_config()
+        powershell = shutil.which(server["command"])
+        system_node = shutil.which("node.exe")
+        self.assertIsNotNone(powershell, "configured PowerShell executable is unavailable")
+        self.assertIsNotNone(system_node, "a system Node executable is required for the fixture")
+        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+
+        with tempfile.TemporaryDirectory() as td:
+            external_cwd = Path(td)
+            appdata = external_cwd / "AppData" / "Roaming"
+            installed_node = appdata / "fnm" / "node-versions" / "v22.0.0" / "installation" / "node.exe"
+            installed_node.parent.mkdir(parents=True)
+            shutil.copy2(system_node, installed_node)
+            hostile_path = external_cwd / "AppData" / "Local" / "fnm_multishells" / "12345_1"
+            hostile_path.mkdir(parents=True)
+            (hostile_path / "node.exe").write_bytes(b"not a Windows executable")
+
+            empty_program_files = external_cwd / "empty-program-files"
+            empty_program_files.mkdir()
+            local_appdata = external_cwd / "AppData" / "Local" / "isolated"
+            local_appdata.mkdir(parents=True)
+
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join([str(hostile_path), str(Path(powershell).parent)])
+            env["APPDATA"] = str(appdata)
+            env["LOCALAPPDATA"] = str(local_appdata)
+            env["ProgramFiles"] = str(empty_program_files)
+            env["ProgramW6432"] = str(empty_program_files)
+            env["ProgramFiles(x86)"] = str(empty_program_files)
+            result = self._exchange(
+                external_cwd,
+                env=env,
+                command=self._candidate_launcher_command(),
+            )
+        self._assert_legacy_handshake(*result)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher regression")
+    def test_launcher_falls_back_to_stable_codex_runtime(self):
+        server = self._server_config()
+        powershell = shutil.which(server["command"])
+        system_node = shutil.which("node.exe")
+        self.assertIsNotNone(powershell, "configured PowerShell executable is unavailable")
+        self.assertIsNotNone(system_node, "a system Node executable is required for the fixture")
+        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+
+        with tempfile.TemporaryDirectory() as td:
+            external_cwd = Path(td)
+            local_appdata = external_cwd / "AppData" / "Local"
+            runtime_node = (
+                local_appdata
+                / "OpenAI"
+                / "Codex"
+                / "runtimes"
+                / "cua_node"
+                / "runtime-1"
+                / "bin"
+                / "node.exe"
+            )
+            runtime_node.parent.mkdir(parents=True)
+            shutil.copy2(system_node, runtime_node)
+            hostile_path = local_appdata / "fnm_multishells" / "12345_1"
+            hostile_path.mkdir(parents=True)
+            (hostile_path / "node.exe").write_bytes(b"not a Windows executable")
+            empty_root = external_cwd / "empty"
+            empty_root.mkdir()
+
+            env = os.environ.copy()
+            env["PATH"] = os.pathsep.join([str(hostile_path), str(Path(powershell).parent)])
+            env["APPDATA"] = str(empty_root)
+            env["LOCALAPPDATA"] = str(local_appdata)
+            env["ProgramFiles"] = str(empty_root)
+            env["ProgramW6432"] = str(empty_root)
+            env["ProgramFiles(x86)"] = str(empty_root)
+            result = self._exchange(
+                external_cwd,
+                env=env,
+                command=self._candidate_launcher_command(),
+            )
+        self._assert_legacy_handshake(*result)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher regression")
+    def test_launcher_fails_cleanly_without_a_stable_node(self):
+        server = self._server_config()
+        powershell = shutil.which(server["command"])
+        self.assertIsNotNone(powershell, "configured PowerShell executable is unavailable")
+        with tempfile.TemporaryDirectory() as td:
+            external_cwd = Path(td)
+            empty_program_files = external_cwd / "empty-program-files"
+            empty_program_files.mkdir()
+            env = os.environ.copy()
+            env["PATH"] = str(Path(powershell).parent)
+            env["APPDATA"] = str(external_cwd / "empty-appdata")
+            env["LOCALAPPDATA"] = str(external_cwd / "empty-localappdata")
+            env["ProgramFiles"] = str(empty_program_files)
+            env["ProgramW6432"] = str(empty_program_files)
+            env["ProgramFiles(x86)"] = str(empty_program_files)
+            command = self._candidate_launcher_command()
+            try:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=self._codex_child_cwd(server, external_cwd),
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except OSError as exc:
+                self.fail(f"configured MCP launcher could not start cleanly: {exc}")
+            stdout, stderr = proc.communicate(timeout=15)
+        self.assertEqual(proc.returncode, 127, stderr)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr.strip(), "harness-aci: no usable stable Node.js runtime found")
+
+
 class ACICoreTests(unittest.TestCase):
     def test_codex_project_mcp_starts_from_repository_root(self):
         config = tomllib.loads((ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
         server = config["mcp_servers"]["harness-aci"]
-        self.assertEqual(server["cwd"], ".")
-        self.assertEqual(server["args"][-1], "scripts/aci_mcp_node.js")
-        self.assertIn(server["command"].lower(), {"node", "node.exe"})
+        self.assertNotIn("cwd", server)
+        self.assertTrue(Path(server["args"][-1]).is_absolute())
+        self.assertEqual(Path(server["args"][-1]).name, "start_aci_mcp.ps1")
+        self.assertEqual(server["command"].lower(), "powershell.exe")
         self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
 
     def test_codex_project_mcp_entrypoint_handles_initialize(self):

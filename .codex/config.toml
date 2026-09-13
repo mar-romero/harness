@@ -1,7 +1,8 @@
 [mcp_servers.harness-aci]
-command = "node.exe"
-args = ["scripts/aci_mcp_node.js"]
-cwd = "."
+command = "powershell.exe"
+# Codex passes MCP arguments through unchanged.  Keep -File absolute so Desktop
+# can start the server even when its process cwd is outside this repository.
+args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\romer\\Documents\\GitHub\\harnes\\scripts\\start_aci_mcp.ps1"]
 enabled = true
 required = true
 startup_timeout_sec = 30

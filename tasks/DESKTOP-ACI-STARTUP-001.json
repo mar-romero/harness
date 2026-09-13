@@ -1,0 +1,52 @@
+{
+  "id": "DESKTOP-ACI-STARTUP-001",
+  "description": "Investigate and completely fix Codex Desktop so coding from the desktop application works, not only from the terminal. It currently reports: Error al crear el chat; error creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: harness-aci: handshaking with MCP server failed: connection closed: initialize response. Determine whether harness-aci works in the terminal and make every necessary change to resolve the problem.",
+  "acceptance_criteria": [
+    "Codex Desktop can initialize the required harness-aci MCP server when the application process was not launched from the repository root.",
+    "The harness-aci launcher remains portable and does not depend on a short-lived fnm multishell path.",
+    "The MCP server completes a legacy initialize handshake and exposes its tool catalog through the configured Codex launch path.",
+    "Focused regression tests reproduce the former Desktop launch failure and pass after the fix.",
+    "Relevant deterministic ACI tests pass and the final diff preserves unrelated in-progress user changes."
+  ],
+  "risk": "R1",
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": false,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": true,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": false,
+    "bug_fix": true
+  },
+  "files": [
+    "harness/manifest.yaml",
+    ".codex/config.toml",
+    "scripts/compile_harness.py",
+    "scripts/start_aci_mcp.ps1",
+    "tests/test_aci.py"
+  ],
+  "tags": ["codex-desktop", "mcp", "harness-aci", "windows", "bug-fix"],
+  "request": {
+    "original_text": "Podrias ver que esta pasando con codex desposkt orque al intentar codear desde ahi con codex y no por la terminal como ahora me dice  esto:Error al crear el chat\nerror creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: harness-aci: handshaking with MCP server failed: connection closed: initialize response, y por aca (la terminal funciona aci?)\n\nhace todo lo necesario pra solucionarlo",
+    "original_language": "es",
+    "canonical_english": "Investigate and completely fix Codex Desktop so coding from the desktop application works, not only from the terminal. It currently reports: Error al crear el chat; error creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: harness-aci: handshaking with MCP server failed: connection closed: initialize response. Determine whether harness-aci works in the terminal and make every necessary change to resolve the problem.",
+    "translation": {
+      "equivalence_claim": "EXACT_INTENT",
+      "back_translation": "Investiga y corrige completamente Codex Desktop para que se pueda programar desde la aplicación de escritorio, no solamente desde la terminal. Actualmente muestra el error informado de creación del chat y cierre de la conexión durante la inicialización de harness-aci. Determina si harness-aci funciona en la terminal y realiza todos los cambios necesarios para resolver el problema.",
+      "validation": {
+        "ok": true,
+        "issues": [],
+        "source_invariants": {"code_blocks": [], "urls": [], "file_paths": [], "numbers": [], "identifiers": ["harness-aci"], "quoted_literals": [], "has_negation": true, "has_strict_constraint": true},
+        "canonical_invariants": {"code_blocks": [], "urls": [], "file_paths": [], "numbers": [], "identifiers": ["harness-aci"], "quoted_literals": [], "has_negation": true, "has_strict_constraint": true}
+      }
+    }
+  }
+}
