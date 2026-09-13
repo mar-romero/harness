@@ -262,7 +262,11 @@ class ACICoreTests(unittest.TestCase):
         launcher = Path(server["args"][-1])
         self.assertFalse(launcher.is_absolute())
         self.assertEqual(launcher, Path("scripts/start_aci_mcp.ps1"))
-        self.assertTrue((DESKTOP_CHECKOUT / launcher).is_file())
+        # This configuration is intentionally deployed to a Windows checkout.
+        # Linux/macOS CI validates its exact serialized contract above, but
+        # cannot assert existence of the Windows-only deployment path.
+        if sys.platform == "win32":
+            self.assertTrue((DESKTOP_CHECKOUT / launcher).is_file())
         self.assertEqual(server["command"].lower(), "powershell.exe")
         self.assertTrue((ROOT / ".codex" / "aci_mcp_entry.py").is_file())
 
