@@ -1,0 +1,57 @@
+{
+  "id": "CODEGRAPH-FOUNDATION-001",
+  "description": "Define and implement a normalized repository-graph contract with an optional CodeGraph backend, the existing lexical graph as a deterministic fallback, bounded graph expansion, policy-based exclusions, and durable graph metadata.",
+  "acceptance_criteria": [
+    "The graph output has a versioned normalized shape for nodes, edges, backend identity, repository paths, and deterministic counts.",
+    "The configured auto backend uses CodeGraph only when available and otherwise uses the local graph without failing task activation.",
+    "Graph construction respects context-policy exclusions and bounded source-size limits.",
+    "Repeated graph construction over the same repository and policy produces stable node and edge ordering.",
+    "Tests cover imports, reverse references, test affinity, cycles, missing imports, exclusions, backend unavailability, and malformed source fallback."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": true,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": true,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "files": [
+    "codegraph.md",
+    "scripts/context_graph.py",
+    "scripts/codegraph_backend.py",
+    "harness/context-policy.json",
+    "harness/schema/context-graph.schema.json",
+    "tests/test_context_graph.py"
+  ],
+  "tags": [
+    "codegraph",
+    "context",
+    "foundation",
+    "derived-work",
+    "product-discovery"
+  ],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "CODEGRAPH-CONTEXT-001",
+    "project_id": null,
+    "parent_id": "CODEGRAPH-REPO-FEATURE-001",
+    "source_language": "es",
+    "source_request_preserved_at": "planning/discovery/CODEGRAPH-CONTEXT-001.json"
+  },
+  "planning": {
+    "title": "Define normalized graph contract and local fallback",
+    "size": "S",
+    "dependencies": [],
+    "priority_score": 4.8
+  }
+}

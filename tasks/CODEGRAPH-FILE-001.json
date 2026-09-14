@@ -1,0 +1,58 @@
+{
+  "id": "CODEGRAPH-FILE-001",
+  "description": "Extend the context compiler to consume the normalized graph, rank task-relevant files, preserve explicit and policy-required files, enforce context budgets, and emit auditable file-level context metadata.",
+  "acceptance_criteria": [
+    "The compiler uses explicit files, policy-required files, task terms, memory, graph neighbors, and related tests as bounded ranking inputs.",
+    "Every selected file records path, bytes, estimated tokens, sha256, score, and inclusion reasons.",
+    "The compiler never exceeds configured file, byte, or token limits except for explicitly required files according to current policy semantics.",
+    "The output remains backward-compatible with current context.json consumers and identifies the graph backend used.",
+    "Tests cover ranking determinism, budget boundaries, explicit-file precedence, graph neighbors, memory, tests, and secret/generated-path exclusions."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": true,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": false,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": true,
+    "bug_fix": false
+  },
+  "files": [
+    "scripts/context_compiler.py",
+    "harness/context-policy.json",
+    "harness/schema/context-pack.schema.json",
+    "tests/test_context.py",
+    "tests/test_context_v2.py"
+  ],
+  "tags": [
+    "context",
+    "compiler",
+    "token-budget",
+    "derived-work",
+    "product-discovery"
+  ],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "CODEGRAPH-CONTEXT-001",
+    "project_id": null,
+    "parent_id": "CODEGRAPH-FILE-FEATURE-001",
+    "source_language": "es",
+    "source_request_preserved_at": "planning/discovery/CODEGRAPH-CONTEXT-001.json"
+  },
+  "planning": {
+    "title": "Extend context compiler with graph-aware file retrieval",
+    "size": "M",
+    "dependencies": [
+      "CODEGRAPH-FOUNDATION-001"
+    ],
+    "priority_score": 4.35
+  }
+}

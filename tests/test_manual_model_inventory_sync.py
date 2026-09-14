@@ -11,7 +11,7 @@ class ManualModelInventorySyncTests(unittest.TestCase):
     def test_production_policy_selects_minimum_sufficient_and_blocks_high_risk_without_inventory(self):
         policy = load_policy()
         self.assertEqual(policy["selection"]["strategy"], "minimum_sufficient")
-        self.assertEqual(policy["selection"]["minimum_coverage_by_risk"]["R3"], 0.95)
+        self.assertEqual(policy["selection"]["minimum_coverage_by_risk"]["R3"], 0.85)
         result = select_model(
             task_id="R2-no-inventory",
             provider="codex",

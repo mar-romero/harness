@@ -1,0 +1,12 @@
+{
+  "id": "CODEGRAPH-CONTEXT-EPIC-001",
+  "type": "EPIC",
+  "title": "Three-level CodeGraph context retrieval",
+  "description": "Provide a provider-neutral retrieval capability that narrows repository context from graph, to files, to symbols and snippets while preserving deterministic evidence and safe fallbacks.",
+  "outcomes": [
+    "Minimal reproducible context packs",
+    "Measured token reduction",
+    "Safe fallback when graph or symbol extraction is unavailable"
+  ],
+  "discovery_id": "CODEGRAPH-CONTEXT-001"
+}

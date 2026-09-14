@@ -1,0 +1,8 @@
+{
+  "id": "CODEGRAPH-SYMBOL-FEATURE-001",
+  "type": "FEATURE",
+  "title": "Symbol and snippet retrieval",
+  "description": "Select the classes, functions, methods, and bounded source regions needed by a task, starting with Python and falling back safely to complete files.",
+  "parent_id": "CODEGRAPH-CONTEXT-EPIC-001",
+  "discovery_id": "CODEGRAPH-CONTEXT-001"
+}

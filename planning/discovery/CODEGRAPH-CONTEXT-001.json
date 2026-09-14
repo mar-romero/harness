@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "discovery_id": "CODEGRAPH-CONTEXT-001",
+  "status": "approved",
+  "classification": "EPIC",
+  "title": "Three-level CodeGraph context retrieval",
+  "refined_problem": "The harness currently selects bounded repository files with a lightweight dependency graph, but agents still receive more file content than necessary and symbol-level retrieval is absent. This increases context cost and makes it harder to pass precise, reproducible context to each AI provider.",
+  "original_request": {
+    "text": "Bueno creame todo lo que se tenga que ver para este modelo, sprint epic, task etcm para empezar una nueva conversacion y empezar con esto",
+    "language": "es",
+    "canonical_english": "Create all durable planning artifacts needed for the three-level CodeGraph and context-retrieval initiative, including its epic, features, executable tasks, and sprint, so implementation can begin in a new conversation.",
+    "translation": {
+      "equivalence_claim": "EXACT_INTENT",
+      "back_translation": "Crear todos los artefactos durables de planificación necesarios para la iniciativa de CodeGraph y recuperación de contexto de tres niveles, incluyendo su épica, funcionalidades, tareas ejecutables y sprint, para que la implementación pueda comenzar en una nueva conversación.",
+      "validation": {
+        "method": "scripts/request_normalizer.py",
+        "status": "PASS"
+      }
+    }
+  },
+  "target_users": [
+    "Harness coordinators preparing context for implementation, review, verification, and audit agents",
+    "AI agents that need a minimal reproducible repository context pack",
+    "Repository maintainers who need auditable reasons for context inclusion and token usage"
+  ],
+  "outcomes": [
+    "Agents receive a minimal, reproducible context pack rather than broad repository content.",
+    "Repository, file, and symbol retrieval remain provider-neutral and work with the existing harness lifecycle.",
+    "Every selected node, file, symbol, or snippet has an auditable inclusion reason, size, token estimate, and hash.",
+    "The system measures context reduction without silently sacrificing relevant implementation or test coverage."
+  ],
+  "success_metrics": [
+    "A representative task produces deterministic repository, file, and symbol retrieval results across repeated runs.",
+    "The context pack remains within configured file, byte, and token budgets.",
+    "The benchmark reports token reduction and relevant-surface recall against the current file-level compiler.",
+    "Secret and generated-path exclusions remain enforced in every retrieval level.",
+    "The existing test suite remains green and provider activation continues to consume the context pack."
+  ],
+  "scope": {
+    "in": [
+      "Update codegraph.md into the durable implementation specification.",
+      "Define a normalized repository graph with an optional CodeGraph backend and the current local graph as fallback.",
+      "Extend context_compiler.py for graph-aware file retrieval and auditable budgeted output.",
+      "Add symbol indexing and bounded snippet extraction, starting with Python and using safe fallback behavior for unsupported languages.",
+      "Add schemas, tests, and a deterministic token-savings benchmark."
+    ],
+    "out": [
+      "A mandatory external CodeGraph service or dependency.",
+      "Embeddings, vector databases, or semantic search infrastructure.",
+      "Replacing the Harness ACI or changing provider-specific model selection.",
+      "A perfect semantic call graph for every supported programming language.",
+      "Sending full exploration transcripts to the main agent."
+    ]
+  },
+  "mvp": {
+    "goal": "Deliver an end-to-end, provider-neutral context pipeline that retrieves a bounded repository graph, relevant files, and Python symbols/snippets while preserving the existing fallback behavior.",
+    "includes": [
+      "Local normalized graph backend with optional backend selection.",
+      "File ranking and context budget accounting.",
+      "Python class/function/method ranges and bounded snippets.",
+      "Fallback to complete files when symbol extraction is unavailable or unsafe.",
+      "Deterministic tests and a baseline-versus-snippet token benchmark."
+    ],
+    "excludes": [
+      "Mandatory external provider installation.",
+      "JavaScript/TypeScript AST extraction beyond a safe follow-up slice.",
+      "Automatic changes to agent prompts or provider adapters unless required by the context-pack contract."
+    ]
+  },
+  "business_rules": [
+    "Explicit task files and policy-mandated files are never dropped solely because a symbol extractor cannot process them.",
+    "A context result must be reproducible from task input, policy, repository state, and the selected graph backend.",
+    "Unsupported or malformed source must degrade to a bounded safe fallback rather than producing misleading snippets.",
+    "The external CodeGraph backend is optional; the local graph remains the availability fallback.",
+    "Token savings cannot justify leaking excluded paths or removing acceptance-critical tests."
+  ],
+  "data_and_integrations": [
+    "Repository source files and task metadata are the authoritative inputs.",
+    "harness/context-policy.json owns limits, exclusions, backend selection, and retrieval behavior.",
+    "The optional CodeGraph integration must be local or explicitly configured and must not contact external services during ordinary task activation.",
+    "context.json and context-graph.json remain durable run artifacts under .harness/runs/<task-id>/."
+  ],
+  "security_privacy": [
+    "Reuse the existing exclusion policy for secrets, VCS internals, generated output, and oversized files.",
+    "Do not transmit source content to an external graph service by default.",
+    "Hash and audit selected content without storing credentials or secret-like values in planning or context artifacts."
+  ],
+  "operational_constraints": [
+    "The implementation must run on the repository's supported Windows environment and remain provider-neutral.",
+    "The existing context compiler must continue to work when CodeGraph is unavailable.",
+    "The output must respect configured max_files, max_total_bytes, and max_total_tokens_estimate limits.",
+    "The first implementation should avoid adding a dependency unless a concrete backend contract requires it."
+  ],
+  "assumptions": [
+    "CodeGraph is treated as a backend capability behind a normalized repository-graph contract, not as a mandatory named vendor product.",
+    "Python is the first language with structural symbol extraction because the repository's control plane is primarily Python.",
+    "Current lexical import resolution and test affinity are a valid fallback baseline.",
+    "A 10-unit first sprint is preferable to filling the default 12-unit capacity with unvalidated polish."
+  ],
+  "open_questions": [
+    {
+      "question": "Which concrete external CodeGraph implementation, if any, should be connected after the local contract is proven?",
+      "blocking": false,
+      "resolution": "Defer provider selection; implement the adapter contract and local fallback first."
+    },
+    {
+      "question": "What minimum token-reduction target should become a release gate after benchmark data exists?",
+      "blocking": false,
+      "resolution": "Measure baseline and candidate first; set the target from observed recall/cost trade-offs."
+    }
+  ],
+  "challenges": [
+    "Regex-only imports do not provide complete semantic dependency or call information.",
+    "Overly aggressive snippet trimming can omit decorators, imports, class context, or tests.",
+    "Different languages require different symbol extraction strategies.",
+    "A broad graph can increase retrieval cost if graph expansion is not bounded and scored.",
+    "The context artifact must remain auditable and compatible with current provider activation."
+  ],
+  "work_items": [
+    {
+      "id": "CODEGRAPH-CONTEXT-EPIC-001",
+      "type": "EPIC",
+      "title": "Three-level CodeGraph context retrieval",
+      "description": "Provide a provider-neutral retrieval capability that narrows repository context from graph, to files, to symbols and snippets while preserving deterministic evidence and safe fallbacks.",
+      "outcomes": [
+        "Minimal reproducible context packs",
+        "Measured token reduction",
+        "Safe fallback when graph or symbol extraction is unavailable"
+      ]
+    },
+    {
+      "id": "CODEGRAPH-REPO-FEATURE-001",
+      "type": "FEATURE",
+      "title": "Normalized repository graph",
+      "description": "Expose repository modules, packages, files, tests, and bounded dependency relationships through an optional CodeGraph backend with the current local graph as fallback.",
+      "parent_id": "CODEGRAPH-CONTEXT-EPIC-001"
+    },
+    {
+      "id": "CODEGRAPH-FILE-FEATURE-001",
+      "type": "FEATURE",
+      "title": "Budgeted file context retrieval",
+      "description": "Use the normalized graph and task metadata to select relevant files with deterministic ranking, explicit inclusion reasons, hashes, and token budgets.",
+      "parent_id": "CODEGRAPH-CONTEXT-EPIC-001"
+    },
+    {
+      "id": "CODEGRAPH-SYMBOL-FEATURE-001",
+      "type": "FEATURE",
+      "title": "Symbol and snippet retrieval",
+      "description": "Select the classes, functions, methods, and bounded source regions needed by a task, starting with Python and falling back safely to complete files.",
+      "parent_id": "CODEGRAPH-CONTEXT-EPIC-001"
+    },
+    {
+      "id": "CODEGRAPH-MEASURE-FEATURE-001",
+      "type": "FEATURE",
+      "title": "Context efficiency measurement",
+      "description": "Compare current file-level context with graph-and-symbol retrieval and report token reduction, relevant-surface recall, determinism, and fallback usage.",
+      "parent_id": "CODEGRAPH-CONTEXT-EPIC-001"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "CODEGRAPH-FOUNDATION-001",
+      "title": "Define normalized graph contract and local fallback",
+      "description": "Define and implement a normalized repository-graph contract with an optional CodeGraph backend, the existing lexical graph as a deterministic fallback, bounded graph expansion, policy-based exclusions, and durable graph metadata.",
+      "acceptance_criteria": [
+        "The graph output has a versioned normalized shape for nodes, edges, backend identity, repository paths, and deterministic counts.",
+        "The configured auto backend uses CodeGraph only when available and otherwise uses the local graph without failing task activation.",
+        "Graph construction respects context-policy exclusions and bounded source-size limits.",
+        "Repeated graph construction over the same repository and policy produces stable node and edge ordering.",
+        "Tests cover imports, reverse references, test affinity, cycles, missing imports, exclusions, backend unavailability, and malformed source fallback."
+      ],
+      "dependencies": [],
+      "files": [
+        "codegraph.md",
+        "scripts/context_graph.py",
+        "scripts/codegraph_backend.py",
+        "harness/context-policy.json",
+        "harness/schema/context-graph.schema.json",
+        "tests/test_context_graph.py"
+      ],
+      "size": "S",
+      "risk_factors": {
+        "schema_change": true,
+        "external_contract": true,
+        "security_boundary": true
+      },
+      "tags": [
+        "codegraph",
+        "context",
+        "foundation"
+      ],
+      "parent_id": "CODEGRAPH-REPO-FEATURE-001",
+      "value": 5,
+      "dependency_unlock": 5,
+      "risk_reduction": 5,
+      "urgency": 4,
+      "confidence": 4
+    },
+    {
+      "id": "CODEGRAPH-FILE-001",
+      "title": "Extend context compiler with graph-aware file retrieval",
+      "description": "Extend the context compiler to consume the normalized graph, rank task-relevant files, preserve explicit and policy-required files, enforce context budgets, and emit auditable file-level context metadata.",
+      "acceptance_criteria": [
+        "The compiler uses explicit files, policy-required files, task terms, memory, graph neighbors, and related tests as bounded ranking inputs.",
+        "Every selected file records path, bytes, estimated tokens, sha256, score, and inclusion reasons.",
+        "The compiler never exceeds configured file, byte, or token limits except for explicitly required files according to current policy semantics.",
+        "The output remains backward-compatible with current context.json consumers and identifies the graph backend used.",
+        "Tests cover ranking determinism, budget boundaries, explicit-file precedence, graph neighbors, memory, tests, and secret/generated-path exclusions."
+      ],
+      "dependencies": [
+        "CODEGRAPH-FOUNDATION-001"
+      ],
+      "files": [
+        "scripts/context_compiler.py",
+        "harness/context-policy.json",
+        "harness/schema/context-pack.schema.json",
+        "tests/test_context.py",
+        "tests/test_context_v2.py"
+      ],
+      "size": "M",
+      "risk_factors": {
+        "schema_change": true,
+        "security_boundary": true,
+        "important_calculation": true
+      },
+      "tags": [
+        "context",
+        "compiler",
+        "token-budget"
+      ],
+      "parent_id": "CODEGRAPH-FILE-FEATURE-001",
+      "value": 5,
+      "dependency_unlock": 4,
+      "risk_reduction": 4,
+      "urgency": 4,
+      "confidence": 4
+    },
+    {
+      "id": "CODEGRAPH-SYMBOL-001",
+      "title": "Add Python symbol and snippet retrieval",
+      "description": "Add structural Python symbol indexing and bounded snippet extraction to the context pipeline, selecting relevant classes, functions, and methods while retaining safe complete-file fallback for unsupported or unsafe extraction.",
+      "acceptance_criteria": [
+        "The symbol index reports classes, functions, and methods with stable names and exact source line ranges.",
+        "Snippet selection uses task terms, graph relationships, explicit references, and related tests without exceeding the context budget.",
+        "Selected snippets record path, symbol, start_line, end_line, hash, token estimate, and inclusion reason.",
+        "Imports, decorators, class context, and required surrounding syntax are preserved or the compiler falls back to the complete file.",
+        "Tests cover nested symbols, malformed Python, empty matches, deterministic ordering, line boundaries, budget limits, and fallback behavior."
+      ],
+      "dependencies": [
+        "CODEGRAPH-FILE-001"
+      ],
+      "files": [
+        "scripts/symbol_index.py",
+        "scripts/snippet_extractor.py",
+        "scripts/context_compiler.py",
+        "harness/schema/context-pack.schema.json",
+        "tests/test_symbol_context.py"
+      ],
+      "size": "M",
+      "risk_factors": {
+        "schema_change": true,
+        "security_boundary": true,
+        "important_calculation": true
+      },
+      "tags": [
+        "symbols",
+        "snippets",
+        "python",
+        "context"
+      ],
+      "parent_id": "CODEGRAPH-SYMBOL-FEATURE-001",
+      "value": 5,
+      "dependency_unlock": 3,
+      "risk_reduction": 4,
+      "urgency": 3,
+      "confidence": 3
+    },
+    {
+      "id": "CODEGRAPH-BENCHMARK-001",
+      "title": "Measure context savings and relevant-surface recall",
+      "description": "Create a deterministic benchmark that compares current file-level retrieval with graph-and-symbol retrieval, reports token savings and relevant-surface recall, and documents safe rollout criteria.",
+      "acceptance_criteria": [
+        "The benchmark runs against fixed repository task fixtures without contacting external services.",
+        "The report includes baseline tokens, candidate tokens, reduction percentage, selected files, selected symbols, fallback count, and relevant-surface recall.",
+        "The benchmark detects regressions where token reduction comes from omitting explicit files, required tests, or policy-mandated context.",
+        "The rollout recommendation keeps the existing file-level behavior as the safe default until benchmark evidence supports enabling snippets.",
+        "The benchmark output and documentation explain how future repositories can reproduce the measurement."
+      ],
+      "dependencies": [
+        "CODEGRAPH-SYMBOL-001"
+      ],
+      "files": [
+        "scripts/context_benchmark.py",
+        "tests/test_context_benchmark.py",
+        "codegraph.md",
+        "harness/context-policy.json"
+      ],
+      "size": "S",
+      "risk_factors": {
+        "important_calculation": true,
+        "security_boundary": true
+      },
+      "tags": [
+        "benchmark",
+        "token-savings",
+        "verification"
+      ],
+      "parent_id": "CODEGRAPH-MEASURE-FEATURE-001",
+      "value": 4,
+      "dependency_unlock": 3,
+      "risk_reduction": 5,
+      "urgency": 3,
+      "confidence": 4
+    }
+  ],
+  "proposed_sprint": {
+    "id": "CODEGRAPH-CONTEXT-SPRINT-001",
+    "goal": "Deliver the first end-to-end provider-neutral context pipeline from normalized repository graph to budgeted files and Python symbols, with deterministic evidence and measured token savings.",
+    "capacity_units": 12,
+    "task_ids": [
+      "CODEGRAPH-FOUNDATION-001",
+      "CODEGRAPH-FILE-001",
+      "CODEGRAPH-SYMBOL-001",
+      "CODEGRAPH-BENCHMARK-001"
+    ],
+    "execution_waves": [
+      {
+        "wave": 1,
+        "task_ids": [
+          "CODEGRAPH-FOUNDATION-001"
+        ],
+        "exit_condition": "Normalized graph contract, fallback, policy boundaries, and tests pass."
+      },
+      {
+        "wave": 2,
+        "task_ids": [
+          "CODEGRAPH-FILE-001"
+        ],
+        "exit_condition": "File-level context output remains compatible and budgeted with durable reasons and hashes."
+      },
+      {
+        "wave": 3,
+        "task_ids": [
+          "CODEGRAPH-SYMBOL-001"
+        ],
+        "exit_condition": "Python symbol/snippet retrieval works with safe fallback and deterministic tests."
+      },
+      {
+        "wave": 4,
+        "task_ids": [
+          "CODEGRAPH-BENCHMARK-001"
+        ],
+        "exit_condition": "Token savings and relevant-surface recall are measured and documented."
+      }
+    ],
+    "selection_rationale": "This order creates a vertical slice while resolving graph-contract uncertainty before compiler and symbol work. It uses 10 of 12 capacity units and leaves slack for integration findings.",
+    "deferred_task_ids": [
+      "CODEGRAPH-JSTS-001",
+      "CODEGRAPH-EXTERNAL-BACKEND-001"
+    ]
+  },
+  "research_rdd": {
+    "mode": "none",
+    "rationale": "The MVP uses repository-answerable local evidence and a reversible provider-neutral adapter boundary; no external contract is selected yet.",
+    "assessment_reasons": [
+      "explicit discovery mode"
+    ],
+    "artifacts": {},
+    "ready": true
+  }
+}

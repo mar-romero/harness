@@ -1,0 +1,59 @@
+{
+  "id": "CODEGRAPH-SYMBOL-001",
+  "description": "Add structural Python symbol indexing and bounded snippet extraction to the context pipeline, selecting relevant classes, functions, and methods while retaining safe complete-file fallback for unsupported or unsafe extraction.",
+  "acceptance_criteria": [
+    "The symbol index reports classes, functions, and methods with stable names and exact source line ranges.",
+    "Snippet selection uses task terms, graph relationships, explicit references, and related tests without exceeding the context budget.",
+    "Selected snippets record path, symbol, start_line, end_line, hash, token estimate, and inclusion reason.",
+    "Imports, decorators, class context, and required surrounding syntax are preserved or the compiler falls back to the complete file.",
+    "Tests cover nested symbols, malformed Python, empty matches, deterministic ordering, line boundaries, budget limits, and fallback behavior."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": true,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": false,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": true,
+    "bug_fix": false
+  },
+  "files": [
+    "scripts/symbol_index.py",
+    "scripts/snippet_extractor.py",
+    "scripts/context_compiler.py",
+    "harness/schema/context-pack.schema.json",
+    "tests/test_symbol_context.py"
+  ],
+  "tags": [
+    "symbols",
+    "snippets",
+    "python",
+    "context",
+    "derived-work",
+    "product-discovery"
+  ],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "CODEGRAPH-CONTEXT-001",
+    "project_id": null,
+    "parent_id": "CODEGRAPH-SYMBOL-FEATURE-001",
+    "source_language": "es",
+    "source_request_preserved_at": "planning/discovery/CODEGRAPH-CONTEXT-001.json"
+  },
+  "planning": {
+    "title": "Add Python symbol and snippet retrieval",
+    "size": "M",
+    "dependencies": [
+      "CODEGRAPH-FILE-001"
+    ],
+    "priority_score": 3.9
+  }
+}
