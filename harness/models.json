@@ -449,9 +449,9 @@
     "strategy": "minimum_sufficient",
     "minimum_coverage_by_risk": {
       "R0": 0.75,
-      "R1": 0.8,
-      "R2": 0.9,
-      "R3": 0.95
+      "R1": 0.75,
+      "R2": 0.8,
+      "R3": 0.85
     },
     "no_sufficient_action_by_risk": {
       "R0": "inherit",

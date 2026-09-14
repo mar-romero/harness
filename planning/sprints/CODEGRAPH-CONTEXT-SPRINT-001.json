@@ -1,0 +1,48 @@
+{
+  "id": "CODEGRAPH-CONTEXT-SPRINT-001",
+  "goal": "Deliver the first end-to-end provider-neutral context pipeline from normalized repository graph to budgeted files and Python symbols, with deterministic evidence and measured token savings.",
+  "capacity_units": 12,
+  "task_ids": [
+    "CODEGRAPH-FOUNDATION-001",
+    "CODEGRAPH-FILE-001",
+    "CODEGRAPH-SYMBOL-001",
+    "CODEGRAPH-BENCHMARK-001"
+  ],
+  "execution_waves": [
+    {
+      "wave": 1,
+      "task_ids": [
+        "CODEGRAPH-FOUNDATION-001"
+      ],
+      "exit_condition": "Normalized graph contract, fallback, policy boundaries, and tests pass."
+    },
+    {
+      "wave": 2,
+      "task_ids": [
+        "CODEGRAPH-FILE-001"
+      ],
+      "exit_condition": "File-level context output remains compatible and budgeted with durable reasons and hashes."
+    },
+    {
+      "wave": 3,
+      "task_ids": [
+        "CODEGRAPH-SYMBOL-001"
+      ],
+      "exit_condition": "Python symbol/snippet retrieval works with safe fallback and deterministic tests."
+    },
+    {
+      "wave": 4,
+      "task_ids": [
+        "CODEGRAPH-BENCHMARK-001"
+      ],
+      "exit_condition": "Token savings and relevant-surface recall are measured and documented."
+    }
+  ],
+  "selection_rationale": "This order creates a vertical slice while resolving graph-contract uncertainty before compiler and symbol work. It uses 10 of 12 capacity units and leaves slack for integration findings.",
+  "deferred_task_ids": [
+    "CODEGRAPH-JSTS-001",
+    "CODEGRAPH-EXTERNAL-BACKEND-001"
+  ],
+  "discovery_id": "CODEGRAPH-CONTEXT-001",
+  "used_capacity_units": 10
+}

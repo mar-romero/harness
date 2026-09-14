@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "always_include": [
     "AGENTS.md",
     "AI_POLICY.md",
@@ -14,7 +14,8 @@
     "dist",
     "build",
     ".venv",
-    "venv"
+    "venv",
+    "__pycache__"
   ],
   "exclude_globs": [
     ".env",
@@ -30,6 +31,12 @@
   "max_total_bytes": 600000,
   "max_total_tokens_estimate": 120000,
   "max_files": 40,
+  "graph_backend": "auto",
+  "graph_max_source_bytes": 120000,
+  "graph_max_files": 1000,
+  "graph_max_total_bytes": 8000000,
+  "graph_max_edges": 50000,
+  "graph_max_results": 20,
   "graph_neighbor_depth": 2,
   "graph_neighbor_bonus": 350,
   "max_memory_items": 5,

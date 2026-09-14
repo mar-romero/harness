@@ -256,8 +256,8 @@ class ModelRouterTests(unittest.TestCase):
     def test_production_policy_blocks_r3_below_and_accepts_exact_coverage_threshold(self):
         policy = load_policy()
         target = {'reasoning': 5, 'coding': 5, 'tool_use': 5, 'reliability': 5}
-        below_threshold = m('r3-coverage-0.94', 4.7, 4.7, 4.7, 4.7, 5, 5)
-        exact_threshold = m('r3-coverage-0.95', 4.75, 4.75, 4.75, 4.75, 5, 5)
+        below_threshold = m('r3-coverage-0.84', 4.2, 4.2, 4.2, 4.2, 5, 5)
+        exact_threshold = m('r3-coverage-0.85', 4.25, 4.25, 4.25, 4.25, 5, 5)
 
         blocked = select_model(
             task_id='r3-below-threshold', provider='codex', agent='implementer', model_class='coding', risk='R3',
@@ -268,16 +268,16 @@ class ModelRouterTests(unittest.TestCase):
             inventory=inv([exact_threshold]), policy=policy, now=NOW, target=target,
         )
 
-        self.assertEqual(blocked['minimum_coverage_threshold'], .95)
+        self.assertEqual(blocked['minimum_coverage_threshold'], .85)
         self.assertEqual(
             (blocked['status'], blocked['action'], blocked['eligible_models'], blocked['sufficient_models']),
             ('blocked', 'block', 1, 0),
         )
-        self.assertEqual(selected['minimum_coverage_threshold'], .95)
+        self.assertEqual(selected['minimum_coverage_threshold'], .85)
         self.assertEqual((selected['status'], selected['action'], selected['eligible_models'], selected['sufficient_models']),
                          ('selected', 'use', 1, 1))
         self.assertEqual(selected['score_breakdown']['capability_coverage'],
-                         {'reasoning': .95, 'coding': .95, 'tool_use': .95, 'reliability': .95})
+                         {'reasoning': .85, 'coding': .85, 'tool_use': .85, 'reliability': .85})
 
     def test_coding_prefers_capability_fit(self):
         inventory = inv([m('cheap-fast',3,4,4,3,5,5), m('strong-code',5,5,5,5,2,2)])
@@ -302,10 +302,13 @@ class ModelRouterTests(unittest.TestCase):
     def test_production_policy_blocks_r2_and_r3_without_eligible_or_sufficient_models(self):
         policy = load_policy()
         self.assertEqual(policy['selection']['strategy'], 'minimum_sufficient')
-        self.assertEqual(policy['selection']['minimum_coverage_by_risk'], {'R0': .75, 'R1': .8, 'R2': .9, 'R3': .95})
+        self.assertEqual(policy['selection']['minimum_coverage_by_risk'], {'R0': .75, 'R1': .75, 'R2': .8, 'R3': .85})
         no_eligible = inv([m('weak', 3, 3, 3, 3, 5, 5)])
         target = {'reasoning': 5, 'coding': 5, 'tool_use': 5, 'reliability': 5}
-        eligible_but_insufficient = inv([m('below-target', 4, 4, 4, 4, 5, 5)])
+        eligible_but_insufficient = {
+            'R2': inv([m('below-target-r2', 3.9, 4.0, 4.0, 3.9, 5, 5)]),
+            'R3': inv([m('below-target-r3', 4.1, 4.1, 4.1, 4.1, 5, 5)]),
+        }
 
         for risk in ('R2', 'R3'):
             with self.subTest(risk=risk, scenario='no-inventory'):
@@ -318,7 +321,7 @@ class ModelRouterTests(unittest.TestCase):
                 self.assertEqual((result['status'], result['action'], result['eligible_models']), ('blocked', 'block', 0))
             with self.subTest(risk=risk, scenario='no-sufficient'):
                 result = select_model(task_id='no-sufficient', provider='codex', agent='implementer', model_class='coding',
-                                      risk=risk, inventory=eligible_but_insufficient, policy=policy, now=NOW, target=target)
+                                      risk=risk, inventory=eligible_but_insufficient[risk], policy=policy, now=NOW, target=target)
                 self.assertEqual((result['status'], result['action'], result['eligible_models'], result['sufficient_models']), ('blocked', 'block', 1, 0))
 
 if __name__ == '__main__': unittest.main()

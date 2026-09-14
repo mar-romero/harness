@@ -168,6 +168,7 @@ def _safe_env(project: Path) -> dict[str, str]:
     env = {key: os.environ[key] for key in allowed if key in os.environ}
     env["PYTHONPATH"] = str(project / "src")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["HARNESS_ACI_PYTHON"] = sys.executable
     return env
 
 

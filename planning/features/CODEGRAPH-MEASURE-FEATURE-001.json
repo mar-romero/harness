@@ -1,0 +1,8 @@
+{
+  "id": "CODEGRAPH-MEASURE-FEATURE-001",
+  "type": "FEATURE",
+  "title": "Context efficiency measurement",
+  "description": "Compare current file-level context with graph-and-symbol retrieval and report token reduction, relevant-surface recall, determinism, and fallback usage.",
+  "parent_id": "CODEGRAPH-CONTEXT-EPIC-001",
+  "discovery_id": "CODEGRAPH-CONTEXT-001"
+}

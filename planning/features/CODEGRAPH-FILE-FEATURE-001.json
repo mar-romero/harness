@@ -1,0 +1,8 @@
+{
+  "id": "CODEGRAPH-FILE-FEATURE-001",
+  "type": "FEATURE",
+  "title": "Budgeted file context retrieval",
+  "description": "Use the normalized graph and task metadata to select relevant files with deterministic ranking, explicit inclusion reasons, hashes, and token budgets.",
+  "parent_id": "CODEGRAPH-CONTEXT-EPIC-001",
+  "discovery_id": "CODEGRAPH-CONTEXT-001"
+}

@@ -1,0 +1,57 @@
+{
+  "id": "CODEGRAPH-BENCHMARK-001",
+  "description": "Create a deterministic benchmark that compares current file-level retrieval with graph-and-symbol retrieval, reports token savings and relevant-surface recall, and documents safe rollout criteria.",
+  "acceptance_criteria": [
+    "The benchmark runs against fixed repository task fixtures without contacting external services.",
+    "The report includes baseline tokens, candidate tokens, reduction percentage, selected files, selected symbols, fallback count, and relevant-surface recall.",
+    "The benchmark detects regressions where token reduction comes from omitting explicit files, required tests, or policy-mandated context.",
+    "The rollout recommendation keeps the existing file-level behavior as the safe default until benchmark evidence supports enabling snippets.",
+    "The benchmark output and documentation explain how future repositories can reproduce the measurement."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": false,
+    "migration": false,
+    "persistence": false,
+    "important_calculation": true,
+    "bug_fix": false
+  },
+  "files": [
+    "scripts/context_benchmark.py",
+    "tests/test_context_benchmark.py",
+    "codegraph.md",
+    "harness/context-policy.json"
+  ],
+  "tags": [
+    "benchmark",
+    "token-savings",
+    "verification",
+    "derived-work",
+    "product-discovery"
+  ],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "CODEGRAPH-CONTEXT-001",
+    "project_id": null,
+    "parent_id": "CODEGRAPH-MEASURE-FEATURE-001",
+    "source_language": "es",
+    "source_request_preserved_at": "planning/discovery/CODEGRAPH-CONTEXT-001.json"
+  },
+  "planning": {
+    "title": "Measure context savings and relevant-surface recall",
+    "size": "S",
+    "dependencies": [
+      "CODEGRAPH-SYMBOL-001"
+    ],
+    "priority_score": 3.85
+  }
+}

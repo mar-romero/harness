@@ -12,6 +12,27 @@ import task_checks
 
 
 class TaskChecksRunnerTests(unittest.TestCase):
+    def test_safe_env_pins_aci_python_without_forwarding_profile_variables(self):
+        project = Path('project')
+        for inherited_python in (None, 'untrusted-python'):
+            with self.subTest(inherited_python=inherited_python):
+                inherited = {
+                    'PATH': 'path-without-python',
+                    'USERPROFILE': 'private-profile',
+                    'APPDATA': 'private-appdata',
+                    'LOCALAPPDATA': 'private-localappdata',
+                }
+                if inherited_python is not None:
+                    inherited['HARNESS_ACI_PYTHON'] = inherited_python
+                with patch.dict(task_checks.os.environ, inherited, clear=True):
+                    env = task_checks._safe_env(project)
+                self.assertEqual(env, {
+                    'PATH': 'path-without-python',
+                    'PYTHONPATH': str(project / 'src'),
+                    'PYTHONDONTWRITEBYTECODE': '1',
+                    'HARNESS_ACI_PYTHON': sys.executable,
+                })
+
     def test_safe_env_disables_python_bytecode(self):
         with tempfile.TemporaryDirectory() as td:
             env = task_checks._safe_env(Path(td))

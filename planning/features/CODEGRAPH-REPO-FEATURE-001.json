@@ -1,0 +1,8 @@
+{
+  "id": "CODEGRAPH-REPO-FEATURE-001",
+  "type": "FEATURE",
+  "title": "Normalized repository graph",
+  "description": "Expose repository modules, packages, files, tests, and bounded dependency relationships through an optional CodeGraph backend with the current local graph as fallback.",
+  "parent_id": "CODEGRAPH-CONTEXT-EPIC-001",
+  "discovery_id": "CODEGRAPH-CONTEXT-001"
+}
