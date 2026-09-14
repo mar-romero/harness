@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Repository context graph v1",
+  "type": "object",
+  "required": ["schema_version", "repository", "backend", "nodes", "edges", "counts", "limits"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {
+      "type": "object",
+      "required": ["root", "path_format"],
+      "properties": {
+        "root": {"const": "."},
+        "path_format": {"const": "relative-posix"}
+      },
+      "additionalProperties": false
+    },
+    "backend": {
+      "type": "object",
+      "required": ["requested", "selected", "fallback_reason"],
+      "properties": {
+        "requested": {"enum": ["auto", "lexical", "codegraph"]},
+        "selected": {"enum": ["lexical", "codegraph"]},
+        "fallback_reason": {"enum": [null, "unavailable", "backend_error", "invalid_output"]}
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {"path": {"$ref": "#/$defs/path"}},
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "kind"],
+        "properties": {
+          "source": {"$ref": "#/$defs/path"},
+          "target": {"$ref": "#/$defs/path"},
+          "kind": {"enum": ["import", "test_affinity"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": ["max_source_bytes", "max_files", "max_total_bytes", "max_edges", "max_depth", "max_results"],
+      "properties": {
+        "max_source_bytes": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "max_files": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "max_total_bytes": {"type": "integer", "minimum": 1, "maximum": 64000000},
+        "max_edges": {"type": "integer", "minimum": 0, "maximum": 100000},
+        "max_depth": {"type": "integer", "minimum": 0, "maximum": 32},
+        "max_results": {"type": "integer", "minimum": 0, "maximum": 10000}
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {"type": "integer", "minimum": 0},
+        "edges": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[\\\\:\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff])[^/]+(?:/[^/]+)*$"
+    }
+  },
+  "additionalProperties": false
+}
