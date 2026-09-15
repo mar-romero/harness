@@ -3,12 +3,16 @@ import json
 import sys
 import tempfile
 import unittest
+import copy
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from symbol_index import index_source
 from snippet_extractor import extract_snippet
-from context_compiler import context_policy, fingerprint, stable_source
+from context_compiler import context_policy, fingerprint, stable_source, build
+import context_compiler
+import context_graph
 
 
 class SymbolIndexTests(unittest.TestCase):
@@ -72,6 +76,40 @@ class SnippetTests(unittest.TestCase):
             metadata = path.stat()
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertIsNone(stable_source(path, root, policy, metadata, digest))
+
+    def test_compiler_emits_bounded_auditable_snippets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            module = root / "service.py"
+            module.write_text("def service():\n    return 1\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] /
+                                 "harness/context-policy.json").read_text(encoding="utf-8"))
+            policy.update(always_include=[], graph_backend="lexical", max_total_tokens_estimate=1000)
+            with patch.object(context_compiler, "ROOT", root), \
+                 patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), \
+                 patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)):
+                result = build({"id": "T-symbol-e2e", "description": "service", "files": ["service.py"]})
+            self.assertEqual(len(result["snippets"]), 1)
+            snippet = result["snippets"][0]
+            self.assertEqual(snippet["symbol"], "service")
+            self.assertEqual(snippet["start_line"], 1)
+            self.assertEqual(snippet["end_line"], 2)
+            self.assertEqual(len(snippet["sha256"]), 64)
+            self.assertIn("estimated_tokens", snippet)
+            self.assertIn("reason", snippet)
+
+    def test_control_flow_nested_symbol_is_syntax_checked_or_falls_back(self):
+        source = """def outer(value):
+    if value:
+        def inner():
+            return value
+        return inner()
+    return None
+"""
+        result = extract_snippet(source, "outer.inner")
+        if not result["fallback"]:
+            compile(result["text"], "<snippet>", "exec")
 
 
 if __name__ == "__main__":
