@@ -10,6 +10,8 @@ from pathlib import Path
 from harnesslib import ROOT, load_json, safe_task_id, write_json_atomic, run_dir
 from context_graph import build_graph_document, neighborhood, _excluded, _integer, _relative_path
 from memory import search as search_memory
+from symbol_index import index_file, index_source
+from snippet_extractor import extract_snippet
 
 def excluded(rel,policy):
     return _excluded(rel.as_posix(), policy)
@@ -132,6 +134,39 @@ def stable_hash(path, root, policy, metadata):
         return None
 
 
+def stable_source(path, root, policy, metadata, expected_hash):
+    """Read a source snapshot only while its admitted identity remains stable."""
+    try:
+        # Explicit files may remain whole-file fallbacks, but symbol parsing never
+        # consumes an unbounded source snapshot.
+        if metadata.st_size > policy['max_file_bytes']:
+            return None
+        if not admitted(path, root, policy):
+            return None
+        with path.open('rb', buffering=0) as stream:
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+            digest = hashlib.sha256()
+            chunks = []
+            remaining = metadata.st_size
+            while remaining:
+                raw = stream.read(min(65536, remaining))
+                if not raw:
+                    return None
+                chunks.append(raw)
+                digest.update(raw)
+                remaining -= len(raw)
+            if digest.hexdigest() != expected_hash:
+                return None
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+        if not admitted(path, root, policy):
+            return None
+        return b''.join(chunks).decode('utf-8')
+    except (OSError, UnicodeError):
+        return None
+
+
 def memory_terms(memories, policy):
     """Bound text per record; malformed text never supplies paths or authority."""
     result = set()
@@ -178,8 +213,9 @@ def build(task,route=None):
     relevant = explicit | neighbors
     related = set()
     for edge in document['edges']:
-        if edge['kind'] == 'test_affinity' and {edge['source'], edge['target']} <= relevant:
-            related.update(path for path in (edge['source'], edge['target']) if is_test_path(path))
+        if edge['kind'] == 'test_affinity' and edge['source'] in relevant:
+            related.update(path for path in (edge['source'], edge['target'])
+                           if path in files and is_test_path(path))
     try:
         memories = search_memory(query, policy['max_memory_items']) if policy['max_memory_items'] else []
     except (TypeError, AttributeError, ValueError):
@@ -234,9 +270,43 @@ def build(task,route=None):
                          'sha256': digest, 'reason': reasons, 'score': score})
         total += size
         total_tokens += estimate
+    snippets = []
+    # Symbol retrieval is additive and fail-closed: the complete-file records above
+    # remain the safe fallback for malformed/unsupported/unsafe sources.
+    for record in selected:
+        if not record['path'].endswith('.py'):
+            continue
+        path = root / record['path']
+        metadata = files.get(record['path'])
+        source = stable_source(path, root, policy, metadata, record['sha256']) if metadata else None
+        if source is None:
+            continue
+        symbols = index_source(source)
+        terms = wanted | tokens(record['path'])
+        graph_relevant = record['path'] in neighbors or record['path'] in related
+        chosen = [item for item in symbols if terms & tokens(item['name'])]
+        if graph_relevant:
+            chosen = symbols
+        if not chosen and (record['path'] in explicit or record['path'] in policy['always_include']):
+            chosen = symbols[:1]
+        for symbol in sorted(chosen, key=lambda item: (item['start_line'], item['name'])):
+            extracted = extract_snippet(source, symbol['name'], occurrence_start=symbol['start_line'])
+            raw = extracted['text'].encode('utf-8')
+            estimate = estimate_tokens(len(raw))
+            if total_tokens + estimate > policy['max_total_tokens_estimate']:
+                break
+            snippets.append({
+                'path': record['path'], 'symbol': symbol['name'],
+                'start_line': extracted['start_line'], 'end_line': extracted['end_line'],
+                'sha256': extracted['sha256'], 'estimated_tokens': estimate,
+                'reason': 'symbol' if not extracted['fallback'] else 'fallback',
+                'fallback': bool(extracted['fallback']),
+            })
+            total_tokens += estimate
     return {'task_id': task_id, 'policy_version': policy['version'], 'route': route or {},
             'files': selected, 'memory': memories, 'graph_neighbors': sorted(neighbors),
             'graph_backend': document['backend'], 'total_bytes': total, 'estimated_tokens': total_tokens,
+            'snippets': snippets,
             'limits': {'files': policy['max_files'], 'bytes': policy['max_total_bytes'],
                        'estimated_tokens': policy['max_total_tokens_estimate']}}
 def main():
