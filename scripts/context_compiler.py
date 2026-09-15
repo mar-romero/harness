@@ -282,11 +282,14 @@ def build(task,route=None):
             continue
         symbols = index_source(source)
         terms = wanted | tokens(record['path'])
+        graph_relevant = record['path'] in neighbors or record['path'] in related
         chosen = [item for item in symbols if terms & tokens(item['name'])]
+        if graph_relevant:
+            chosen = symbols
         if not chosen and (record['path'] in explicit or record['path'] in policy['always_include']):
             chosen = symbols[:1]
         for symbol in sorted(chosen, key=lambda item: (item['start_line'], item['name'])):
-            extracted = extract_snippet(source, symbol['name'])
+            extracted = extract_snippet(source, symbol['name'], occurrence_start=symbol['start_line'])
             raw = extracted['text'].encode('utf-8')
             estimate = estimate_tokens(len(raw))
             if total_tokens + estimate > policy['max_total_tokens_estimate']:

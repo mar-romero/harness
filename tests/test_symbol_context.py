@@ -26,6 +26,18 @@ class SymbolIndexTests(unittest.TestCase):
             ("function", "helper", 10, 11),
         ])
 
+    def test_control_flow_match_and_duplicate_occurrences_are_indexed(self):
+        source = """def duplicate():
+    return 1
+match value:
+    case 1:
+        def duplicate():
+            return 2
+"""
+        symbols = index_source(source)
+        duplicates = [item for item in symbols if item["name"] == "duplicate"]
+        self.assertEqual([item["start_line"] for item in duplicates], [1, 5])
+
     def test_malformed_source_returns_no_symbols(self):
         self.assertEqual(index_source("def broken(:\n"), [])
 
@@ -44,6 +56,18 @@ class SnippetTests(unittest.TestCase):
     def test_malformed_or_empty_match_falls_back_to_complete_source(self):
         source = "def broken(:\n"
         result = extract_snippet(source, "missing")
+        self.assertTrue(result["fallback"])
+        self.assertEqual(result["text"], source)
+
+    def test_duplicate_occurrence_selects_requested_range(self):
+        source = "def same():\n    return 1\n\ndef same():\n    return 2\n"
+        result = extract_snippet(source, "same", occurrence_start=4)
+        self.assertEqual(result["start_line"], 4)
+        self.assertIn("return 2", result["text"])
+
+    def test_import_after_definition_uses_complete_file_fallback(self):
+        source = "def worker():\n    return 1\n\nimport later\n"
+        result = extract_snippet(source, "worker")
         self.assertTrue(result["fallback"])
         self.assertEqual(result["text"], source)
 

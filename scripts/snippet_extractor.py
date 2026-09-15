@@ -14,7 +14,8 @@ def _line_slice(source: str, start: int, end: int) -> str:
     return "".join(lines[start - 1:end])
 
 
-def extract_snippet(source: str, symbol: str, max_chars: int | None = None) -> dict:
+def extract_snippet(source: str, symbol: str, max_chars: int | None = None,
+                    occurrence_start: int | None = None) -> dict:
     fallback = {"symbol": symbol, "text": source, "start_line": 1,
                 "end_line": max(1, len(source.splitlines())), "fallback": True,
                 "reason": "fallback", "sha256": hashlib.sha256(source.encode()).hexdigest()}
@@ -22,18 +23,25 @@ def extract_snippet(source: str, symbol: str, max_chars: int | None = None) -> d
         tree = ast.parse(source)
     except (SyntaxError, ValueError, TypeError):
         return fallback
-    target = next((item for item in index_source(source) if item["name"] == symbol), None)
+    target = next((item for item in index_source(source)
+                   if item["name"] == symbol and
+                   (occurrence_start is None or item["start_line"] == occurrence_start)), None)
     if not target:
         return fallback
     # Include module imports and all decorators/class ancestors to preserve context.
     start = target["start_line"]
     end = target["end_line"]
     lines = source.splitlines(keepends=True)
+    imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             start = min(start, node.lineno)
         elif isinstance(node, ast.ClassDef) and symbol.startswith(node.name + "."):
             start = min(start, min([getattr(d, "lineno", node.lineno) for d in node.decorator_list] + [node.lineno]))
+    # An import after the selected definition cannot be included in a partial
+    # prefix without also including intervening statements; use safe fallback.
+    if any(node.lineno > end for node in imports):
+        return fallback
     text = _line_slice(source, start, end)
     if max_chars is not None and len(text) > max_chars:
         return fallback

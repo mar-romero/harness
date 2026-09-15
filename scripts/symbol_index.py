@@ -37,13 +37,16 @@ def index_source(source: str) -> list[dict]:
                                 "start_line": _decorated_start(node),
                                 "end_line": getattr(node, "end_lineno", node.lineno)})
                 visit(node.body, (*parents, "class:" + node.name))
-            elif isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.AsyncWith)):
-                for field in ("body", "orelse", "finalbody"):
-                    child = getattr(node, field, None)
-                    if child:
-                        visit(child, parents)
-                for handler in getattr(node, "handlers", ()):
-                    visit(handler.body, parents)
+            else:
+                # Walk statement-bearing control-flow nodes, including newer
+                # match/exception-star forms, without following expressions.
+                for child in ast.iter_child_nodes(node):
+                    if isinstance(child, ast.stmt):
+                        visit([child], parents)
+                    elif isinstance(child, ast.ExceptHandler):
+                        visit(child.body, parents)
+                    elif hasattr(child, "body") and isinstance(child.body, list):
+                        visit(child.body, parents)
 
     visit(tree.body, ())
     return records
