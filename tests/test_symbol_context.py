@@ -8,11 +8,13 @@ from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from symbol_index import index_source
 from snippet_extractor import extract_snippet
 from context_compiler import context_policy, fingerprint, stable_source, build
 import context_compiler
 import context_graph
+from test_context_graph import validate_graph_schema
 
 
 class SymbolIndexTests(unittest.TestCase):
@@ -78,8 +80,13 @@ class SnippetTests(unittest.TestCase):
     def test_control_flow_imports_before_and_after_definition_are_safe(self):
         before = "if True:\n    import before\n\ndef worker():\n    return before.value\n"
         after = "def worker():\n    return later.value\n\nif True:\n    import later\n"
-        self.assertTrue(extract_snippet(before, "worker")["fallback"])
-        self.assertTrue(extract_snippet(after, "worker")["fallback"])
+        for source in (before, after):
+            result = extract_snippet(source, "worker")
+            self.assertEqual(result["text"], source)
+            self.assertEqual((result["start_line"], result["end_line"]), (1, len(source.splitlines())))
+            self.assertEqual(result["sha256"], hashlib.sha256(source.encode()).hexdigest())
+            self.assertEqual(result["reason"], "fallback")
+            self.assertIs(result["fallback"], True)
 
     def test_importfrom_and_fallback_metadata_are_exact(self):
         source = "def worker():\n    return later.value\n\nfrom package import later\n"
@@ -117,10 +124,32 @@ class SnippetTests(unittest.TestCase):
                  patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)):
                 pack = build({"id": "T-schema-pack", "description": "worker", "files": ["module.py"]})
             self.assertTrue(pack["snippets"])
+            schema = json.loads((Path(__file__).resolve().parents[1] / "harness/schema/context-pack.schema.json").read_text())
+            # Reuse the repository's dependency-free validator; this schema's
+            # minItems keyword is outside that validator's intentionally narrow
+            # vocabulary and does not affect the populated-pack checks here.
+            schema_for_validator = copy.deepcopy(schema)
+            def drop_min_items(rule):
+                if isinstance(rule, dict):
+                    rule.pop("minItems", None)
+                    for value in rule.values():
+                        drop_min_items(value)
+                elif isinstance(rule, list):
+                    for value in rule:
+                        drop_min_items(value)
+            drop_min_items(schema_for_validator)
+            validate_graph_schema(self, pack, schema_for_validator)
             required = {"path", "symbol", "start_line", "end_line", "sha256", "estimated_tokens", "reason", "fallback"}
             self.assertTrue(required.issubset(pack["snippets"][0]))
-            invalid = dict(pack["snippets"][0]); invalid["estimated_tokens"] = 0
-            self.assertLess(invalid["estimated_tokens"], 1)
+            invalid = copy.deepcopy(pack); invalid["snippets"][0].pop("sha256")
+            with self.assertRaises(AssertionError):
+                validate_graph_schema(self, invalid, schema_for_validator)
+            invalid = copy.deepcopy(pack); invalid["snippets"][0]["estimated_tokens"] = 0
+            with self.assertRaises(AssertionError):
+                validate_graph_schema(self, invalid, schema_for_validator)
+            invalid = copy.deepcopy(pack); invalid["snippets"][0]["unexpected"] = True
+            with self.assertRaises(AssertionError):
+                validate_graph_schema(self, invalid, schema_for_validator)
 
     def test_compiler_total_budget_exact_fit_and_one_over(self):
         with tempfile.TemporaryDirectory() as directory:
