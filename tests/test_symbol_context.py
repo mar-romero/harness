@@ -153,6 +153,51 @@ class SnippetTests(unittest.TestCase):
                 self.assertGreaterEqual(item["end_line"], item["start_line"])
                 self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
 
+    def test_compiler_metadata_is_exact_and_schema_shape_is_strict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = "def alpha():\n    return 2\n\ndef beta():\n    return 3\n"
+            (root / "module.py").write_text(source, encoding="utf-8")
+            source = (root / "module.py").read_bytes().decode("utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
+            policy.update(always_include=[], graph_backend="lexical", max_total_tokens_estimate=1000)
+            with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)):
+                result = build({"id": "T-meta", "description": "alpha beta", "files": ["module.py"]})
+            self.assertEqual(len(result["snippets"]), 2)
+            for item in result["snippets"]:
+                extracted = extract_snippet(source, item["symbol"], occurrence_start=item["start_line"])
+                raw = extracted["text"].encode()
+                self.assertEqual(item["sha256"], hashlib.sha256(raw).hexdigest(), (item, extracted))
+                self.assertEqual(item["estimated_tokens"], max(1, (len(raw) + 3) // 4))
+                self.assertEqual(set(item), {"path", "symbol", "start_line", "end_line", "sha256", "estimated_tokens", "reason", "fallback"})
+                self.assertEqual(item["reason"], "symbol")
+                self.assertIs(item["fallback"], False)
+            bad = dict(result["snippets"][0]); bad.pop("sha256")
+            self.assertNotEqual(set(bad), {"path", "symbol", "start_line", "end_line", "sha256", "estimated_tokens", "reason", "fallback"})
+
+    def test_exact_token_boundary_accepts_fit_and_rejects_one_over(self):
+        source = "def alpha():\n    return 2\n"
+        extracted = extract_snippet(source, "alpha")
+        size = len(extracted["text"])
+        self.assertFalse(extract_snippet(source, "alpha", max_chars=size)["fallback"])
+        self.assertTrue(extract_snippet(source, "alpha", max_chars=size - 1)["fallback"])
+
+    def test_nonexplicit_graph_neighbor_gets_symbols_without_name_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "seed.py").write_text("def seed():\n    return 1\n", encoding="utf-8")
+            (root / "neighbor.py").write_text("def unrelated():\n    return 2\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
+            policy.update(always_include=[], graph_backend="lexical", graph_neighbor_depth=1, graph_max_results=10)
+            document = {"backend": {"requested": "lexical", "selected": "lexical", "fallback_reason": None},
+                        "edges": [{"source": "seed.py", "target": "neighbor.py", "kind": "import"}]}
+            with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)), \
+                 patch.object(context_compiler, "build_graph_document", return_value=document):
+                result = build({"id": "T-graph", "description": "seed", "files": ["seed.py"]})
+            self.assertEqual([item["symbol"] for item in result["snippets"] if item["path"] == "neighbor.py"], ["unrelated"])
+
     def test_control_flow_nested_symbol_is_syntax_checked_or_falls_back(self):
         source = """def outer(value):
     if value:
