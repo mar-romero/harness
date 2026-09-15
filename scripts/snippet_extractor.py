@@ -37,5 +37,11 @@ def extract_snippet(source: str, symbol: str, max_chars: int | None = None) -> d
     text = _line_slice(source, start, end)
     if max_chars is not None and len(text) > max_chars:
         return fallback
+    try:
+        compile(text, "<context-snippet>", "exec")
+    except SyntaxError:
+        # Never emit a misleading partial tree; callers retain the bounded
+        # complete-file record as the safe fallback.
+        return fallback
     return {"symbol": symbol, "text": text, "start_line": start, "end_line": end,
             "fallback": False, "reason": "symbol", "sha256": hashlib.sha256(text.encode()).hexdigest()}

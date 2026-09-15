@@ -1,4 +1,5 @@
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from symbol_index import index_source
 from snippet_extractor import extract_snippet
+from context_compiler import context_policy, fingerprint, stable_source
 
 
 class SymbolIndexTests(unittest.TestCase):
@@ -47,6 +49,29 @@ class SnippetTests(unittest.TestCase):
         self.assertEqual(result["start_line"], 1)
         self.assertEqual(result["end_line"], 2)
         self.assertEqual(result["sha256"], hashlib.sha256(result["text"].encode()).hexdigest())
+
+    def test_replaced_file_is_omitted_before_symbol_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "module.py"
+            path.write_text("def safe():\n    return 1\n", encoding="utf-8")
+            metadata = path.stat()
+            expected = hashlib.sha256(path.read_bytes()).hexdigest()
+            path.write_text("def replaced():\n    return 'outside-secret'\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] /
+                                 "harness/context-policy.json").read_text(encoding="utf-8"))
+            self.assertIsNone(stable_source(path, root, policy, metadata, expected))
+
+    def test_oversized_explicit_source_is_not_parsed_for_symbols(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "large.py"
+            path.write_bytes(b"x" * 256)
+            policy = {"max_file_bytes": 32, "always_include": [],
+                      "exclude_dirs": [], "exclude_globs": []}
+            metadata = path.stat()
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertIsNone(stable_source(path, root, policy, metadata, digest))
 
 
 if __name__ == "__main__":

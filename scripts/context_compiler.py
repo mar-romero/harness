@@ -10,7 +10,7 @@ from pathlib import Path
 from harnesslib import ROOT, load_json, safe_task_id, write_json_atomic, run_dir
 from context_graph import build_graph_document, neighborhood, _excluded, _integer, _relative_path
 from memory import search as search_memory
-from symbol_index import index_file
+from symbol_index import index_file, index_source
 from snippet_extractor import extract_snippet
 
 def excluded(rel,policy):
@@ -134,6 +134,39 @@ def stable_hash(path, root, policy, metadata):
         return None
 
 
+def stable_source(path, root, policy, metadata, expected_hash):
+    """Read a source snapshot only while its admitted identity remains stable."""
+    try:
+        # Explicit files may remain whole-file fallbacks, but symbol parsing never
+        # consumes an unbounded source snapshot.
+        if metadata.st_size > policy['max_file_bytes']:
+            return None
+        if not admitted(path, root, policy):
+            return None
+        with path.open('rb', buffering=0) as stream:
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+            digest = hashlib.sha256()
+            chunks = []
+            remaining = metadata.st_size
+            while remaining:
+                raw = stream.read(min(65536, remaining))
+                if not raw:
+                    return None
+                chunks.append(raw)
+                digest.update(raw)
+                remaining -= len(raw)
+            if digest.hexdigest() != expected_hash:
+                return None
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+        if not admitted(path, root, policy):
+            return None
+        return b''.join(chunks).decode('utf-8')
+    except (OSError, UnicodeError):
+        return None
+
+
 def memory_terms(memories, policy):
     """Bound text per record; malformed text never supplies paths or authority."""
     result = set()
@@ -243,11 +276,11 @@ def build(task,route=None):
         if not record['path'].endswith('.py'):
             continue
         path = root / record['path']
-        try:
-            source = path.read_text(encoding='utf-8')
-            symbols = index_file(path)
-        except (OSError, UnicodeError):
+        metadata = files.get(record['path'])
+        source = stable_source(path, root, policy, metadata, record['sha256']) if metadata else None
+        if source is None:
             continue
+        symbols = index_source(source)
         terms = wanted | tokens(record['path'])
         chosen = [item for item in symbols if terms & tokens(item['name'])]
         if not chosen and (record['path'] in explicit or record['path'] in policy['always_include']):
