@@ -98,6 +98,36 @@ class SnippetTests(unittest.TestCase):
             self.assertEqual(len(snippet["sha256"]), 64)
             self.assertIn("estimated_tokens", snippet)
             self.assertIn("reason", snippet)
+            self.assertIsInstance(snippet["start_line"], int)
+            self.assertIsInstance(snippet["end_line"], int)
+            self.assertIsInstance(snippet["fallback"], bool)
+            self.assertEqual(snippet["reason"], "symbol")
+            self.assertLessEqual(result["estimated_tokens"], result["limits"]["estimated_tokens"])
+            for key in ("path", "symbol", "start_line", "end_line", "sha256", "estimated_tokens", "reason", "fallback"):
+                self.assertIn(key, snippet)
+
+    def test_compiler_symbol_order_and_metadata_are_deterministic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "z.py").write_text("def zed():\n    return 1\n", encoding="utf-8")
+            (root / "a.py").write_text("def alpha():\n    return 2\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] /
+                                 "harness/context-policy.json").read_text(encoding="utf-8"))
+            policy.update(always_include=[], graph_backend="lexical", max_total_tokens_estimate=1000)
+            task = {"id": "T-symbol-order", "description": "alpha zed", "files": ["z.py", "a.py"]}
+            with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), \
+                 patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)):
+                first = build(task)
+                second = build(task)
+            self.assertEqual(first, second)
+            self.assertEqual([item["path"] for item in first["snippets"]], ["a.py", "z.py"])
+            self.assertEqual(sum(item["estimated_tokens"] for item in first["snippets"]),
+                             first["estimated_tokens"] - sum(item["estimated_tokens"] for item in first["files"]))
+            for item in first["snippets"]:
+                self.assertGreaterEqual(item["start_line"], 1)
+                self.assertGreaterEqual(item["end_line"], item["start_line"])
+                self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
 
     def test_control_flow_nested_symbol_is_syntax_checked_or_falls_back(self):
         source = """def outer(value):
