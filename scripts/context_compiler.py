@@ -10,6 +10,8 @@ from pathlib import Path
 from harnesslib import ROOT, load_json, safe_task_id, write_json_atomic, run_dir
 from context_graph import build_graph_document, neighborhood, _excluded, _integer, _relative_path
 from memory import search as search_memory
+from symbol_index import index_file
+from snippet_extractor import extract_snippet
 
 def excluded(rel,policy):
     return _excluded(rel.as_posix(), policy)
@@ -234,9 +236,40 @@ def build(task,route=None):
                          'sha256': digest, 'reason': reasons, 'score': score})
         total += size
         total_tokens += estimate
+    snippets = []
+    # Symbol retrieval is additive and fail-closed: the complete-file records above
+    # remain the safe fallback for malformed/unsupported/unsafe sources.
+    for record in selected:
+        if not record['path'].endswith('.py'):
+            continue
+        path = root / record['path']
+        try:
+            source = path.read_text(encoding='utf-8')
+            symbols = index_file(path)
+        except (OSError, UnicodeError):
+            continue
+        terms = wanted | tokens(record['path'])
+        chosen = [item for item in symbols if terms & tokens(item['name'])]
+        if not chosen and (record['path'] in explicit or record['path'] in policy['always_include']):
+            chosen = symbols[:1]
+        for symbol in sorted(chosen, key=lambda item: (item['start_line'], item['name'])):
+            extracted = extract_snippet(source, symbol['name'])
+            raw = extracted['text'].encode('utf-8')
+            estimate = estimate_tokens(len(raw))
+            if total_tokens + estimate > policy['max_total_tokens_estimate']:
+                break
+            snippets.append({
+                'path': record['path'], 'symbol': symbol['name'],
+                'start_line': extracted['start_line'], 'end_line': extracted['end_line'],
+                'sha256': extracted['sha256'], 'estimated_tokens': estimate,
+                'reason': 'symbol' if not extracted['fallback'] else 'fallback',
+                'fallback': bool(extracted['fallback']),
+            })
+            total_tokens += estimate
     return {'task_id': task_id, 'policy_version': policy['version'], 'route': route or {},
             'files': selected, 'memory': memories, 'graph_neighbors': sorted(neighbors),
             'graph_backend': document['backend'], 'total_bytes': total, 'estimated_tokens': total_tokens,
+            'snippets': snippets,
             'limits': {'files': policy['max_files'], 'bytes': policy['max_total_bytes'],
                        'estimated_tokens': policy['max_total_tokens_estimate']}}
 def main():

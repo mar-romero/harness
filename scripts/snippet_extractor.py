@@ -1,0 +1,41 @@
+"""Bounded Python snippet extraction with complete-source fallback."""
+from __future__ import annotations
+
+import ast
+import hashlib
+try:
+    from .symbol_index import index_source
+except ImportError:  # provider scripts are also imported as top-level modules
+    from symbol_index import index_source
+
+
+def _line_slice(source: str, start: int, end: int) -> str:
+    lines = source.splitlines(keepends=True)
+    return "".join(lines[start - 1:end])
+
+
+def extract_snippet(source: str, symbol: str, max_chars: int | None = None) -> dict:
+    fallback = {"symbol": symbol, "text": source, "start_line": 1,
+                "end_line": max(1, len(source.splitlines())), "fallback": True,
+                "reason": "fallback", "sha256": hashlib.sha256(source.encode()).hexdigest()}
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError, TypeError):
+        return fallback
+    target = next((item for item in index_source(source) if item["name"] == symbol), None)
+    if not target:
+        return fallback
+    # Include module imports and all decorators/class ancestors to preserve context.
+    start = target["start_line"]
+    end = target["end_line"]
+    lines = source.splitlines(keepends=True)
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            start = min(start, node.lineno)
+        elif isinstance(node, ast.ClassDef) and symbol.startswith(node.name + "."):
+            start = min(start, min([getattr(d, "lineno", node.lineno) for d in node.decorator_list] + [node.lineno]))
+    text = _line_slice(source, start, end)
+    if max_chars is not None and len(text) > max_chars:
+        return fallback
+    return {"symbol": symbol, "text": text, "start_line": start, "end_line": end,
+            "fallback": False, "reason": "symbol", "sha256": hashlib.sha256(text.encode()).hexdigest()}
