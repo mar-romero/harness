@@ -42,6 +42,10 @@ def extract_snippet(source: str, symbol: str, max_chars: int | None = None,
     end = target["end_line"]
     lines = source.splitlines(keepends=True)
     imports = _module_imports(tree)
+    # Imports nested in control flow cannot be represented safely by a simple
+    # contiguous prefix around a symbol; retain the complete admitted source.
+    if any(node not in tree.body for node in imports):
+        return fallback
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             start = min(start, node.lineno)

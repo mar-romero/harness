@@ -78,7 +78,7 @@ class SnippetTests(unittest.TestCase):
     def test_control_flow_imports_before_and_after_definition_are_safe(self):
         before = "if True:\n    import before\n\ndef worker():\n    return before.value\n"
         after = "def worker():\n    return later.value\n\nif True:\n    import later\n"
-        self.assertFalse(extract_snippet(before, "worker")["fallback"])
+        self.assertTrue(extract_snippet(before, "worker")["fallback"])
         self.assertTrue(extract_snippet(after, "worker")["fallback"])
 
     def test_compiler_total_budget_exact_fit_and_one_over(self):
