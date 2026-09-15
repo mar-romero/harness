@@ -14,6 +14,15 @@ def _line_slice(source: str, start: int, end: int) -> str:
     return "".join(lines[start - 1:end])
 
 
+def _module_imports(tree: ast.AST) -> list[ast.AST]:
+    """Collect imports in statement-bearing control-flow blocks."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            found.append(node)
+    return found
+
+
 def extract_snippet(source: str, symbol: str, max_chars: int | None = None,
                     occurrence_start: int | None = None) -> dict:
     fallback = {"symbol": symbol, "text": source, "start_line": 1,
@@ -32,7 +41,7 @@ def extract_snippet(source: str, symbol: str, max_chars: int | None = None,
     start = target["start_line"]
     end = target["end_line"]
     lines = source.splitlines(keepends=True)
-    imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    imports = _module_imports(tree)
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             start = min(start, node.lineno)

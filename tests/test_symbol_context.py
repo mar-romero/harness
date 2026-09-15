@@ -58,6 +58,10 @@ class SnippetTests(unittest.TestCase):
         result = extract_snippet(source, "missing")
         self.assertTrue(result["fallback"])
         self.assertEqual(result["text"], source)
+        valid = "def present():\n    return 1\n"
+        no_match = extract_snippet(valid, "missing")
+        self.assertTrue(no_match["fallback"])
+        self.assertEqual(no_match["text"], valid)
 
     def test_duplicate_occurrence_selects_requested_range(self):
         source = "def same():\n    return 1\n\ndef same():\n    return 2\n"
@@ -70,6 +74,31 @@ class SnippetTests(unittest.TestCase):
         result = extract_snippet(source, "worker")
         self.assertTrue(result["fallback"])
         self.assertEqual(result["text"], source)
+
+    def test_control_flow_imports_before_and_after_definition_are_safe(self):
+        before = "if True:\n    import before\n\ndef worker():\n    return before.value\n"
+        after = "def worker():\n    return later.value\n\nif True:\n    import later\n"
+        self.assertFalse(extract_snippet(before, "worker")["fallback"])
+        self.assertTrue(extract_snippet(after, "worker")["fallback"])
+
+    def test_compiler_total_budget_exact_fit_and_one_over(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = "def worker():\n    return 1\n"
+            (root / "module.py").write_text(source, encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
+            policy.update(always_include=[], graph_backend="lexical")
+            actual_source = (root / "module.py").read_bytes().decode("utf-8")
+            file_tokens = max(1, ((root / "module.py").stat().st_size + 3) // 4)
+            snippet_tokens = max(1, (len(actual_source) + 3) // 4)
+            task = {"id": "T-budget-symbol", "description": "worker", "files": ["module.py"]}
+            def run(limit):
+                p = copy.deepcopy(policy); p["max_total_tokens_estimate"] = limit
+                with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                     patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(p)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(p)):
+                    return build(task)
+            self.assertTrue(run(file_tokens + snippet_tokens)["snippets"])
+            self.assertFalse(run(file_tokens + snippet_tokens - 1)["snippets"])
 
     def test_metadata_hash_and_boundaries_are_exact(self):
         source = "def helper():\n    return 1\n"
