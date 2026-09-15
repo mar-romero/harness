@@ -213,8 +213,9 @@ def build(task,route=None):
     relevant = explicit | neighbors
     related = set()
     for edge in document['edges']:
-        if edge['kind'] == 'test_affinity' and {edge['source'], edge['target']} <= relevant:
-            related.update(path for path in (edge['source'], edge['target']) if is_test_path(path))
+        if edge['kind'] == 'test_affinity' and edge['source'] in relevant:
+            related.update(path for path in (edge['source'], edge['target'])
+                           if path in files and is_test_path(path))
     try:
         memories = search_memory(query, policy['max_memory_items']) if policy['max_memory_items'] else []
     except (TypeError, AttributeError, ValueError):

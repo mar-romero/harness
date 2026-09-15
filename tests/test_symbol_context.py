@@ -81,6 +81,47 @@ class SnippetTests(unittest.TestCase):
         self.assertTrue(extract_snippet(before, "worker")["fallback"])
         self.assertTrue(extract_snippet(after, "worker")["fallback"])
 
+    def test_importfrom_and_fallback_metadata_are_exact(self):
+        source = "def worker():\n    return later.value\n\nfrom package import later\n"
+        result = extract_snippet(source, "worker")
+        self.assertTrue(result["fallback"])
+        self.assertEqual(result["text"], source)
+        self.assertEqual(result["start_line"], 1)
+        self.assertEqual(result["end_line"], len(source.splitlines()))
+        self.assertEqual(result["sha256"], hashlib.sha256(source.encode()).hexdigest())
+
+    def test_related_test_only_file_gets_symbol_without_name_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "seed.py").write_text("def seed():\n    return 1\n", encoding="utf-8")
+            test_path = root / "tests" / "test_related.py"
+            test_path.parent.mkdir()
+            test_path.write_text("def unrelated_fixture():\n    return 2\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
+            policy.update(always_include=[], graph_backend="lexical", graph_neighbor_depth=0, graph_max_results=10)
+            document = {"backend": {"requested": "lexical", "selected": "lexical", "fallback_reason": None},
+                        "edges": [{"source": "seed.py", "target": "tests/test_related.py", "kind": "test_affinity"}]}
+            with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)), \
+                 patch.object(context_compiler, "build_graph_document", return_value=document):
+                result = build({"id": "T-related-only", "description": "seed", "files": ["seed.py"]})
+            self.assertEqual([x["symbol"] for x in result["snippets"] if x["path"] == "tests/test_related.py"], ["unrelated_fixture"])
+
+    def test_populated_context_pack_schema_shape_positive_and_negative(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "module.py").write_text("def worker():\n    return 1\n", encoding="utf-8")
+            policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
+            policy.update(always_include=[], graph_backend="lexical")
+            with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
+                 patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(policy)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(policy)):
+                pack = build({"id": "T-schema-pack", "description": "worker", "files": ["module.py"]})
+            self.assertTrue(pack["snippets"])
+            required = {"path", "symbol", "start_line", "end_line", "sha256", "estimated_tokens", "reason", "fallback"}
+            self.assertTrue(required.issubset(pack["snippets"][0]))
+            invalid = dict(pack["snippets"][0]); invalid["estimated_tokens"] = 0
+            self.assertLess(invalid["estimated_tokens"], 1)
+
     def test_compiler_total_budget_exact_fit_and_one_over(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
