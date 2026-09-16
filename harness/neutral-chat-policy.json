@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "max_runtime_failovers": 2,
+  "protocol_retries": 1,
+  "max_repair_cycles": 2,
+  "max_localized_files": 24,
+  "auto_resume_on_start": true,
+  "auth_wizard_on_first_run": true,
+  "human_gate_never_auto_approve": true,
+  "security_failure_never_auto_retry": true,
+  "local_publish_on_close": true
+}

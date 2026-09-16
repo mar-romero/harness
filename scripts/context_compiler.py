@@ -8,15 +8,36 @@ import re
 import stat
 from pathlib import Path
 from harnesslib import ROOT, load_json, safe_task_id, write_json_atomic, run_dir
-from context_graph import build_graph_document, neighborhood, _excluded, _integer, _relative_path
+from context_graph import build_graph, build_graph_document, neighborhood, _excluded, _integer, _relative_path
 from memory import search as search_memory
 from symbol_index import index_file, index_source
 from snippet_extractor import extract_snippet
+from symbol_context import build_repo_map
 
 def excluded(rel,policy):
     return _excluded(rel.as_posix(), policy)
 def tokens(text): return {t for t in re.findall(r'[a-zA-Z0-9_\-]{3,}',text.lower()) if t not in {'this','that','with','from','into','para','como','esta','este'}}
 def estimate_tokens(size): return max(1, (size + 3) // 4)
+
+
+def normalized_token_estimate(path, root, policy, metadata):
+    """Estimate source tokens independently of checkout line-ending conversion."""
+    try:
+        if not admitted(path, root, policy):
+            return None
+        with path.open('rb', buffering=0) as stream:
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+            raw = stream.read(metadata.st_size + 1)
+            if len(raw) != metadata.st_size:
+                return None
+            if fingerprint(os.fstat(stream.fileno())) != fingerprint(metadata):
+                return None
+        if not admitted(path, root, policy):
+            return None
+        return estimate_tokens(len(raw.replace(b'\r\n', b'\n')))
+    except OSError:
+        return None
 
 
 TEXT_EXTENSIONS = frozenset('py js ts tsx jsx go rs java kt cs rb php swift md json yaml yml toml sh sql graphql proto html css scss jsonl'.split())
@@ -194,6 +215,12 @@ def is_test_path(value: str) -> bool:
         or stem.endswith(("_test", "_spec"))
     )
 
+
+def _structured_retrieval_needed(task, route):
+    """Keep the proven file-level path for ordinary work and enrich R2/R3 context."""
+    risk = str((route or {}).get('risk') or task.get('risk') or 'R1')
+    return risk in {'R2', 'R3'}, risk
+
 def build(task,route=None):
     policy = context_policy()
     task_id = safe_task_id(task['id'])
@@ -256,7 +283,9 @@ def build(task,route=None):
     total = total_tokens = 0
     for score, path, metadata, reasons in candidates:
         size = metadata.st_size
-        estimate = estimate_tokens(size)
+        estimate = normalized_token_estimate(root / path, root, policy, metadata)
+        if estimate is None:
+            continue
         if len(selected) >= policy['max_files']:
             break
         required = path in explicit or path in policy['always_include']
@@ -292,7 +321,7 @@ def build(task,route=None):
         for symbol in sorted(chosen, key=lambda item: (item['start_line'], item['name'])):
             extracted = extract_snippet(source, symbol['name'], occurrence_start=symbol['start_line'])
             raw = extracted['text'].encode('utf-8')
-            estimate = estimate_tokens(len(raw))
+            estimate = estimate_tokens(len(raw.replace(b'\r\n', b'\n')))
             if total_tokens + estimate > policy['max_total_tokens_estimate']:
                 break
             snippets.append({
@@ -303,12 +332,69 @@ def build(task,route=None):
                 'fallback': bool(extracted['fallback']),
             })
             total_tokens += estimate
+    retrieval_needed, retrieval_risk = _structured_retrieval_needed(task, route)
+    candidate_full_file_tokens = sum(record['estimated_tokens'] for record in selected)
+    structured_snippet_budget = min(
+        int(policy.get('symbol_snippet_tokens', 6500)),
+        int(policy.get('compact_context_max_tokens', policy['max_total_tokens_estimate'])),
+    )
+    structured_snippets = []
+    structured_snippet_tokens = 0
+    for record in snippets:
+        estimate = record['estimated_tokens']
+        if structured_snippet_tokens + estimate > structured_snippet_budget:
+            continue
+        structured_snippets.append(record)
+        structured_snippet_tokens += estimate
+    structured_context = {
+        'usage': 'Use bounded repository structure and symbol snippets before reopening complete source files.',
+        'repo_map': {'text': '', 'estimated_tokens': 0, 'files': [], 'symbol_count': 0},
+        'symbol_snippets': structured_snippets,
+        'estimated_tokens': structured_snippet_tokens,
+    }
+    effective_tokens = total_tokens
+    retrieval = {
+        'needed': retrieval_needed,
+        'requested_backend': policy.get('graph_backend', 'auto'),
+        'backend': 'builtin',
+        'status': 'skipped' if not retrieval_needed else 'fallback',
+        'reason': None if not retrieval_needed else 'bounded lexical graph and safe symbol fallback',
+    }
+    if retrieval_needed:
+        selected_paths = [record['path'] for record in selected]
+        selected_scores = {record['path']: float(record['score']) for record in selected}
+        repo_map = build_repo_map(
+            selected_paths,
+            query,
+            explicit,
+            build_graph(),
+            token_budget=int(policy.get('repo_map_tokens', 1600)),
+            selected_scores=selected_scores,
+        )
+        snippet_tokens = structured_context['estimated_tokens']
+        compact_tokens = int(repo_map.get('estimated_tokens') or 0) + snippet_tokens
+        # A structure map is only useful when it is actually smaller than the
+        # complete candidate file surface it would replace.
+        if compact_tokens <= candidate_full_file_tokens:
+            structured_context['repo_map'] = repo_map
+            structured_context['estimated_tokens'] = compact_tokens
+        effective_tokens = structured_context['estimated_tokens']
+        retrieval['status'] = 'ready'
+    output_tokens = effective_tokens if retrieval_needed else total_tokens
+    output_limit = (
+        min(policy['max_total_tokens_estimate'],
+            int(policy.get('compact_context_max_tokens', policy['max_total_tokens_estimate'])))
+        if retrieval_needed else policy['max_total_tokens_estimate']
+    )
     return {'task_id': task_id, 'policy_version': policy['version'], 'route': route or {},
             'files': selected, 'memory': memories, 'graph_neighbors': sorted(neighbors),
-            'graph_backend': document['backend'], 'total_bytes': total, 'estimated_tokens': total_tokens,
+            'graph_backend': document['backend'], 'retrieval': retrieval,
+            'structured_context': structured_context,
+            'candidate_full_file_tokens': candidate_full_file_tokens,
+            'total_bytes': total, 'estimated_tokens': output_tokens,
             'snippets': snippets,
             'limits': {'files': policy['max_files'], 'bytes': policy['max_total_bytes'],
-                       'estimated_tokens': policy['max_total_tokens_estimate']}}
+                       'estimated_tokens': output_limit}}
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('task'); ap.add_argument('--route'); ap.add_argument('--output'); a=ap.parse_args(); task=json.loads(Path(a.task).read_text(encoding='utf-8')); route=json.loads(Path(a.route).read_text()) if a.route else None; out=build(task,route); dest=Path(a.output) if a.output else run_dir(task['id'])/'context.json'; dest=dest if dest.is_absolute() else ROOT/dest; write_json_atomic(dest,out); print(json.dumps(out,indent=2,ensure_ascii=False))
 if __name__=='__main__': main()

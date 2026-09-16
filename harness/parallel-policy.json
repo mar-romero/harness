@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "max_parallel_agents": 4,
+  "minimum_batch_size": 2,
+  "default_provider_max_parallel": 1,
+  "per_provider_max_parallel": {
+    "claude": 2,
+    "codex": 2,
+    "copilot": 2,
+    "gemini": 2,
+    "cursor": 1,
+    "grok": 1
+  },
+  "review_gate_stages": [
+    "REVIEW",
+    "TEST_AUDIT",
+    "VERIFY"
+  ],
+  "candidate_bound": true,
+  "commit_mode": "canonical-order-after-fan-in",
+  "notes": {
+    "single_writer_preserved": true,
+    "security_review_after_impact_verify": true,
+    "later_pending_results_are_not_reused_after_earlier_failure": true,
+    "provider_limits_are_local_process_concurrency_guards_not_provider_quota_guarantees": true
+  }
+}

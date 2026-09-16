@@ -26,3 +26,6 @@ coverage/
 
 # Harness benchmark private holdouts
 benchmarks/private/
+
+# Local CodeGraph index (generated cache)
+.codegraph/

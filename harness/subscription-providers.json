@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "provider_group": "subscriptions",
+  "strict_subscription_auth": true,
+  "inventory_max_age_hours": 24,
+  "providers": {
+    "codex": {
+      "vendor": "openai",
+      "command_candidates": ["codex"],
+      "login_command": ["codex", "login"],
+      "status_command": ["codex", "login", "status"],
+      "subscription_status_patterns": ["logged in using chatgpt", "chatgpt"],
+      "api_status_patterns": ["api key", "apikey"],
+      "forbidden_env": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+      "discovery": "codex-local",
+      "fallback_models": [{"id": "default", "profile": "coding", "vendor": "openai"}]
+    },
+    "claude": {
+      "vendor": "anthropic",
+      "command_candidates": ["claude"],
+      "login_command": ["claude"],
+      "login_note": "Start Claude Code and use /login; choose your Claude.ai Pro/Max subscription.",
+      "forbidden_env": ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"],
+      "discovery": "static",
+      "models": [
+        {"id": "sonnet", "profile": "balanced", "vendor": "anthropic"},
+        {"id": "opus", "profile": "premium", "vendor": "anthropic"},
+        {"id": "haiku", "profile": "fast", "vendor": "anthropic"}
+      ]
+    },
+    "copilot": {
+      "vendor": "github",
+      "command_candidates": ["copilot"],
+      "login_command": ["copilot", "login"],
+      "forbidden_env": ["COPILOT_PROVIDER_BASE_URL", "COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDER_TYPE"],
+      "discovery": "static",
+      "models": [
+        {"id": "auto", "profile": "balanced", "vendor": "github"},
+        {"id": "claude-sonnet-4.6", "profile": "balanced", "vendor": "anthropic"},
+        {"id": "gpt-5.4", "profile": "reasoning", "vendor": "openai"},
+        {"id": "claude-haiku-4.5", "profile": "fast", "vendor": "anthropic"},
+        {"id": "gpt-5.3-codex", "profile": "coding", "vendor": "openai"},
+        {"id": "gemini-3.1-pro-preview", "profile": "reasoning", "vendor": "google"},
+        {"id": "gemini-3.5-flash", "profile": "fast", "vendor": "google"},
+        {"id": "gemini-3.6-flash", "profile": "fast", "vendor": "google"},
+        {"id": "gemini-3.7-flash", "profile": "fast", "vendor": "google"},
+        {"id": "mai-code-1-flash", "profile": "fast-coding", "vendor": "microsoft"}
+      ]
+    },
+    "cursor": {
+      "vendor": "cursor",
+      "command_candidates": ["cursor-agent", "agent"],
+      "login_command": ["cursor-agent", "login"],
+      "status_command": ["cursor-agent", "status"],
+      "subscription_status_patterns": ["logged in", "authenticated"],
+      "forbidden_env": ["CURSOR_API_KEY"],
+      "discovery": "static",
+      "models": [{"id": "auto", "profile": "balanced", "vendor": "cursor"}]
+    },
+    "grok": {
+      "vendor": "xai",
+      "command_candidates": ["grok"],
+      "login_command": ["grok", "login"],
+      "status_command": ["grok", "models"],
+      "forbidden_env": ["XAI_API_KEY", "XAI_BASE_URL"],
+      "discovery": "grok-models",
+      "fallback_models": [{"id": "default", "profile": "balanced", "vendor": "xai"}]
+    },
+    "gemini": {
+      "vendor": "google",
+      "command_candidates": ["gemini"],
+      "login_command": ["gemini"],
+      "login_note": "Start Gemini CLI, run /auth if needed, and choose Sign in with Google.",
+      "forbidden_env": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTIALS"],
+      "discovery": "static",
+      "models": [{"id": "auto", "profile": "balanced", "vendor": "google"}]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Deterministic per-agent model and reasoning-effort router.
 
 Runtime provider inventory is authoritative for availability. OpenRouter data is an
@@ -6,10 +6,12 @@ external prior, not an availability source. The router uses:
 
 1. task capability target (reasoning/coding/tool_use/reliability),
 2. role adjustments and hard model-class/risk floors,
-3. quality/cost/latency/local-evidence scoring,
-4. minimum-sufficient resource selection when enabled by policy,
-5. independent reviewer/verifier selection when a comparable alternative exists,
-6. a separate reasoning-effort decision.
+3. minimum-sufficient routing: choose the least-resource model that clears dynamic capability floors,
+4. independent reviewer/verifier selection among sufficient alternatives,
+5. a separate minimum-sufficient reasoning-effort decision.
+
+Legacy policies without selection.strategy=minimum_sufficient retain the older
+highest-score behavior for compatibility.
 """
 from __future__ import annotations
 
@@ -118,57 +120,6 @@ def _quality_component(capability: float, target: float, policy: dict[str, Any])
     return float(cfg.get("coverage_weight", 0.85)) * coverage + float(cfg.get("surplus_weight", 0.15)) * surplus
 
 
-def _selection_strategy(policy: dict[str, Any]) -> str:
-    strategy = str(policy.get("selection", {}).get("strategy", "highest_score"))
-    if strategy not in {"highest_score", "minimum_sufficient"}:
-        raise ValueError(f"unknown model selection strategy: {strategy}")
-    return strategy
-
-
-def _minimum_coverage_threshold(risk: str, policy: dict[str, Any]) -> float:
-    selection = policy.get("selection", {})
-    configured = selection.get("minimum_coverage_by_risk", {}).get(risk, selection.get("minimum_coverage", 1.0))
-    try:
-        threshold = float(configured)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"minimum coverage threshold for {risk} must be numeric") from exc
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError(f"minimum coverage threshold for {risk} must be between 0 and 1")
-    return threshold
-
-
-def _capability_coverage(model: dict[str, Any], target: dict[str, float]) -> dict[str, float]:
-    coverage: dict[str, float] = {}
-    for key in CAP_KEYS:
-        required = float(target.get(key, 0.0))
-        coverage[key] = 1.0 if required <= 0 else max(0.0, min(_cap(model, key) / required, 1.0))
-    return coverage
-
-
-def _capability_surplus(model: dict[str, Any], target: dict[str, float]) -> float:
-    surplus = 0.0
-    for key in CAP_KEYS:
-        required = float(target.get(key, 0.0))
-        if required >= 5.0:
-            dimension_surplus = 0.0
-        else:
-            dimension_surplus = max(0.0, (_cap(model, key) - required) / max(5.0 - required, 1.0))
-        surplus += dimension_surplus
-    return surplus / len(CAP_KEYS)
-
-
-def _is_minimum_sufficient(model: dict[str, Any], target: dict[str, float], threshold: float) -> bool:
-    return all(value >= threshold for value in _capability_coverage(model, target).values())
-
-
-def _size_tier(model: dict[str, Any]) -> float | None:
-    try:
-        value = model.get("size_tier")
-        return None if value is None else max(0.0, float(value))
-    except (TypeError, ValueError):
-        return None
-
-
 def _local_component(model: dict[str, Any], policy: dict[str, Any]) -> float:
     evidence = model.get("local_evidence") or {}
     neutral = float(policy.get("scoring", {}).get("local_evidence_neutral", 0.5))
@@ -264,6 +215,15 @@ def _supported_efforts(model: dict[str, Any], provider: str, provider_policy: di
 
 
 def _nearest_effort(desired: str, supported: list[str], policy: dict[str, Any]) -> str | None:
+    """Return the least runtime effort that still satisfies the desired effort when possible.
+
+    The old router preferred a lower effort before a higher one when the exact
+    effort was unavailable.  That can under-provision reasoning.  The v3
+    minimum-sufficient policy is fail-safe in the other direction: exact first,
+    then the nearest *higher* effort, and only then a lower effort when the
+    runtime exposes no sufficient tier at all.  Legacy policies can retain the
+    previous behavior with effort.fallback=nearest-lower-then-higher.
+    """
     if not supported:
         return None
     order = [str(x) for x in policy.get("effort", {}).get("order", [])]
@@ -273,12 +233,17 @@ def _nearest_effort(desired: str, supported: list[str], policy: dict[str, Any]) 
         return supported[0]
     idx = order.index(desired)
     supported_set = set(supported)
-    for pos in range(idx - 1, -1, -1):
-        if order[pos] in supported_set:
-            return order[pos]
-    for pos in range(idx + 1, len(order)):
-        if order[pos] in supported_set:
-            return order[pos]
+    fallback = str(policy.get("effort", {}).get("fallback", "nearest-lower-then-higher"))
+    directions = ("higher", "lower") if fallback == "nearest-higher-then-lower" else ("lower", "higher")
+    for direction in directions:
+        if direction == "higher":
+            for pos in range(idx + 1, len(order)):
+                if order[pos] in supported_set:
+                    return order[pos]
+        else:
+            for pos in range(idx - 1, -1, -1):
+                if order[pos] in supported_set:
+                    return order[pos]
     return supported[0]
 
 
@@ -310,26 +275,104 @@ def _runtime_model_id(base_id: str, effort: str | None, provider_policy: dict[st
     return base_id
 
 
+def _sufficiency_floor(requirements: dict[str, float], target: dict[str, float], policy: dict[str, Any]) -> dict[str, float]:
+    cfg = policy.get("selection", {}).get("minimum_sufficient", {})
+    ratio = max(0.0, min(1.0, float(cfg.get("target_ratio", 1.0))))
+    floors: dict[str, float] = {}
+    for key in CAP_KEYS:
+        required = float(requirements.get(key, 0.0))
+        desired = float(target.get(key, 0.0)) * ratio
+        floors[key] = round(max(required, desired), 6)
+    return floors
+
+
+def _meets_floor(model: dict[str, Any], floors: dict[str, float]) -> bool:
+    return all(_cap(model, key) >= float(value) for key, value in floors.items() if float(value) > 0.0)
+
+
+def _minimum_burden(model: dict[str, Any], floors: dict[str, float], policy: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+    """Lower is better: choose the smallest adequate model, then quota/latency efficiency.
+
+    Inventory `cost` is a 0..5 subscription-quota-efficiency score where 5 is
+    cheapest in quota terms; latency uses the same higher-is-better convention.
+    """
+    cfg = policy.get("selection", {}).get("minimum_sufficient", {})
+    weights = cfg.get("burden_weights", {})
+    relevant = [key for key in CAP_KEYS if float(floors.get(key, 0.0)) > 0.0]
+    surplus_parts: dict[str, float] = {}
+    for key in relevant:
+        floor = float(floors[key])
+        cap = _cap(model, key)
+        denom = max(0.001, 5.0 - floor)
+        surplus_parts[key] = max(0.0, min(1.0, (cap - floor) / denom))
+    capability_surplus = sum(surplus_parts.values()) / len(surplus_parts) if surplus_parts else 0.0
+    quota_penalty = 1.0 - _objective(model, "cost")
+    latency_penalty = 1.0 - _objective(model, "latency")
+    local_penalty = 1.0 - _local_component(model, policy)
+    burden = (
+        float(weights.get("capability_surplus", 0.60)) * capability_surplus
+        + float(weights.get("quota", 0.25)) * quota_penalty
+        + float(weights.get("latency", 0.10)) * latency_penalty
+        + float(weights.get("local_evidence", 0.05)) * local_penalty
+    )
+    precision = int(policy.get("scoring", {}).get("score_precision", 6))
+    return round(burden * 100.0, precision), {
+        "capability_surplus": round(capability_surplus, precision),
+        "quota_penalty": round(quota_penalty, precision),
+        "latency_penalty": round(latency_penalty, precision),
+        "local_evidence_penalty": round(local_penalty, precision),
+        "surplus_by_capability": {k: round(v, precision) for k, v in surplus_parts.items()},
+        "burden_weights": weights,
+    }
+
+
+def _rank_minimum_sufficient(candidates: list[dict[str, Any]], floors: dict[str, float],
+                             model_class: str, risk: str, target: dict[str, float],
+                             policy: dict[str, Any]) -> list[tuple[float, str, dict[str, Any], dict[str, Any]]]:
+    ranked = []
+    for model in candidates:
+        burden, burden_breakdown = _minimum_burden(model, floors, policy)
+        quality_score, quality_breakdown = score_model_details(model, model_class, risk, target, policy)
+        ranked.append((burden, str(model.get("id", "")), model, {
+            "resource_burden": burden_breakdown,
+            "quality_score": quality_score,
+            "quality_score_breakdown": quality_breakdown,
+        }))
+    ranked.sort(key=lambda x: (x[0], -_objective(x[2], "cost"), -_objective(x[2], "latency"), x[1]))
+    return ranked
+
+
+def _prefer_independent_minimum(ranked: list[tuple[float, str, dict[str, Any], dict[str, Any]]],
+                                avoid_models: set[str], avoid_families: set[str], avoid_vendors: set[str],
+                                policy: dict[str, Any]) -> tuple[tuple[float, str, dict[str, Any], dict[str, Any]], dict[str, Any]]:
+    chosen = ranked[0]
+    info = {"strength": "not_applicable", "baseline_model": chosen[1], "rules_applied": []}
+    cfg = policy.get("independence", {})
+    if avoid_models:
+        alt = [x for x in ranked if x[1] not in avoid_models]
+        if alt:
+            chosen = alt[0]; info["strength"] = "different_model"; info["rules_applied"].append("different_model")
+        else:
+            info["strength"] = "same_model_fallback"
+    if cfg.get("different_family_preferred") and avoid_families:
+        alt = [x for x in ranked if x[1] not in avoid_models and _model_family(x[2]) not in avoid_families]
+        if alt:
+            chosen = alt[0]; info["strength"] = "different_family"; info["rules_applied"].append("different_family")
+    if cfg.get("different_vendor_preferred") and avoid_vendors:
+        alt = [x for x in ranked if x[1] not in avoid_models and _model_vendor(x[2]) not in avoid_vendors]
+        if alt:
+            chosen = alt[0]; info["strength"] = "different_vendor"; info["rules_applied"].append("different_vendor")
+    info["selected_model"] = chosen[1]
+    return chosen, info
+
+
 def _rank_candidates(candidates: list[dict[str, Any]], model_class: str, risk: str,
                      target: dict[str, float], policy: dict[str, Any]) -> list[tuple[float, str, dict[str, Any], dict[str, Any]]]:
     ranked = []
     for model in candidates:
         score, breakdown = score_model_details(model, model_class, risk, target, policy)
-        breakdown["capability_coverage"] = _capability_coverage(model, target)
-        breakdown["capability_surplus"] = round(_capability_surplus(model, target), 6)
-        breakdown["size_tier"] = _size_tier(model)
         ranked.append((score, str(model.get("id", "")), model, breakdown))
-    if _selection_strategy(policy) == "minimum_sufficient":
-        def minimum_sufficient_key(item: tuple[float, str, dict[str, Any], dict[str, Any]]) -> tuple[Any, ...]:
-            score, model_id, model, breakdown = item
-            size_tier = breakdown["size_tier"]
-            if size_tier is not None:
-                return (0, size_tier, -_objective(model, "cost"), -_objective(model, "latency"), -score, model_id)
-            return (1, breakdown["capability_surplus"], -_objective(model, "cost"), -_objective(model, "latency"), -score, model_id)
-
-        ranked.sort(key=minimum_sufficient_key)
-    else:
-        ranked.sort(key=lambda x: (-x[0], x[1]))
+    ranked.sort(key=lambda x: (-x[0], x[1]))
     return ranked
 
 
@@ -377,8 +420,6 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
     provider_policy = load_provider_policy(provider)
     requirements = requirements_for(model_class, risk, policy)
     target = target or {k: max(requirements.get(k, 0.0), 2.5) for k in CAP_KEYS}
-    strategy = _selection_strategy(policy)
-    minimum_threshold = _minimum_coverage_threshold(risk, policy) if strategy == "minimum_sufficient" else None
     default_no_inventory = policy["selection"].get("default_no_inventory_action", "inherit")
     default_no_eligible = policy["selection"].get("default_no_eligible_action", "inherit")
     risk_cfg = policy.get("risk_overrides", {}).get(risk, {})
@@ -399,9 +440,6 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
         "inventory_stale": False,
         "requirements": requirements,
         "target": target,
-        "selection_strategy": strategy,
-        "minimum_coverage_threshold": minimum_threshold,
-        "sufficient_models": 0,
     }
     if inventory is None:
         action = risk_cfg.get("no_inventory_action", default_no_inventory)
@@ -428,60 +466,67 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
         status = "blocked" if action == "block" else "inherit"
         return {**base, "status": status, "action": action, "reason": "no enabled runtime model satisfies required capabilities"}
 
+    strategy = str(policy.get("selection", {}).get("strategy", "best_score"))
+    sufficiency_floor = _sufficiency_floor(requirements, target, policy)
+    sufficiency_degraded = False
     if strategy == "minimum_sufficient":
-        sufficient = [
-            model for model in candidates
-            if _is_minimum_sufficient(model, target, minimum_threshold if minimum_threshold is not None else 1.0)
-        ]
-        base["sufficient_models"] = len(sufficient)
+        sufficient = [m for m in candidates if _meets_floor(m, sufficiency_floor)]
         if not sufficient:
-            selection_cfg = policy.get("selection", {})
-            action = selection_cfg.get("no_sufficient_action_by_risk", {}).get(
-                risk,
-                risk_cfg.get("no_sufficient_action", default_no_eligible),
-            )
-            status = "blocked" if action == "block" else "inherit"
-            return {
-                **base,
-                "status": status,
-                "action": action,
-                "reason": "no enabled runtime model reaches the configured minimum capability coverage",
-            }
-        candidates = sufficient
-
-    ranked = _rank_candidates(candidates, model_class, risk, target, policy)
-    chosen, independence = _prefer_independent(
-        ranked,
-        avoid_models or set(),
-        avoid_families or set(),
-        avoid_vendors or set(),
-        policy,
-    )
-    best_score, base_model_id, model, breakdown = chosen
+            fallback_cfg = policy.get("selection", {}).get("minimum_sufficient", {}).get("fallback_by_risk", {})
+            fallback = str(fallback_cfg.get(risk, "closest_eligible"))
+            if fallback == "block":
+                return {**base, "status": "blocked", "action": "block", "sufficiency_floor": sufficiency_floor,
+                        "reason": "no runtime model satisfies the task/role sufficiency target"}
+            sufficient = candidates
+            sufficiency_degraded = True
+        ranked_min = _rank_minimum_sufficient(sufficient, sufficiency_floor, model_class, risk, target, policy)
+        chosen, independence = _prefer_independent_minimum(
+            ranked_min, avoid_models or set(), avoid_families or set(), avoid_vendors or set(), policy
+        )
+        burden, base_model_id, model, breakdown = chosen
+        quality_score = float(breakdown.get("quality_score", 0.0))
+    else:
+        ranked = _rank_candidates(candidates, model_class, risk, target, policy)
+        chosen, independence = _prefer_independent(
+            ranked,
+            avoid_models or set(),
+            avoid_families or set(),
+            avoid_vendors or set(),
+            policy,
+        )
+        quality_score, base_model_id, model, breakdown = chosen
+        burden = None
     if not base_model_id:
         raise ValueError("eligible inventory model is missing id")
     supported = _supported_efforts(model, provider, provider_policy)
     effort, pressure = select_effort(target, agent, risk, supported, policy)
     runtime_id = _runtime_model_id(base_model_id, effort, provider_policy)
+    reason = (
+        "least-resource model meeting task/role capability targets and reasoning policy, subject to independence preference"
+        if strategy == "minimum_sufficient" and not sufficiency_degraded
+        else "least-resource hard-floor-eligible fallback because no model met every dynamic target"
+        if strategy == "minimum_sufficient"
+        else "highest deterministic task/role/risk score among eligible runtime models, subject to independence preference"
+    )
     return {
         **base,
         "status": "selected",
         "action": "use",
+        "selection_strategy": strategy,
+        "sufficiency_floor": sufficiency_floor,
+        "sufficiency_degraded": sufficiency_degraded,
         "model_id": runtime_id,
         "base_model_id": base_model_id,
         "reasoning_effort": effort,
         "effort_pressure": pressure,
-        "score": best_score,
+        "score": quality_score,
+        "resource_burden": burden,
         "score_breakdown": breakdown,
         "independence": independence,
         "model_family": _model_family(model),
         "model_vendor": _model_vendor(model),
         "openrouter_id": model.get("openrouter_id"),
-        "reason": (
-            "smallest sufficient runtime model by policy resource order, with score as a deterministic tie-break"
-            if strategy == "minimum_sufficient"
-            else "highest deterministic task/role/risk score among eligible runtime models, subject to independence preference"
-        ),
+        "reason": reason,
     }
 
 

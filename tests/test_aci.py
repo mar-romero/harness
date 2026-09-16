@@ -28,6 +28,7 @@ EXPECTED_TOOL_NAMES = [
     "lint_run",
     "repo_callers",
     "repo_dependencies",
+    "repo_explore",
     "repo_read_range",
     "repo_search",
     "repo_symbol",
@@ -300,7 +301,7 @@ class ACICoreTests(unittest.TestCase):
         tools = tool_definitions()
         names = [item["name"] for item in tools]
         self.assertEqual(names, sorted(names))
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 11)
         self.assertIn("repo_search", names)
         self.assertIn("tests_run", names)
         for tool in tools:
@@ -396,7 +397,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 2}}},
         ])
         self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
-        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 11)
         self.assertFalse(responses[2]["result"]["isError"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
 
@@ -406,7 +407,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 1}}},
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 2, "end_line": 2}}},
         ])
-        self.assertEqual(len(responses[0]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[0]["result"]["tools"]), 11)
         self.assertTrue(responses[1]["result"]["structuredContent"]["ok"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
 
@@ -417,7 +418,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 1}}},
         ], command=["node", str(ROOT / "scripts" / "aci_mcp_node.js")])
         self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
-        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 11)
         self.assertTrue(responses[2]["result"]["structuredContent"]["ok"])
 
     def test_initialize_negotiates_the_client_protocol_version(self):
@@ -444,7 +445,7 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(responses[0]["result"]["resultType"], "complete")
         self.assertEqual(responses[1]["result"]["resultType"], "complete")
         self.assertEqual(responses[1]["result"]["cacheScope"], "private")
-        self.assertEqual(len(responses[1]["result"]["tools"]), 10)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 11)
 
 
 if __name__ == "__main__":

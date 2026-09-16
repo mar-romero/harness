@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path, PurePosixPath
+import shutil
 
 from harnesslib import ROOT, git, run_dir, safe_task_id, write_json_atomic
 
@@ -31,6 +32,29 @@ def ensure_git():
 def _git_lines(*args, cwd=None):
     r = git(*args, cwd=cwd)
     return [line.strip().replace('\\', '/') for line in r.stdout.splitlines() if line.strip()]
+
+def _worktree_registered(path: Path) -> bool:
+    target = os.path.normcase(os.path.abspath(str(path)))
+
+    result = git(
+        "worktree",
+        "list",
+        "--porcelain",
+        cwd=ROOT,
+    )
+
+    for line in result.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+
+        registered = os.path.normcase(
+            os.path.abspath(line[len("worktree "):].strip())
+        )
+
+        if registered == target:
+            return True
+
+    return False
 
 
 def _root_branch():
@@ -266,32 +290,83 @@ def _root_untracked_overlap(changed):
 
 def _cleanup_published_worktree(task, meta):
     path = wt(task)
-    branch = meta['branch']
+    branch = meta["branch"]
+    cleanup_warning = None
 
-    if path.exists():
-        dirty = _dirty_files(path)
-        if dirty:
-            raise ValueError(
-                'published worktree became dirty before cleanup: ' + ', '.join(dirty)
+    registered = _worktree_registered(path)
+
+    if registered:
+        if path.exists():
+            dirty = _dirty_files(path)
+            if dirty:
+                raise ValueError(
+                    "published worktree became dirty before cleanup: "
+                    + ", ".join(dirty)
+                )
+
+        try:
+            git("worktree", "remove", str(path))
+        except Exception as exc:
+            # On Windows Git can successfully unregister the worktree and
+            # still return a non-zero exit code because physical directory
+            # cleanup failed. Only tolerate the error if the Git registration
+            # is actually gone.
+            if _worktree_registered(path):
+                raise
+
+            cleanup_warning = (
+                "git worktree remove reported failure after unregistering "
+                f"the worktree: {exc}"
             )
-        git('worktree', 'remove', str(path))
+
+    # An unregistered residual directory is no longer Git authority/state.
+    # Remove it best-effort; failure here must not invalidate an already
+    # integrated publication.
+    if not _worktree_registered(path) and path.exists():
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            residue_warning = (
+                f"residual worktree directory could not be removed: {exc}"
+            )
+            cleanup_warning = (
+                f"{cleanup_warning}; {residue_warning}"
+                if cleanup_warning
+                else residue_warning
+            )
 
     lock(task).unlink(missing_ok=True)
 
-    branches = set(_git_lines('branch', '--format=%(refname:short)', cwd=ROOT))
+    branches = set(
+        _git_lines("branch", "--format=%(refname:short)", cwd=ROOT)
+    )
     if branch in branches:
-        git('branch', '-d', branch, cwd=ROOT)
+        git("branch", "-d", branch, cwd=ROOT)
 
+    return {
+        "cleaned_up": (
+            not _worktree_registered(path)
+            and not path.exists()
+        ),
+        "cleanup_warning": cleanup_warning,
+    }
 
 def _finalize_integrated_artifact(task, data):
     meta = dict(data)
-    _cleanup_published_worktree(task, meta)
-    meta['status'] = 'PASS'
-    meta['cleaned_up'] = True
-    meta['published_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
+    cleanup = _cleanup_published_worktree(task, meta)
+
+    meta["status"] = "PASS"
+    meta["cleaned_up"] = cleanup["cleaned_up"]
+
+    if cleanup["cleanup_warning"]:
+        meta["cleanup_warning"] = cleanup["cleanup_warning"]
+    else:
+        meta.pop("cleanup_warning", None)
+
+    meta["published_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+
     write_json_atomic(publish_artifact(task), meta)
     return meta
-
 
 def publish_status(task):
     task = safe_task_id(task)

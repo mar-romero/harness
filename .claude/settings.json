@@ -11,5 +11,8 @@
         ]
       }
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "harness-aci"
+  ]
 }

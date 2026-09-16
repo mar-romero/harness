@@ -63,7 +63,7 @@ def set_mode(enabled: bool) -> dict:
 
 def _active_provider(task: str) -> str | None:
     found = []
-    for provider in ("codex", "opencode"):
+    for provider in ("codex", "opencode", "subscriptions"):
         p = ROOT / ".harness" / provider / "active-task.json"
         if not p.is_file():
             continue
@@ -104,7 +104,7 @@ def _consent_path(provider: str, session_id: str) -> Path:
 def consent_status(task: str, provider: str | None = None, session_id: str | None = None) -> dict:
     task = safe_task_id(task)
     provider = provider or _active_provider(task)
-    if provider not in {"codex", "opencode"}:
+    if provider not in {"codex", "opencode", "subscriptions"}:
         raise ValueError("cannot resolve active provider for session-scoped review consent")
     sid = _session_id(provider, session_id)
     p = _consent_path(provider, sid)
@@ -121,7 +121,7 @@ def consent_status(task: str, provider: str | None = None, session_id: str | Non
 def grant_consent(task: str, provider: str | None = None, session_id: str | None = None) -> dict:
     task = safe_task_id(task)
     provider = provider or _active_provider(task)
-    if provider not in {"codex", "opencode"}:
+    if provider not in {"codex", "opencode", "subscriptions"}:
         raise ValueError("cannot resolve active provider for session-scoped review consent")
     sid = _session_id(provider, session_id)
     digest = hashlib.sha256(sid.encode()).hexdigest()
@@ -140,7 +140,7 @@ def grant_consent(task: str, provider: str | None = None, session_id: str | None
 def clear_consent(task: str, provider: str | None = None, session_id: str | None = None) -> dict:
     task = safe_task_id(task)
     provider = provider or _active_provider(task)
-    if provider not in {"codex", "opencode"}:
+    if provider not in {"codex", "opencode", "subscriptions"}:
         raise ValueError("cannot resolve active provider")
     sid = _session_id(provider, session_id)
     _consent_path(provider, sid).unlink(missing_ok=True)
@@ -380,7 +380,7 @@ def _ensure_dynamic_agent_models(task: str, route: dict, added_agents: list[str]
 
     payload = json.loads(models_path.read_text(encoding="utf-8"))
     provider = payload.get("provider") or _active_provider(task)
-    if provider not in {"codex", "opencode"}:
+    if provider not in {"codex", "opencode", "subscriptions"}:
         raise ValueError("dynamic review/verification routing requires a supported active provider")
     task_data = json.loads(task_path.read_text(encoding="utf-8"))
 
@@ -731,7 +731,7 @@ def main() -> int:
     p = sub.add_parser("consent")
     p.add_argument("action", choices=["status", "grant", "clear"])
     p.add_argument("task")
-    p.add_argument("--provider", choices=["codex", "opencode"])
+    p.add_argument("--provider", choices=["codex", "opencode", "subscriptions"])
     p.add_argument("--session-id")
 
     p = sub.add_parser("issue")

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness subscription CLI inventory",
+  "type": "object",
+  "required": ["schema_version", "provider", "generated_at", "models", "providers"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "provider": {"const": "subscriptions"},
+    "generated_at": {"type": "string"},
+    "availability_generated_at": {"type": "string"},
+    "models": {"type": "array", "items": {"type": "object", "required": ["id", "runtime_provider", "runtime_model", "capabilities"]}},
+    "providers": {"type": "object"}
+  }
+}
