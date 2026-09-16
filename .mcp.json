@@ -2,8 +2,8 @@
   "mcpServers": {
     "harness-aci": {
       "type": "stdio",
-      "command": "python",
-      "args": ["scripts/aci_mcp.py"],
+      "command": "node",
+      "args": ["scripts/aci_mcp_node.js"],
       "env": {}
     }
   }
