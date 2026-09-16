@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "discovery_id": "HARNESS-INSTALL-001",
+  "status": "ready_for_approval",
+  "classification": "EPIC",
+  "title": "Portable Harness installation and safe target-repository bootstrap",
+  "original_request": {
+    "text": "Quiero que este repositorio sea instalable en cualquier repositorio con una serie de comandos, de forma comparable a publicar una herramienta en npm, y quiero saber cómo hacerlo y si se migran y agregan todos los archivos al hacerlo instalable. Quiero que trabajes como corresponde creando sprint, epic, task specs y planning, todo lo necesario para realizar esta tarea, y quiero activar ese flujo porque antes no se siguió el flujo del harnes.",
+    "language": "Spanish",
+    "canonical_english": "I want this repository to be installable into any repository through a set of commands, comparably to publishing a tool on npm. I want to determine how to do it and whether making it installable migrates and adds all files. I want the work to follow the harness flow by creating the sprint, epic, task specifications, and planning needed to deliver this capability, because that flow was not followed earlier.",
+    "back_translation": "Quiero que este repositorio sea instalable en cualquier repositorio mediante una serie de comandos, de forma comparable a publicar una herramienta en npm. Quiero determinar cómo hacerlo y si hacerlo instalable migra y agrega todos los archivos. Quiero que el trabajo siga el flujo del harness creando el sprint, la épica, las especificaciones de tareas y la planificación necesarios para entregar esta capacidad, porque ese flujo no se siguió antes.",
+    "equivalence_claim": "EXACT_INTENT"
+  },
+  "refined_problem": "Repository maintainers need a supported command-line installation path that can add the Harness to an arbitrary target repository without overwriting target-owned files, leaking credentials, or silently migrating existing configuration.",
+  "target_users": [
+    "Maintainers who want to adopt Harness in an existing repository",
+    "Release maintainers who package and distribute the Harness CLI"
+  ],
+  "outcomes": [
+    "A target repository can run a documented installer command.",
+    "The installer reports a deterministic plan before any file mutation.",
+    "Installed files, preserved target-owned files, and skipped conflicts are observable."
+  ],
+  "success_metrics": [
+    {
+      "name": "clean-target bootstrap",
+      "definition": "A clean fixture repository receives the documented managed files and passes the Harness validation command.",
+      "target": 1
+    },
+    {
+      "name": "ownership safety",
+      "definition": "An existing target-owned or modified managed file is never overwritten without an explicit operator choice.",
+      "target": 100
+    }
+  ],
+  "scope": {
+    "in": [
+      "A private-Git distributable Python command-line package proposal from https://github.com/mar-romero/harness",
+      "Target-repository bootstrap, ownership manifest, dry-run, and collision behavior",
+      "TestPyPI and fixture-based verification plan"
+    ],
+    "out": [
+      "Publishing to PyPI or TestPyPI",
+      "Copying source history, credentials, tasks, planning artifacts, runtime runs, caches, or user task data into targets",
+      "Automatic destructive migration of pre-existing target files"
+    ]
+  },
+  "assumptions": [
+    {
+      "statement": "The repository is a Python project, so a Python distribution with a console-script entry point is the lowest-friction npm-like delivery option.",
+      "status": "approved direction"
+    },
+    {
+      "statement": "Installation should copy a defined managed template set, not the entire source repository; tasks, planning, runtime state, caches, and credentials are always excluded.",
+      "status": "approved direction"
+    }
+  ],
+  "open_questions": [
+    {
+      "question": "Distribution channel selected: private Git repository https://github.com/mar-romero/harness.",
+      "blocking": false,
+      "dimension": "distribution and recurring cost/ownership"
+    },
+    {
+      "question": "Target layouts selected: empty or existing Git repositories without Harness; an existing installation of this Harness version may be installed or updated only through its managed-file manifest.",
+      "blocking": false,
+      "dimension": "migration boundary"
+    },
+    {
+      "question": "Managed-file conflict policy selected: fail without mutating the target repository and report every conflict.",
+      "blocking": false,
+      "dimension": "data ownership and destructive behavior"
+    }
+  ],
+  "challenges": [
+    {
+      "challenge": "Packaging a CLI does not imply copying every repository file; the installation manifest must define ownership and exclusions."
+    },
+    {
+      "challenge": "Public package publishing and target-file overwrite behavior are human approval gates."
+    }
+  ],
+  "mvp": {
+    "goal": "Install a versioned Harness template into a clean or existing Git repository with dry-run and conflict-safe behavior.",
+    "includes": [
+      "Python package and console entry point",
+      "Versioned template manifest",
+      "Dry-run, apply, and status commands",
+      "Fixture tests for clean install and collisions"
+    ],
+    "excludes": [
+      "Automatic merge resolution",
+      "Publishing to a public index",
+      "Migration of unclassified legacy files"
+    ]
+  },
+  "work_items": [
+    {
+      "id": "HARNESS-INSTALL-EPIC-001",
+      "type": "EPIC",
+      "title": "Portable Harness bootstrap",
+      "description": "Deliver a safely distributed CLI that can bootstrap approved Harness files into a target repository.",
+      "status": "proposed",
+      "parent_id": null,
+      "dependencies": [],
+      "success_criteria": [
+        "The installer has an explicit ownership manifest and collision policy.",
+        "The distribution and migration boundaries are approved before implementation."
+      ],
+      "risks": [
+        "Target repository data loss",
+        "Unapproved public publishing",
+        "Credential or runtime-data inclusion"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "HARNESS-INSTALL-PACKAGE-001",
+      "title": "Package the Harness CLI and managed-file manifest",
+      "description": "Create the installable Python CLI package and an explicit versioned manifest defining the files that may be installed into a target repository, with exclusions for tasks, planning, runtime state, caches, and credentials.",
+      "acceptance_criteria": [
+        "The package builds from the private Git repository.",
+        "The CLI exposes a stable entry point and version metadata.",
+        "The manifest declares managed paths and explicit excluded paths.",
+        "No target-repository mutation occurs in this task."
+      ],
+      "dependencies": [],
+      "files": [
+        "pyproject.toml",
+        "src/harness_installer/__init__.py",
+        "src/harness_installer/cli.py",
+        "src/harness_installer/manifest.py",
+        "src/harness_installer/templates/manifest.json"
+      ],
+      "size": "M",
+      "risk_factors": {
+        "touches_auth": false,
+        "touches_production": false,
+        "uses_secrets": false,
+        "destructive_operation": false,
+        "irreversible_change": false,
+        "security_boundary": true,
+        "schema_change": true,
+        "database_change": false,
+        "concurrency": false,
+        "financial": false,
+        "external_contract": true,
+        "migration": true,
+        "persistence": false,
+        "important_calculation": false,
+        "bug_fix": false
+      },
+      "value": 5,
+      "dependency_unlock": 5,
+      "risk_reduction": 4,
+      "urgency": 4,
+      "confidence": 4
+    },
+    {
+      "id": "HARNESS-INSTALL-APPLY-001",
+      "title": "Implement safe install, update, and conflict failure",
+      "description": "Implement dry-run and apply behavior for clean targets and same-version Harness updates, failing before mutation when a destination is unowned or modified.",
+      "acceptance_criteria": [
+        "Dry-run is mutation-free.",
+        "Clean and existing Git targets can be installed.",
+        "Same-version managed files can be updated.",
+        "Any conflict fails and leaves the target unchanged."
+      ],
+      "dependencies": [
+        "HARNESS-INSTALL-PACKAGE-001"
+      ],
+      "files": [
+        "src/harness_installer/apply.py",
+        "src/harness_installer/status.py"
+      ],
+      "size": "L",
+      "risk_factors": {
+        "touches_auth": false,
+        "touches_production": false,
+        "uses_secrets": false,
+        "destructive_operation": true,
+        "irreversible_change": false,
+        "security_boundary": true,
+        "schema_change": true,
+        "database_change": false,
+        "concurrency": false,
+        "financial": false,
+        "external_contract": false,
+        "migration": true,
+        "persistence": true,
+        "important_calculation": false,
+        "bug_fix": false
+      },
+      "value": 5,
+      "dependency_unlock": 4,
+      "risk_reduction": 5,
+      "urgency": 4,
+      "confidence": 3
+    },
+    {
+      "id": "HARNESS-INSTALL-VERIFY-001",
+      "title": "Verify distribution and target-repository boundaries",
+      "description": "Add fixture integration tests and operator documentation for package installation, dry-run, clean install, update, conflict failure, and excluded repository data.",
+      "acceptance_criteria": [
+        "Fixture tests cover clean, update, conflict, and dry-run paths.",
+        "Tests prove excluded paths are not copied.",
+        "Documentation contains private-Git installation and recovery commands."
+      ],
+      "dependencies": [
+        "HARNESS-INSTALL-APPLY-001"
+      ],
+      "files": [
+        "tests/test_harness_installer_integration.py",
+        "docs/INSTALLATION.md",
+        "README.md"
+      ],
+      "size": "M",
+      "risk_factors": {
+        "touches_auth": false,
+        "touches_production": false,
+        "uses_secrets": false,
+        "destructive_operation": false,
+        "irreversible_change": false,
+        "security_boundary": true,
+        "schema_change": false,
+        "database_change": false,
+        "concurrency": false,
+        "financial": false,
+        "external_contract": true,
+        "migration": true,
+        "persistence": false,
+        "important_calculation": false,
+        "bug_fix": false
+      },
+      "value": 4,
+      "dependency_unlock": 2,
+      "risk_reduction": 5,
+      "urgency": 3,
+      "confidence": 4
+    }
+  ],
+  "proposed_sprint": {
+    "id": "HARNESS-INSTALL-SPRINT-001",
+    "goal": "Deliver a privately installable Harness CLI with a manifest-first, conflict-safe target bootstrap.",
+    "capacity_units": 12,
+    "task_ids": [
+      "HARNESS-INSTALL-PACKAGE-001",
+      "HARNESS-INSTALL-APPLY-001",
+      "HARNESS-INSTALL-VERIFY-001"
+    ],
+    "waves": [
+      [
+        "HARNESS-INSTALL-PACKAGE-001"
+      ],
+      [
+        "HARNESS-INSTALL-APPLY-001"
+      ],
+      [
+        "HARNESS-INSTALL-VERIFY-001"
+      ]
+    ],
+    "rationale": [
+      "The package and manifest unblock the installer; safe apply follows; verification closes the end-to-end slice."
+    ],
+    "deferred_task_ids": []
+  },
+  "research_rdd": {
+    "mode": "full",
+    "assessment_reasons": [
+      "explicit discovery mode"
+    ],
+    "artifacts": {
+      "research": "planning/research/HARNESS-INSTALL-001.json",
+      "domain": "planning/domain/HARNESS-INSTALL-001.json",
+      "decisions": "planning/decisions/HARNESS-INSTALL-001.json",
+      "scenarios": "planning/scenarios/HARNESS-INSTALL-001.json"
+    },
+    "ready": true
+  },
+  "planning_boundary": {
+    "implementation_authorized": false,
+    "task_materialization_authorized": false,
+    "human_approval_required_before_activation": true,
+    "draft_task_specs_location": "this discovery bundle only",
+    "reason": "This task produces planning artifacts only; implementation code and executable task files must not be materialized before explicit approval."
+  }
+}

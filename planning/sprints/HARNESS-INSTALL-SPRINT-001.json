@@ -1,0 +1,27 @@
+{
+  "id": "HARNESS-INSTALL-SPRINT-001",
+  "goal": "Deliver a privately installable Harness CLI with a manifest-first, conflict-safe target bootstrap.",
+  "capacity_units": 12,
+  "task_ids": [
+    "HARNESS-INSTALL-PACKAGE-001",
+    "HARNESS-INSTALL-APPLY-001",
+    "HARNESS-INSTALL-VERIFY-001"
+  ],
+  "waves": [
+    [
+      "HARNESS-INSTALL-PACKAGE-001"
+    ],
+    [
+      "HARNESS-INSTALL-APPLY-001"
+    ],
+    [
+      "HARNESS-INSTALL-VERIFY-001"
+    ]
+  ],
+  "rationale": [
+    "The package and manifest unblock the installer; safe apply follows; verification closes the end-to-end slice."
+  ],
+  "deferred_task_ids": [],
+  "discovery_id": "HARNESS-INSTALL-001",
+  "used_capacity_units": 11
+}

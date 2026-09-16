@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "discovery_id": "HARNESS-INSTALL-001",
+  "artifact_type": "research",
+  "status": "complete",
+  "sources": [
+    {"url": "https://packaging.python.org/en/latest/guides/creating-command-line-tools/", "retrieved_at": "2026-09-09", "claim": "A Python distribution can expose a command with [project.scripts] and be installed with pipx."},
+    {"url": "https://packaging.python.org/en/latest/flow/", "retrieved_at": "2026-09-09", "claim": "A distribution requires package metadata/build configuration and produces sdist/wheel artifacts; publishing is a separate step."},
+    {"url": "https://packaging.python.org/en/latest/guides/installing-stand-alone-command-line-tools/", "retrieved_at": "2026-09-09", "claim": "pipx isolates each CLI installation while exposing its application on PATH."}
+  ],
+  "findings": [
+    {"finding": "A Python console-script package is a viable npm-like distribution mechanism, but packaging does not require copying every repository file into a target.", "decision_impact": "The MVP should use an explicit template manifest with inclusions and exclusions."},
+    {"finding": "Build, TestPyPI/PyPI publishing, and end-user installation are separate contracts.", "decision_impact": "The planning task may specify verification but must not publish without a human gate."}
+  ],
+  "assumptions": [{"statement": "pipx is acceptable for global CLI installation on supported developer machines.", "validation": "Confirm supported operating systems and distribution channel before implementation."}],
+  "contrary_evidence": [{"statement": "A Git-based installer may be preferable when private distribution or source-controlled templates are required; PyPI is not automatically the right channel.", "impact": "Keep the delivery channel undecided."}],
+  "open_questions": []
+}

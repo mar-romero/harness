@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "discovery_id": "HARNESS-INSTALL-001",
+  "artifact_type": "decisions",
+  "status": "approved",
+  "decisions": [
+    {
+      "id": "INSTALL-DEC-001",
+      "title": "Candidate distribution channel",
+      "status": "proposed",
+      "selected": "Private Git distribution is the candidate direction; no package publication or installer activation is approved by this planning task.",
+      "alternatives": ["pipx from public PyPI", "pipx from a private package index", "pipx from a Git URL"],
+      "evidence": ["planning/research/HARNESS-INSTALL-001.json", "docs/sources/python-cli-distribution.md"],
+      "consequence": "Before implementation, a human must approve an immutable commit or signed release identity, digest/provenance, supported runtimes, private-Git authentication, and credential-redaction policy."
+    },
+    {
+      "id": "INSTALL-DEC-002",
+      "title": "Target collision default",
+      "status": "approved",
+      "selected": "Fail before mutation and report every conflict.",
+      "alternatives": ["fail", "skip and report", "interactive merge"],
+      "evidence": ["planning/domain/HARNESS-INSTALL-001.json", "planning/scenarios/HARNESS-INSTALL-001.json"],
+      "consequence": "The future installer must not overwrite or merge unresolved target-owned files; Git-root validation, untrusted-state handling, locking, rollback, and symlink protection remain implementation gates."
+    }
+  ],
+  "human_approval_gates": [
+    "Approve the immutable distribution identity and provenance contract.",
+    "Approve target-repository ownership, Git-root, locking, rollback, and symlink/reparse-point behavior.",
+    "Approve activation of the first executable task after this planning bundle is reviewed."
+  ]
+}

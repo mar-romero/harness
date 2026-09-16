@@ -1,0 +1,75 @@
+{
+  "id": "HARNESS-INSTALL-PLANNING-001",
+  "description": "I want this repository to be installable into any repository through a set of commands, comparably to publishing a tool on npm. I want to determine how to do it and whether making it installable migrates and adds all files. I want the work to follow the harness flow by creating the sprint, epic, task specifications, and planning needed to deliver this capability, because that flow was not followed earlier.",
+  "acceptance_criteria": [
+    "A validated discovery dossier preserves the original Spanish request and an attested canonical English representation.",
+    "Research-RDD artifacts document authoritative packaging and tool-distribution contracts, the domain model, candidate decisions, and observable delivery scenarios.",
+    "A draft epic, task specifications, and proposed sprint identify dependencies, risks, file surfaces, and explicit human approval gates without materializing implementation tasks.",
+    "The planning records an explicit safe ownership and migration boundary for target repositories and does not implement or publish an installer."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": true,
+    "migration": true,
+    "persistence": true,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "files": [
+    "tasks/HARNESS-INSTALL-PLANNING-001.json",
+    "planning/discovery/HARNESS-INSTALL-001.json",
+    "planning/research/HARNESS-INSTALL-001.json",
+    "planning/domain/HARNESS-INSTALL-001.json",
+    "planning/decisions/HARNESS-INSTALL-001.json",
+    "planning/scenarios/HARNESS-INSTALL-001.json",
+    "docs/sources/python-cli-distribution.md"
+  ],
+  "tags": [
+    "product-discovery",
+    "research-rdd",
+    "installation",
+    "planning"
+  ],
+  "request": {
+    "original_text": "Quiero que este repositorio sea instalable en cualquier repositorio con una serie de comandos, de forma comparable a publicar una herramienta en npm, y quiero saber cómo hacerlo y si se migran y agregan todos los archivos al hacerlo instalable. Quiero que trabajes como corresponde creando sprint, epic, task specs y planning, todo lo necesario para realizar esta tarea, y quiero activar ese flujo porque antes no se siguió el flujo del harnes.",
+    "original_language": "Spanish",
+    "canonical_english": "I want this repository to be installable into any repository through a set of commands, comparably to publishing a tool on npm. I want to determine how to do it and whether making it installable migrates and adds all files. I want the work to follow the harness flow by creating the sprint, epic, task specifications, and planning needed to deliver this capability, because that flow was not followed earlier.",
+    "translation": {
+      "equivalence_claim": "EXACT_INTENT",
+      "back_translation": "Quiero que este repositorio sea instalable en cualquier repositorio mediante una serie de comandos, de forma comparable a publicar una herramienta en npm. Quiero determinar cómo hacerlo y si hacerlo instalable migra y agrega todos los archivos. Quiero que el trabajo siga el flujo del harness creando el sprint, la épica, las especificaciones de tareas y la planificación necesarios para entregar esta capacidad, porque ese flujo no se siguió antes.",
+      "validation": {
+        "ok": true,
+        "issues": [],
+        "source_invariants": {
+          "code_blocks": [],
+          "urls": [],
+          "file_paths": [],
+          "numbers": [],
+          "identifiers": [],
+          "quoted_literals": [],
+          "has_negation": true,
+          "has_strict_constraint": false
+        },
+        "canonical_invariants": {
+          "code_blocks": [],
+          "urls": [],
+          "file_paths": [],
+          "numbers": [],
+          "identifiers": [],
+          "quoted_literals": [],
+          "has_negation": true,
+          "has_strict_constraint": false
+        }
+      }
+    }
+  }
+}

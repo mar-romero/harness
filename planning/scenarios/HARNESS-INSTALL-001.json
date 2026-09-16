@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "discovery_id": "HARNESS-INSTALL-001",
+  "artifact_type": "scenarios",
+  "status": "complete",
+  "scenarios": [
+    {"name": "Dry-run on a clean target", "given": "An empty Git repository and a selected distribution version", "when": "The operator runs the installer with --dry-run", "then": "The command reports planned managed files and makes no mutation."},
+    {"name": "Apply on a clean target", "given": "A clean target and an approved manifest", "when": "The operator runs the installer apply command", "then": "Only manifest-owned files are created and a status command reports their version."},
+    {"name": "Collision with target-owned file", "given": "A target has a file at a managed destination that is not owned by the installer", "when": "The operator runs apply without an explicit collision choice", "then": "The command fails or skips according to the approved policy and leaves that file unchanged."},
+    {"name": "Unsafe target rejection", "given": "The selected path is not an existing Git worktree, is a subdirectory, or resolves through a symlink/reparse point", "when": "The operator requests plan or apply", "then": "The command rejects the target before mutation and reports the reason."},
+    {"name": "Untrusted source and state rejection", "given": "Source content or installer state contains unapproved agent instructions, scripts, secret-like paths, forged ownership, or altered provenance", "when": "The operator requests install or update", "then": "The command rejects the operation before mutation and records an actionable diagnostic."},
+    {"name": "Interrupted multi-file apply", "given": "A later file copy fails or the target changes during apply", "when": "The operation is running", "then": "The staged operation rolls back atomically and leaves the target and ownership state unchanged."
+    }
+  ]
+}

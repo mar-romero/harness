@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "discovery_id": "HARNESS-INSTALL-001",
+  "artifact_type": "domain",
+  "status": "complete",
+  "vocabulary": [
+    {"term": "distribution package", "definition": "The installable Python CLI artifact, distinct from a target repository."},
+    {"term": "target repository", "definition": "The repository selected by an operator as the installation destination."},
+    {"term": "managed file", "definition": "A file whose path, version, and content ownership are declared by the installer manifest."},
+    {"term": "target-owned file", "definition": "Any target file not proven managed by the same installer version."}
+  ],
+  "relationships": [{"relationship": "One distribution package applies one versioned manifest to zero or more target repositories; a target has many files, each classified as managed, target-owned, or unresolved."}],
+  "invariants": [
+    "The target must be an existing Git worktree whose resolved root is validated before any future mutation.",
+    "The installer must not copy credentials, tasks, planning artifacts, .harness runtime runs, caches, Git history, or target task data.",
+    "A target-owned or modified managed file must not be overwritten without an explicit approved collision action.",
+    "Dry-run must not modify the target repository.",
+    "Target-controlled ownership state is untrusted until its schema, manifest identity, exact path set, and provenance are validated.",
+    "Apply requires exclusive target coordination, no-follow path handling, staged writes, and rollback evidence before implementation can be approved."
+  ],
+  "open_questions": []
+}
