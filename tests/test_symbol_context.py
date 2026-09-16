@@ -154,21 +154,33 @@ class SnippetTests(unittest.TestCase):
     def test_compiler_total_budget_exact_fit_and_one_over(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            source = "def worker():\n    return 1\n"
-            (root / "module.py").write_text(source, encoding="utf-8")
             policy = json.loads((Path(__file__).resolve().parents[1] / "harness/context-policy.json").read_text())
             policy.update(always_include=[], graph_backend="lexical")
-            actual_source = (root / "module.py").read_bytes().decode("utf-8")
-            file_tokens = max(1, ((root / "module.py").stat().st_size + 3) // 4)
-            snippet_tokens = max(1, (len(actual_source) + 3) // 4)
             task = {"id": "T-budget-symbol", "description": "worker", "files": ["module.py"]}
+
             def run(limit):
                 p = copy.deepcopy(policy); p["max_total_tokens_estimate"] = limit
                 with patch.object(context_compiler, "ROOT", root), patch.object(context_graph, "ROOT", root), \
                      patch.object(context_compiler, "load_json", lambda _: copy.deepcopy(p)), patch.object(context_graph, "load_json", lambda _: copy.deepcopy(p)):
                     return build(task)
-            self.assertTrue(run(file_tokens + snippet_tokens)["snippets"])
-            self.assertFalse(run(file_tokens + snippet_tokens - 1)["snippets"])
+
+            outcomes = []
+            for newline in (b"\n", b"\r\n"):
+                raw_source = newline.join((b"def worker():", b"    return 1", b""))
+                (root / "module.py").write_bytes(raw_source)
+                normalized_source = raw_source.replace(b"\r\n", b"\n")
+                file_tokens = max(1, (len(normalized_source) + 3) // 4)
+                extracted = extract_snippet(raw_source.decode("utf-8"), "worker")
+                normalized_snippet = extracted["text"].encode("utf-8").replace(b"\r\n", b"\n")
+                snippet_tokens = max(1, (len(normalized_snippet) + 3) // 4)
+                exact_fit = file_tokens + snippet_tokens
+                self.assertGreater(exact_fit, 0)
+                self.assertTrue(run(exact_fit)["snippets"])
+                self.assertFalse(run(exact_fit - 1)["snippets"])
+                outcomes.append((file_tokens, snippet_tokens, bool(run(exact_fit)["snippets"]),
+                                 bool(run(exact_fit - 1)["snippets"])))
+
+            self.assertEqual(outcomes[0], outcomes[1])
 
     def test_metadata_hash_and_boundaries_are_exact(self):
         source = "def helper():\n    return 1\n"
