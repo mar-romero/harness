@@ -286,8 +286,27 @@ def _sufficiency_floor(requirements: dict[str, float], target: dict[str, float],
     return floors
 
 
-def _meets_floor(model: dict[str, Any], floors: dict[str, float]) -> bool:
-    return all(_cap(model, key) >= float(value) for key, value in floors.items() if float(value) > 0.0)
+def _minimum_coverage_threshold(risk: str, policy: dict[str, Any]) -> float | None:
+    selection = policy.get("selection", {})
+    by_risk = selection.get("minimum_coverage_by_risk", {})
+    if risk in by_risk:
+        return max(0.0, min(1.0, float(by_risk[risk])))
+    legacy = selection.get("minimum_sufficient", {}).get("target_ratio")
+    return max(0.0, min(1.0, float(legacy))) if legacy is not None else None
+
+
+def _capability_coverage(model: dict[str, Any], target: dict[str, float], precision: int) -> dict[str, float]:
+    return {
+        key: round(min(1.0, _cap(model, key) / float(target[key])), precision)
+        for key in CAP_KEYS if float(target.get(key, 0.0)) > 0.0
+    }
+
+
+def _meets_coverage(model: dict[str, Any], target: dict[str, float], threshold: float) -> bool:
+    return all(
+        _cap(model, key) / float(value) >= threshold
+        for key, value in target.items() if key in CAP_KEYS and float(value) > 0.0
+    )
 
 
 def _minimum_burden(model: dict[str, Any], floors: dict[str, float], policy: dict[str, Any]) -> tuple[float, dict[str, Any]]:
@@ -326,19 +345,38 @@ def _minimum_burden(model: dict[str, Any], floors: dict[str, float], policy: dic
     }
 
 
-def _rank_minimum_sufficient(candidates: list[dict[str, Any]], floors: dict[str, float],
-                             model_class: str, risk: str, target: dict[str, float],
+def _rank_minimum_sufficient(candidates: list[dict[str, Any]], target: dict[str, float],
+                             model_class: str, risk: str,
                              policy: dict[str, Any]) -> list[tuple[float, str, dict[str, Any], dict[str, Any]]]:
+    precision = int(policy.get("selection", {}).get("score_precision", 6))
     ranked = []
     for model in candidates:
-        burden, burden_breakdown = _minimum_burden(model, floors, policy)
         quality_score, quality_breakdown = score_model_details(model, model_class, risk, target, policy)
+        coverage = _capability_coverage(model, target, precision)
+        relevant = [key for key in CAP_KEYS if float(target.get(key, 0.0)) > 0.0]
+        surplus = sum(
+            max(0.0, (_cap(model, key) - float(target[key])) / max(0.001, 5.0 - float(target[key])))
+            for key in relevant
+        ) / len(relevant) if relevant else 0.0
+        raw_size_tier = model.get("size_tier")
+        size_tier = float(raw_size_tier) if isinstance(raw_size_tier, (int, float)) and not isinstance(raw_size_tier, bool) and raw_size_tier >= 0 else None
+        burden = round(surplus * 100.0, precision)
         ranked.append((burden, str(model.get("id", "")), model, {
-            "resource_burden": burden_breakdown,
+            "size_tier": size_tier,
+            "capability_surplus": round(surplus, precision),
+            "capability_coverage": coverage,
             "quality_score": quality_score,
             "quality_score_breakdown": quality_breakdown,
         }))
-    ranked.sort(key=lambda x: (x[0], -_objective(x[2], "cost"), -_objective(x[2], "latency"), x[1]))
+    ranked.sort(key=lambda x: (
+        x[3]["size_tier"] is None,
+        x[3]["size_tier"] if x[3]["size_tier"] is not None else 0.0,
+        x[0],
+        -_objective(x[2], "cost"),
+        -_objective(x[2], "latency"),
+        -x[3]["quality_score"],
+        x[1],
+    ))
     return ranked
 
 
@@ -423,6 +461,8 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
     default_no_inventory = policy["selection"].get("default_no_inventory_action", "inherit")
     default_no_eligible = policy["selection"].get("default_no_eligible_action", "inherit")
     risk_cfg = policy.get("risk_overrides", {}).get(risk, {})
+    strategy = str(policy.get("selection", {}).get("strategy", "best_score"))
+    minimum_coverage_threshold = _minimum_coverage_threshold(risk, policy) if strategy == "minimum_sufficient" else None
 
     base = {
         "task_id": task_id,
@@ -440,6 +480,9 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
         "inventory_stale": False,
         "requirements": requirements,
         "target": target,
+        "selection_strategy": strategy,
+        "minimum_coverage_threshold": minimum_coverage_threshold,
+        "sufficient_models": 0,
     }
     if inventory is None:
         action = risk_cfg.get("no_inventory_action", default_no_inventory)
@@ -466,20 +509,22 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
         status = "blocked" if action == "block" else "inherit"
         return {**base, "status": status, "action": action, "reason": "no enabled runtime model satisfies required capabilities"}
 
-    strategy = str(policy.get("selection", {}).get("strategy", "best_score"))
     sufficiency_floor = _sufficiency_floor(requirements, target, policy)
     sufficiency_degraded = False
     if strategy == "minimum_sufficient":
-        sufficient = [m for m in candidates if _meets_floor(m, sufficiency_floor)]
+        assert minimum_coverage_threshold is not None
+        sufficient = [m for m in candidates if _meets_coverage(m, target, minimum_coverage_threshold)]
+        base["sufficient_models"] = len(sufficient)
         if not sufficient:
+            actions = policy.get("selection", {}).get("no_sufficient_action_by_risk", {})
             fallback_cfg = policy.get("selection", {}).get("minimum_sufficient", {}).get("fallback_by_risk", {})
-            fallback = str(fallback_cfg.get(risk, "closest_eligible"))
-            if fallback == "block":
-                return {**base, "status": "blocked", "action": "block", "sufficiency_floor": sufficiency_floor,
+            action = str(actions.get(risk, fallback_cfg.get(risk, "closest_eligible")))
+            if action == "block":
+                return {**base, "status": "blocked", "action": action, "sufficiency_floor": sufficiency_floor,
                         "reason": "no runtime model satisfies the task/role sufficiency target"}
             sufficient = candidates
             sufficiency_degraded = True
-        ranked_min = _rank_minimum_sufficient(sufficient, sufficiency_floor, model_class, risk, target, policy)
+        ranked_min = _rank_minimum_sufficient(sufficient, target, model_class, risk, policy)
         chosen, independence = _prefer_independent_minimum(
             ranked_min, avoid_models or set(), avoid_families or set(), avoid_vendors or set(), policy
         )
@@ -512,7 +557,6 @@ def select_model(*, task_id: str, provider: str, agent: str, model_class: str, r
         **base,
         "status": "selected",
         "action": "use",
-        "selection_strategy": strategy,
         "sufficiency_floor": sufficiency_floor,
         "sufficiency_degraded": sufficiency_degraded,
         "model_id": runtime_id,
