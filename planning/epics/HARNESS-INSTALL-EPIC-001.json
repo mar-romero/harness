@@ -3,7 +3,7 @@
   "type": "EPIC",
   "title": "Portable Harness bootstrap",
   "description": "Deliver a safely distributed CLI that can bootstrap approved Harness files into a target repository.",
-  "status": "proposed",
+  "status": "approved",
   "parent_id": null,
   "dependencies": [],
   "success_criteria": [

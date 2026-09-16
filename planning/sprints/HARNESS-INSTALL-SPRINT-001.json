@@ -19,9 +19,9 @@
     ]
   ],
   "rationale": [
-    "The package and manifest unblock the installer; safe apply follows; verification closes the end-to-end slice."
+    "Portable package/configuration and manifest unblock safe apply; fixture verification closes the end-to-end slice within the default 12-unit capacity."
   ],
   "deferred_task_ids": [],
   "discovery_id": "HARNESS-INSTALL-001",
-  "used_capacity_units": 11
+  "used_capacity_units": 12
 }

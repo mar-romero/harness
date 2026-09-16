@@ -1,0 +1,59 @@
+{
+  "id": "HARNESS-INSTALL-PACKAGE-001",
+  "description": "Create the installable Python CLI package, portable ACI/provider configuration, and an explicit versioned manifest defining the files that may be installed into a target repository, with exclusions for tasks, planning, runtime state, caches, and credentials.",
+  "acceptance_criteria": [
+    "The package builds from the private Git repository.",
+    "The CLI exposes a stable entry point and version metadata.",
+    "The manifest declares managed paths and explicit excluded paths.",
+    "Installed ACI and provider configuration resolves the target root without an author-specific absolute path.",
+    "A portable configuration test exercises an external working directory on Windows.",
+    "No target-repository mutation occurs in this task."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": true,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": true,
+    "migration": true,
+    "persistence": false,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "files": [
+    "pyproject.toml",
+    "src/harness_installer/__init__.py",
+    "src/harness_installer/cli.py",
+    "src/harness_installer/manifest.py",
+    "src/harness_installer/templates/manifest.json",
+    ".codex/config.toml",
+    ".mcp.json",
+    ".github/mcp.json",
+    "scripts/start_aci_mcp.ps1",
+    "tests/test_aci.py"
+  ],
+  "tags": [
+    "derived-work",
+    "product-discovery"
+  ],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "HARNESS-INSTALL-001",
+    "project_id": null,
+    "parent_id": null,
+    "source_language": "Spanish",
+    "source_request_preserved_at": "planning/discovery/HARNESS-INSTALL-001.json"
+  },
+  "planning": {
+    "title": "Package the Harness CLI, portable configuration, and managed-file manifest",
+    "size": "L",
+    "dependencies": [],
+    "priority_score": 4.6
+  }
+}

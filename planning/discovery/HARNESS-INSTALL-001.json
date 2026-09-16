@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "discovery_id": "HARNESS-INSTALL-001",
-  "status": "ready_for_approval",
+  "status": "approved",
   "classification": "EPIC",
   "title": "Portable Harness installation and safe target-repository bootstrap",
   "original_request": {
@@ -11,7 +11,7 @@
     "back_translation": "Quiero que este repositorio sea instalable en cualquier repositorio mediante una serie de comandos, de forma comparable a publicar una herramienta en npm. Quiero determinar cómo hacerlo y si hacerlo instalable migra y agrega todos los archivos. Quiero que el trabajo siga el flujo del harness creando el sprint, la épica, las especificaciones de tareas y la planificación necesarios para entregar esta capacidad, porque ese flujo no se siguió antes.",
     "equivalence_claim": "EXACT_INTENT"
   },
-  "refined_problem": "Repository maintainers need a supported command-line installation path that can add the Harness to an arbitrary target repository without overwriting target-owned files, leaking credentials, or silently migrating existing configuration.",
+  "refined_problem": "Repository maintainers need a supported command-line installation path that can add the Harness to an arbitrary target repository without overwriting target-owned files, leaking credentials, silently migrating existing configuration, or embedding an author-specific absolute checkout path in ACI or provider configuration.",
   "target_users": [
     "Maintainers who want to adopt Harness in an existing repository",
     "Release maintainers who package and distribute the Harness CLI"
@@ -19,7 +19,8 @@
   "outcomes": [
     "A target repository can run a documented installer command.",
     "The installer reports a deterministic plan before any file mutation.",
-    "Installed files, preserved target-owned files, and skipped conflicts are observable."
+    "Installed files, preserved target-owned files, and skipped conflicts are observable.",
+    "Installed ACI and provider configuration resolves from the target installation rather than an author machine path."
   ],
   "success_metrics": [
     {
@@ -37,6 +38,7 @@
     "in": [
       "A private-Git distributable Python command-line package proposal from https://github.com/mar-romero/harness",
       "Target-repository bootstrap, ownership manifest, dry-run, and collision behavior",
+      "Portable ACI and provider configuration that does not embed a source-checkout path",
       "TestPyPI and fixture-based verification plan"
     ],
     "out": [
@@ -52,6 +54,10 @@
     },
     {
       "statement": "Installation should copy a defined managed template set, not the entire source repository; tasks, planning, runtime state, caches, and credentials are always excluded.",
+      "status": "approved direction"
+    },
+    {
+      "statement": "Installed configuration must derive its repository root from the target installation or an explicit operator-provided setting; it must not serialize an author-specific absolute checkout path.",
       "status": "approved direction"
     }
   ],
@@ -78,6 +84,9 @@
     },
     {
       "challenge": "Public package publishing and target-file overwrite behavior are human approval gates."
+    },
+    {
+      "challenge": "Desktop and MCP launchers must start from a target repository on Windows without relying on a path from the machine that created the package."
     }
   ],
   "mvp": {
@@ -85,6 +94,7 @@
     "includes": [
       "Python package and console entry point",
       "Versioned template manifest",
+      "Portable target-root resolution for ACI and provider configuration",
       "Dry-run, apply, and status commands",
       "Fixture tests for clean install and collisions"
     ],
@@ -100,7 +110,7 @@
       "type": "EPIC",
       "title": "Portable Harness bootstrap",
       "description": "Deliver a safely distributed CLI that can bootstrap approved Harness files into a target repository.",
-      "status": "proposed",
+      "status": "approved",
       "parent_id": null,
       "dependencies": [],
       "success_criteria": [
@@ -117,12 +127,14 @@
   "tasks": [
     {
       "id": "HARNESS-INSTALL-PACKAGE-001",
-      "title": "Package the Harness CLI and managed-file manifest",
-      "description": "Create the installable Python CLI package and an explicit versioned manifest defining the files that may be installed into a target repository, with exclusions for tasks, planning, runtime state, caches, and credentials.",
+      "title": "Package the Harness CLI, portable configuration, and managed-file manifest",
+      "description": "Create the installable Python CLI package, portable ACI/provider configuration, and an explicit versioned manifest defining the files that may be installed into a target repository, with exclusions for tasks, planning, runtime state, caches, and credentials.",
       "acceptance_criteria": [
         "The package builds from the private Git repository.",
         "The CLI exposes a stable entry point and version metadata.",
         "The manifest declares managed paths and explicit excluded paths.",
+        "Installed ACI and provider configuration resolves the target root without an author-specific absolute path.",
+        "A portable configuration test exercises an external working directory on Windows.",
         "No target-repository mutation occurs in this task."
       ],
       "dependencies": [],
@@ -131,9 +143,14 @@
         "src/harness_installer/__init__.py",
         "src/harness_installer/cli.py",
         "src/harness_installer/manifest.py",
-        "src/harness_installer/templates/manifest.json"
+        "src/harness_installer/templates/manifest.json",
+        ".codex/config.toml",
+        ".mcp.json",
+        ".github/mcp.json",
+        "scripts/start_aci_mcp.ps1",
+        "tests/test_aci.py"
       ],
-      "size": "M",
+      "size": "L",
       "risk_factors": {
         "touches_auth": false,
         "touches_production": false,
@@ -215,7 +232,7 @@
         "docs/INSTALLATION.md",
         "README.md"
       ],
-      "size": "M",
+      "size": "S",
       "risk_factors": {
         "touches_auth": false,
         "touches_production": false,
@@ -261,7 +278,7 @@
       ]
     ],
     "rationale": [
-      "The package and manifest unblock the installer; safe apply follows; verification closes the end-to-end slice."
+      "Portable package/configuration and manifest unblock safe apply; fixture verification closes the end-to-end slice within the default 12-unit capacity."
     ],
     "deferred_task_ids": []
   },
@@ -280,9 +297,9 @@
   },
   "planning_boundary": {
     "implementation_authorized": false,
-    "task_materialization_authorized": false,
+    "task_materialization_authorized": true,
     "human_approval_required_before_activation": true,
     "draft_task_specs_location": "this discovery bundle only",
-    "reason": "This task produces planning artifacts only; implementation code and executable task files must not be materialized before explicit approval."
+    "reason": "The user approved materializing the planning artifacts. Implementation remains gated: activate an individual task only after an explicit request to begin its code changes."
   }
 }
