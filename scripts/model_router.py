@@ -289,9 +289,15 @@ def _sufficiency_floor(requirements: dict[str, float], target: dict[str, float],
 def _minimum_coverage_threshold(risk: str, policy: dict[str, Any]) -> float | None:
     selection = policy.get("selection", {})
     by_risk = selection.get("minimum_coverage_by_risk", {})
+    legacy = selection.get("minimum_sufficient", {}).get("target_ratio")
+    # R0/R1 retain the original dynamic-target guarantee when the legacy
+    # minimum-sufficient policy is present.  R2/R3 use their explicit,
+    # auditable risk floors so critical selection is never silently tightened
+    # or weakened by a compatibility default.
+    if risk in {"R0", "R1"} and legacy is not None:
+        return max(0.0, min(1.0, float(legacy)))
     if risk in by_risk:
         return max(0.0, min(1.0, float(by_risk[risk])))
-    legacy = selection.get("minimum_sufficient", {}).get("target_ratio")
     return max(0.0, min(1.0, float(legacy))) if legacy is not None else None
 
 
