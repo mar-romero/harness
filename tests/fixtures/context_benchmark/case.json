@@ -1,0 +1,64 @@
+{
+  "task": {
+    "id": "context-benchmark-fixture",
+    "description": "Measure Processor.process retrieval with its required test.",
+    "files": [
+      "src/processor.py",
+      "tests/test_processor.py"
+    ]
+  },
+  "required_paths": [
+    "AGENTS.md",
+    "AI_POLICY.md",
+    "harness/manifest.yaml",
+    "src/processor.py",
+    "tests/test_processor.py"
+  ],
+  "required_symbols": {
+    "src/processor.py": [
+      "Processor.process"
+    ]
+  },
+  "policy": {
+    "version": 3,
+    "always_include": [
+      "AGENTS.md",
+      "AI_POLICY.md",
+      "harness/manifest.yaml"
+    ],
+    "exclude_dirs": [
+      ".git",
+      ".harness",
+      "node_modules",
+      "__pycache__"
+    ],
+    "exclude_globs": [
+      ".env",
+      "*.pem",
+      "*.key"
+    ],
+    "max_file_bytes": 120000,
+    "max_total_bytes": 600000,
+    "max_total_tokens_estimate": 120000,
+    "max_files": 40,
+    "graph_backend": "lexical",
+    "graph_max_source_bytes": 120000,
+    "graph_max_files": 1000,
+    "graph_max_total_bytes": 8000000,
+    "graph_max_edges": 50000,
+    "graph_max_results": 20,
+    "graph_neighbor_depth": 2,
+    "graph_neighbor_bonus": 350,
+    "path_token_bonus": 20,
+    "max_path_token_matches": 5,
+    "memory_bonus": 60,
+    "related_test_bonus": 40,
+    "max_memory_text_chars": 4096,
+    "max_memory_items": 0,
+    "text_extensions": [
+      ".py",
+      ".md",
+      ".yaml"
+    ]
+  }
+}
