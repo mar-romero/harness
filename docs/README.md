@@ -5,6 +5,7 @@ This folder contains explanatory and operational documentation for the harness.
 - `MODEL_ROUTING.md`: model availability, score provenance, and routing.
 - `RESEARCH_DRIVEN_DEVELOPMENT.md`: pre-implementation research workflow.
 - `RECEIPT_DRIVEN_DEVELOPMENT.md`: post-check review integrity workflow.
+- `FLUJO_OPERATIVO.md`: Spanish step-by-step operational guide and end-to-end flow diagram.
 - `README.md`: explains the documentation boundary.
 
 Documentation does not directly change execution; executable contracts live in
