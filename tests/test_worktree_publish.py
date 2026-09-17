@@ -132,6 +132,23 @@ class WorktreePublishTests(unittest.TestCase):
         status = worktree.publish_status(self.task)
         self.assertTrue(status['published'], status)
 
+    def test_publish_excludes_upstream_merge_from_task_surface(self):
+        self._runtime(['src/app.py'])
+        created = worktree.create(self.task, execute=True)
+        path = Path(created['worktree'])
+        (self.repo / 'upstream.txt').write_text('upstream\n', encoding='utf-8')
+        subprocess.run(['git', 'add', 'upstream.txt'], cwd=self.repo, check=True)
+        subprocess.run(['git', 'commit', '-m', 'upstream'], cwd=self.repo, check=True, capture_output=True)
+        subprocess.run(['git', 'merge', '--no-edit', 'main'], cwd=path, check=True, capture_output=True)
+        (path / 'src').mkdir(parents=True)
+        (path / 'src/app.py').write_text('VALUE = 1\n', encoding='utf-8')
+
+        with patch('gate.finish_decision', return_value={'allow': True, 'missing': [], 'failing': []}):
+            result = worktree.publish(self.task, execute=True)
+
+        self.assertEqual(result['changed_files'], ['src/app.py'])
+        self.assertTrue((self.repo / 'upstream.txt').is_file())
+
         # A later canonical commit must not invalidate the already-integrated publication.
         (self.repo / 'later.txt').write_text('later\n', encoding='utf-8')
         subprocess.run(['git', 'add', 'later.txt'], cwd=self.repo, check=True)
