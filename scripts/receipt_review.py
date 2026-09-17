@@ -12,10 +12,23 @@ import subprocess
 import sys
 from pathlib import Path
 
-from harnesslib import ROOT, load_json, load_manifest, run_dir, safe_task_id, write_json_atomic
+from harnesslib import ROOT, load_json, load_manifest, run_dir, runtime_root, safe_task_id, write_json_atomic
 
 POLICY_PATH = "harness/receipt-policy.json"
-RUNTIME = ROOT / ".harness" / "receipt-review"
+RUNTIME: Path | None = None
+
+
+def _runtime() -> Path:
+    """Resolve durable receipt state lazily so imports remain usable outside Git."""
+    return RUNTIME if RUNTIME is not None else runtime_root() / ".harness" / "receipt-review"
+
+
+def _runtime_relative(path: Path) -> str:
+    base = _runtime()
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return path.relative_to(runtime_root()).as_posix()
 
 
 def now() -> str:
@@ -41,7 +54,7 @@ def _run_text(*args: str, cwd: Path | None = None, check: bool = True) -> str:
 
 
 def mode_status() -> dict:
-    p = RUNTIME / "mode.json"
+    p = _runtime() / "mode.json"
     default = bool(policy().get("enabled_by_default", False))
     if not p.is_file():
         return {"mode": "on" if default else "off", "source": "policy_default"}
@@ -57,14 +70,14 @@ def mode_status() -> dict:
 
 def set_mode(enabled: bool) -> dict:
     data = {"schema_version": 1, "mode": "on" if enabled else "off", "updated_at": now()}
-    write_json_atomic(RUNTIME / "mode.json", data)
+    write_json_atomic(_runtime() / "mode.json", data)
     return mode_status()
 
 
 def _active_provider(task: str) -> str | None:
     found = []
     for provider in ("codex", "opencode", "subscriptions"):
-        p = ROOT / ".harness" / provider / "active-task.json"
+        p = runtime_root() / ".harness" / provider / "active-task.json"
         if not p.is_file():
             continue
         try:
@@ -86,7 +99,7 @@ def _session_id(provider: str, explicit: str | None = None) -> str:
     env = os.environ.get("HARNESS_SESSION_ID")
     if env:
         return env
-    p = ROOT / ".harness" / provider / "session.json"
+    p = runtime_root() / ".harness" / provider / "session.json"
     if not p.is_file():
         raise ValueError(f"current {provider} session id unavailable; start/resume the provider session first or pass --session-id")
     data = json.loads(p.read_text(encoding="utf-8"))
@@ -98,7 +111,7 @@ def _session_id(provider: str, explicit: str | None = None) -> str:
 
 def _consent_path(provider: str, session_id: str) -> Path:
     key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
-    return RUNTIME / "consent" / provider / f"{key}.json"
+    return _runtime() / "consent" / provider / f"{key}.json"
 
 
 def consent_status(task: str, provider: str | None = None, session_id: str | None = None) -> dict:
@@ -115,7 +128,7 @@ def consent_status(task: str, provider: str | None = None, session_id: str | Non
             granted = data.get("granted") is True and data.get("session_hash") == hashlib.sha256(sid.encode()).hexdigest()
         except Exception:
             granted = False
-    return {"provider": provider, "session_id": sid, "granted": granted, "path": p.relative_to(ROOT).as_posix()}
+    return {"provider": provider, "session_id": sid, "granted": granted, "path": _runtime_relative(p)}
 
 
 def grant_consent(task: str, provider: str | None = None, session_id: str | None = None) -> dict:
@@ -158,7 +171,7 @@ def _task_route(task: str) -> dict:
 
 
 def _lock_or_publish(task: str) -> tuple[str, str | None, Path | None]:
-    lock = ROOT / ".harness" / "locks" / f"{task}.json"
+    lock = runtime_root() / ".harness" / "locks" / f"{task}.json"
     if lock.is_file():
         data = json.loads(lock.read_text(encoding="utf-8"))
         base = data.get("base_commit")
@@ -428,7 +441,7 @@ def _ensure_dynamic_agent_models(task: str, route: dict, added_agents: list[str]
 
     payload["selections"] = selections
     write_json_atomic(models_path, payload)
-    active_path = ROOT / ".harness" / provider / "active-task.json"
+    active_path = runtime_root() / ".harness" / provider / "active-task.json"
     if active_path.is_file():
         active = json.loads(active_path.read_text(encoding="utf-8"))
         if active.get("task_id") == task:

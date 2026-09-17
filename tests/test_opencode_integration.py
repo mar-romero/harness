@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
+from harnesslib import runtime_root
 from compile_harness import generated
 
 class OpenCodeIntegrationTests(unittest.TestCase):
@@ -132,9 +133,9 @@ class OpenCodeIntegrationTests(unittest.TestCase):
 
     def test_activate_task_writes_runtime_binding(self):
         task=ROOT/'tasks/TEST-OPENCODE-OVERLAY.json'
-        runtime=ROOT/'.harness/opencode'
+        runtime=runtime_root()/'.harness/opencode'
         active=runtime/'active-task.json'
-        inventory=ROOT/'.harness/model-inventories/opencode.json'
+        inventory=runtime_root()/'.harness/model-inventories/opencode.json'
 
         old_inventory=inventory.read_text() if inventory.exists() else None
         task.parent.mkdir(parents=True, exist_ok=True)
@@ -178,7 +179,7 @@ class OpenCodeIntegrationTests(unittest.TestCase):
             self.assertTrue(
                 all(x['action']=='inherit' for x in data['selections'])
             )
-            snapshot=ROOT/'.harness/runs/TEST-OPENCODE/task.json'
+            snapshot=runtime_root()/'.harness/runs/TEST-OPENCODE/task.json'
             self.assertTrue(snapshot.is_file())
             frozen=json.loads(snapshot.read_text())
             self.assertEqual(frozen['id'],'TEST-OPENCODE')
@@ -189,7 +190,7 @@ class OpenCodeIntegrationTests(unittest.TestCase):
             )
         finally:
             task.unlink(missing_ok=True)
-            shutil.rmtree(ROOT/'.harness/runs/TEST-OPENCODE',ignore_errors=True)
+            shutil.rmtree(runtime_root()/'.harness/runs/TEST-OPENCODE',ignore_errors=True)
             active.unlink(missing_ok=True)
 
             if old_inventory is None:

@@ -22,14 +22,42 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from harnesslib import ROOT, write_json_atomic
+import harnesslib
+from harnesslib import ROOT, runtime_root, write_json_atomic
 
 OPENROUTER = "https://openrouter.ai/api/v1"
 PROVIDER_DIR = ROOT / "harness" / "model-providers"
-HISTORY_DIR = ROOT / ".harness" / "model-history"
-OPENROUTER_SCORES_PATH = ROOT / ".harness" / "openrouter" / "model-scores.json"
+HISTORY_DIR: Path | None = None
+OPENROUTER_SCORES_PATH: Path | None = None
 UNMATCHED_OVERRIDES_PATH = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
 VERSIONED_OVERRIDES_PATH = ROOT / "harness" / "model-overrides" / "unmatched-models.json"
+
+
+def _runtime_artifact(raw: str) -> Path:
+    """Resolve durable artifacts below the Git-common runtime root."""
+    # Preserve the established isolated-test seam when only this module's
+    # ROOT is patched; real checkouts keep both module roots identical.
+    return (ROOT if harnesslib.ROOT != ROOT else runtime_root()) / raw
+
+
+def _history_dir() -> Path:
+    return HISTORY_DIR if HISTORY_DIR is not None else _runtime_artifact(".harness/model-history")
+
+
+def _scores_path() -> Path:
+    return OPENROUTER_SCORES_PATH if OPENROUTER_SCORES_PATH is not None else _runtime_artifact(".harness/openrouter/model-scores.json")
+
+
+def _artifact_relative(path: Path) -> str:
+    bases = [ROOT]
+    if harnesslib.ROOT == ROOT:
+        bases.append(runtime_root())
+    for base in bases:
+        try:
+            return path.relative_to(base).as_posix()
+        except ValueError:
+            pass
+    return str(path)
 
 
 def _now() -> str:
@@ -897,7 +925,7 @@ def _local_evidence(
     provider: str,
 ) -> dict[str, Any]:
     payload = _load_json(
-        HISTORY_DIR / f"{provider}.json",
+        _history_dir() / f"{provider}.json",
         {},
     )
 
@@ -983,12 +1011,8 @@ def _fetch_sources(
 
 
 def _openrouter_catalog_path(cfg: dict[str, Any]) -> Path:
-    return ROOT / str(
-        cfg.get(
-            "openrouter_catalog",
-            ".harness/openrouter/model-inventory.json",
-        )
-    )
+    raw = str(cfg.get("openrouter_catalog", ".harness/openrouter/model-inventory.json"))
+    return _runtime_artifact(raw) if raw.startswith(".harness/") else ROOT / raw
 
 
 def _load_openrouter_catalog(
@@ -1680,7 +1704,7 @@ def refresh_provider_inventory(
 
 
 def _load_openrouter_scores() -> dict[str, Any]:
-    payload = _load_json(OPENROUTER_SCORES_PATH, {})
+    payload = _load_json(_scores_path(), {})
     return payload if isinstance(payload, dict) else {}
 
 
@@ -1708,7 +1732,7 @@ def _unmatched_override_index() -> dict[str, dict[str, Any]]:
             if isinstance(row, dict)
         }
 
-    local_path = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
+    local_path = _runtime_artifact(".harness/model-overrides/unmatched-models.json")
     versioned_path = ROOT / "harness" / "model-overrides" / "unmatched-models.json"
     os.makedirs(local_path.parent, exist_ok=True)
     base = _load_models(versioned_path)
@@ -2003,11 +2027,11 @@ def refresh_openrouter_scores(
                     previous["generated_at"] = _now()
                     previous["models_fetch_error"] = models_error
                     previous["benchmarks_fetch_error"] = benchmarks_error
-                    write_json_atomic(OPENROUTER_SCORES_PATH, previous)
+                    write_json_atomic(_scores_path(), previous)
                     if fetched_models:
                         cfg = {"openrouter_catalog": ".harness/openrouter/model-inventory.json"}
                         _write_openrouter_catalog(cfg, models_payload or {})
-                    return previous, OPENROUTER_SCORES_PATH
+                    return previous, _scores_path()
                 benchmarks_payload = {"data": []}
 
     if not _list_payload(models_payload or {}):
@@ -2025,8 +2049,8 @@ def refresh_openrouter_scores(
         models_fetch_error=models_error,
         benchmarks_fetch_error=benchmarks_error,
     )
-    write_json_atomic(OPENROUTER_SCORES_PATH, payload)
-    return payload, OPENROUTER_SCORES_PATH
+    write_json_atomic(_scores_path(), payload)
+    return payload, _scores_path()
 
 
 def enrich_openrouter_endpoint_health(
@@ -2103,7 +2127,7 @@ def enrich_openrouter_endpoint_health(
         )
 
     scores_payload["generated_at"] = _now()
-    write_json_atomic(OPENROUTER_SCORES_PATH, scores_payload)
+    write_json_atomic(_scores_path(), scores_payload)
     return scores_payload
 
 
@@ -2285,7 +2309,8 @@ def build_provider_inventory_from_scores(
             }
         )
 
-    dest = ROOT / str(cfg["enriched_inventory"])
+    raw_dest = str(cfg["enriched_inventory"])
+    dest = _runtime_artifact(raw_dest) if raw_dest.startswith(".harness/") else ROOT / raw_dest
     availability_times = [
         candidate.get("availability_generated_at")
         for candidate in candidates
@@ -2302,7 +2327,7 @@ def build_provider_inventory_from_scores(
             "runtime availability + shared OpenRouter score catalog "
             "+ per-field local harness fallback"
         ),
-        "openrouter_scores_path": OPENROUTER_SCORES_PATH.relative_to(ROOT).as_posix(),
+        "openrouter_scores_path": _artifact_relative(_scores_path()),
         "openrouter_scores_generated_at": scores_payload.get("generated_at"),
         "openrouter_benchmark_as_of": scores_payload.get("benchmark_as_of"),
         "openrouter_fetch_error": (
@@ -2310,7 +2335,7 @@ def build_provider_inventory_from_scores(
             or scores_payload.get("benchmarks_fetch_error")
         ),
         "raw_inventory_path": (
-            raw_inventory_path.relative_to(ROOT).as_posix()
+            _artifact_relative(raw_inventory_path)
             if raw_inventory_path
             else None
         ),
@@ -2347,8 +2372,8 @@ def _summary(provider: str, payload: dict[str, Any], dest: Path) -> dict[str, An
         "alias_matched": len(alias_matched),
         "ambiguous": len(ambiguous),
         "ambiguous_models": ambiguous,
-        "output": str(dest.relative_to(ROOT)),
-        "openrouter_scores": str(OPENROUTER_SCORES_PATH.relative_to(ROOT)),
+        "output": _artifact_relative(dest),
+        "openrouter_scores": _artifact_relative(_scores_path()),
         "openrouter_fetch_error": payload.get("openrouter_fetch_error"),
     }
 
