@@ -7,12 +7,15 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from contextlib import contextmanager
 import tomllib
 from pathlib import Path
 
 from evidence import append as append_evidence
 from evidence import validate as validate_evidence
-from harnesslib import ROOT, load_json, run_dir, safe_task_id, write_json_atomic
+import harnesslib
+from harnesslib import ROOT, load_json, run_dir, runtime_root, safe_task_id, write_json_atomic
 from worktree import status as worktree_status, wt as worktree_path
 
 
@@ -22,12 +25,19 @@ PROVIDERS = ("codex", "opencode", "subscriptions")
 def _load_active_task(task_id: str) -> tuple[dict, Path]:
     bindings = []
     for provider in PROVIDERS:
-        active_path = ROOT / ".harness" / provider / "active-task.json"
-        if not active_path.is_file():
-            continue
-        active = json.loads(active_path.read_text(encoding="utf-8"))
-        if active.get("task_id") == task_id:
-            bindings.append((provider, active, active_path))
+        try:
+            active_bases = [runtime_root()] if harnesslib.ROOT == ROOT else [ROOT]
+        except ValueError:
+            active_bases = [ROOT]
+        if ROOT not in active_bases:
+            active_bases.append(ROOT)
+        for active_base in active_bases:
+            active_path = active_base / ".harness" / provider / "active-task.json"
+            if not active_path.is_file():
+                continue
+            active = json.loads(active_path.read_text(encoding="utf-8"))
+            if active.get("task_id") == task_id:
+                bindings.append((provider, active, active_path))
 
     if not bindings:
         raise ValueError("no active Codex, OpenCode, or subscription task binding matches this task")
@@ -39,14 +49,34 @@ def _load_active_task(task_id: str) -> tuple[dict, Path]:
     snapshot_rel = active.get("task_snapshot_path")
     if not isinstance(snapshot_rel, str) or not snapshot_rel:
         raise ValueError(f"{provider} active task binding has no immutable task snapshot")
-    task_path = (ROOT / snapshot_rel).resolve()
-    task_path.relative_to(ROOT.resolve())
+    candidates = []
+    try:
+        candidates.append((runtime_root() / snapshot_rel).resolve())
+    except ValueError:
+        pass
+    candidates.append((ROOT / snapshot_rel).resolve())
+    task_path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+    try:
+        runtime_base = runtime_root()
+    except ValueError:
+        runtime_base = None
+    bases = [ROOT] + ([runtime_base] if runtime_base is not None else [])
+    if not any(_is_within(task_path, base) for base in bases):
+        raise ValueError("immutable task snapshot must stay inside the repository")
     if not task_path.is_file():
         raise ValueError(f"immutable task snapshot not found: {task_path}")
     task = json.loads(task_path.read_text(encoding="utf-8"))
     if task.get("id") != task_id:
         raise ValueError("immutable task snapshot id does not match active task")
     return task, task_path
+
+
+def _is_within(path: Path, base: Path) -> bool:
+    try:
+        path.relative_to(base.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def _require_checks_step(task_id: str) -> dict:
@@ -173,16 +203,43 @@ def _safe_env(project: Path) -> dict[str, str]:
     return env
 
 
+@contextmanager
+def _isolated_child_env(env: dict[str, str]):
+    """Add a disposable Windows profile without widening ``_safe_env``.
+
+    ``_safe_env`` intentionally forwards only its historical allowlist.  The
+    task runner nevertheless needs Git to see a profile while checking an
+    isolated worktree, so this child-only seam supplies an empty profile and
+    removes it immediately after the subprocess exits.
+    """
+    if os.name != "nt":
+        yield env
+        return
+
+    with tempfile.TemporaryDirectory(prefix="harness-task-check-profile-") as raw:
+        profile = Path(raw)
+        child = dict(env)
+        child["HOME"] = str(profile)
+        child["USERPROFILE"] = str(profile)
+        child["APPDATA"] = str(profile / "AppData" / "Roaming")
+        child["LOCALAPPDATA"] = str(profile / "AppData" / "Local")
+        child["GIT_CONFIG_NOSYSTEM"] = "1"
+        child["GIT_CONFIG_GLOBAL"] = os.devnull
+        child["GIT_CONFIG_SYSTEM"] = os.devnull
+        yield child
+
+
 def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> dict:
-    proc = subprocess.run(
-        argv,
-        cwd=cwd,
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=180,
-        shell=False,
-    )
+    with _isolated_child_env(env) as child_env:
+        proc = subprocess.run(
+            argv,
+            cwd=cwd,
+            env=child_env,
+            text=True,
+            capture_output=True,
+            timeout=180,
+            shell=False,
+        )
 
     return {
         "argv": argv,

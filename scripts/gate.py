@@ -81,7 +81,7 @@ def _authoritative_checks_decision(task, latest):
     expected=f'.harness/runs/{task}/checks-report.json'
     if row.get('artifact')!=expected:
         return False,'acceptance:checks_report_mismatch'
-    report_path=ROOT/expected
+    report_path=run_dir(task)/'checks-report.json'
     if not report_path.is_file():
         return False,'acceptance:checks_report_missing'
     try:
@@ -120,7 +120,7 @@ def _acceptance_decision(task, route, latest):
     expected=f'.harness/runs/{task}/handoffs/{role}.json'
     if row.get('artifact')!=expected:
         return False,f'acceptance:{category}_handoff_mismatch'
-    handoff_path=ROOT/expected
+    handoff_path=run_dir(task)/'handoffs'/f'{role}.json'
     if not handoff_path.is_file():
         return False,f'acceptance:{category}_handoff_missing'
     try:

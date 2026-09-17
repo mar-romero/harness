@@ -8,7 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 
-from harnesslib import ROOT, git, run_dir, safe_task_id, write_json_atomic
+from harnesslib import ROOT, git, run_dir, runtime_root, safe_task_id, write_json_atomic
 
 
 def _norm_path(path) -> str:
@@ -19,24 +19,8 @@ def _same_path(left, right) -> bool:
     return _norm_path(left) == _norm_path(right)
 
 
-def _git_common_dir() -> Path:
-    result = git('rev-parse', '--git-common-dir', cwd=ROOT, check=False)
-    if result.returncode != 0:
-        raise ValueError('not inside a git repository; common git directory unavailable')
-    raw = result.stdout.strip()
-    if not raw:
-        raise ValueError('git common directory is empty')
-    path = Path(raw)
-    if not path.is_absolute():
-        path = ROOT / path
-    return path.resolve()
-
-
 def _common_repo_root() -> Path:
-    common = _git_common_dir()
-    if common.name == '.git':
-        return common.parent
-    return ROOT.resolve()
+    return runtime_root()
 
 
 def lock(task):
@@ -538,7 +522,7 @@ def _publication_preconditions(task):
     if route.get('isolation') != 'worktree':
         raise ValueError('publish is only valid for routes with isolation=worktree')
 
-    codex_active = ROOT / '.harness' / 'codex' / 'active-task.json'
+    codex_active = runtime_root() / '.harness' / 'codex' / 'active-task.json'
     if codex_active.is_file():
         try:
             binding = json.loads(codex_active.read_text(encoding='utf-8'))

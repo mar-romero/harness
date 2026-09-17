@@ -16,8 +16,36 @@ def safe_task_id(value: str) -> str:
         raise ValueError('task id must match [A-Za-z0-9][A-Za-z0-9._-]{1,63}')
     return value
 
+def runtime_root() -> Path:
+    """Return the checkout-independent root for durable harness artifacts."""
+    fixture = os.environ.get('HARNESS_FIXTURE_RUNTIME_ROOT')
+    if os.environ.get('HARNESS_FIXTURE_SEAM') == '1' and fixture:
+        candidate = Path(fixture)
+        if not candidate.is_absolute():
+            raise ValueError('fixture runtime root must be absolute')
+        candidate = candidate.resolve()
+        if candidate != ROOT.resolve() or not candidate.is_dir():
+            raise ValueError('fixture runtime root is invalid')
+        return candidate
+    try:
+        result = git('rev-parse', '--git-common-dir', cwd=ROOT, check=False)
+    except OSError as exc:
+        raise ValueError('common git directory unavailable') from exc
+    if result.returncode != 0:
+        raise ValueError('common git directory unavailable')
+    raw = result.stdout.strip()
+    if not raw:
+        raise ValueError('git common directory is empty')
+    common = Path(raw)
+    if not common.is_absolute():
+        common = ROOT / common
+    common = common.resolve()
+    if not common.is_dir() or not (common / 'HEAD').is_file() or not (common / 'objects').is_dir():
+        raise ValueError('git common directory is invalid')
+    return common.parent
+
 def run_dir(task_id: str) -> Path:
-    return ROOT / '.harness' / 'runs' / safe_task_id(task_id)
+    return runtime_root() / '.harness' / 'runs' / safe_task_id(task_id)
 
 def sha256_file(path: Path) -> str:
     h=hashlib.sha256()

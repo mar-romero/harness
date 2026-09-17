@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from harnesslib import ROOT, write_json_atomic
+from harnesslib import runtime_root, write_json_atomic
 
-HISTORY_DIR = ROOT / ".harness" / "model-history"
+def history_dir() -> Path:
+    return runtime_root() / ".harness" / "model-history"
 
 
 def _now() -> str:
@@ -25,7 +26,7 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def record(provider: str, model_id: str, passed: bool, quality: float | None = None) -> dict[str, Any]:
-    path = HISTORY_DIR / f"{provider}.json"
+    path = history_dir() / f"{provider}.json"
     payload = _load(path)
     models = payload.setdefault("models", {})
     row = models.setdefault(model_id, {"samples": 0, "passed": 0, "failed": 0, "quality_sum": 0.0, "quality_samples": 0})

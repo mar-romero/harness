@@ -159,7 +159,7 @@ class NeutralChatTests(unittest.TestCase):
             write_json_atomic(active, {
                 "schema_version": 1,
                 "task_id": task_id,
-                "task_snapshot_path": snapshot.relative_to(ROOT).as_posix(),
+                "task_snapshot_path": snapshot.relative_to(__import__('harnesslib').runtime_root()).as_posix(),
             })
             task, path = task_checks._load_active_task(task_id)
             self.assertEqual(task["id"], task_id)

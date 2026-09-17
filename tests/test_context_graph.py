@@ -766,8 +766,11 @@ class ContextGraphTests(unittest.TestCase):
                 destination.write_text("stale artifact", encoding="utf-8")
                 serialized = []
                 for _ in range(2):
+                    child_env = dict(__import__('os').environ)
+                    child_env['HARNESS_FIXTURE_SEAM'] = '1'
+                    child_env['HARNESS_FIXTURE_RUNTIME_ROOT'] = str(self.root)
                     result = subprocess.run([sys.executable, str(self.root / "scripts/context_graph.py"), *arguments],
-                                            cwd=self.root, text=True, capture_output=True, timeout=30)
+                                            cwd=self.root, env=child_env, text=True, capture_output=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stderr, "")
                     self.assertEqual(json.loads(result.stdout), {"output": str(destination), "nodes": 2, "edges": 1})

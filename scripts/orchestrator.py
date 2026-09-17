@@ -10,7 +10,7 @@ from agent_budget import observe_progress as observe_agent_budget
 from evidence import append as append_evidence
 from evidence import validate as validate_evidence
 from handoff import save as save_handoff
-from harnesslib import ROOT, load_json, run_dir, safe_task_id, write_json_atomic
+from harnesslib import ROOT, load_json, run_dir, runtime_root, safe_task_id, write_json_atomic
 from impact_analysis import finish_decision as impact_finish_decision
 from tdd_evidence import append as append_tdd_evidence
 from tdd_evidence import finish_decision as tdd_finish_decision
@@ -355,8 +355,11 @@ def _resolve_inside_repo(value):
     p = p.resolve()
     try:
         p.relative_to(ROOT.resolve())
-    except ValueError as exc:
-        raise ValueError('handoff path must stay inside the repository') from exc
+    except ValueError:
+        try:
+            p.relative_to(runtime_root().resolve())
+        except ValueError as exc:
+            raise ValueError('handoff path must stay inside the repository') from exc
     if not p.is_file():
         raise ValueError(f'handoff file not found: {p}')
     return p
@@ -404,7 +407,7 @@ def commit(task, role, handoff_file, note=None):
 
     evidence_status = 'PASS' if status == 'PASS' else ('FAIL' if status == 'FAIL' else 'BLOCKED')
 
-    artifact = canonical.relative_to(ROOT).as_posix()
+    artifact = canonical.relative_to(runtime_root()).as_posix()
     append_evidence(
         task,
         category,
