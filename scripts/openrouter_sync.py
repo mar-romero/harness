@@ -29,6 +29,7 @@ PROVIDER_DIR = ROOT / "harness" / "model-providers"
 HISTORY_DIR = ROOT / ".harness" / "model-history"
 OPENROUTER_SCORES_PATH = ROOT / ".harness" / "openrouter" / "model-scores.json"
 UNMATCHED_OVERRIDES_PATH = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
+VERSIONED_OVERRIDES_PATH = ROOT / "harness" / "model-overrides" / "unmatched-models.json"
 
 
 def _now() -> str:
@@ -1694,18 +1695,39 @@ def _central_score_index(
 
 
 def _unmatched_override_index() -> dict[str, dict[str, Any]]:
-    path = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
-    payload = _load_json(path, {})
-    if not isinstance(payload, dict):
+    def _load_models(path: Path) -> dict[str, dict[str, Any]]:
+        payload = _load_json(path, {})
+        if not isinstance(payload, dict):
+            return {}
+        models = payload.get("models", {})
+        if not isinstance(models, dict):
+            return {}
+        return {
+            str(model_id): row
+            for model_id, row in models.items()
+            if isinstance(row, dict)
+        }
+
+    local_path = ROOT / ".harness" / "model-overrides" / "unmatched-models.json"
+    versioned_path = ROOT / "harness" / "model-overrides" / "unmatched-models.json"
+    os.makedirs(local_path.parent, exist_ok=True)
+    base = _load_models(versioned_path)
+    local = _load_models(local_path)
+    merged = {**base, **local}
+    if not merged:
+        def _display(path: Path) -> str:
+            try:
+                return str(path.relative_to(ROOT))
+            except ValueError:
+                return str(path)
+
+        print(
+            "warning: no unmatched-model overrides found "
+            f"({_display(versioned_path)} or "
+            f"{_display(local_path)})"
+        )
         return {}
-    models = payload.get("models", {})
-    if not isinstance(models, dict):
-        return {}
-    return {
-        str(model_id): row
-        for model_id, row in models.items()
-        if isinstance(row, dict)
-    }
+    return merged
 
 
 def _override_score_row(

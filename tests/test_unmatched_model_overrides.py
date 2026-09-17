@@ -80,11 +80,12 @@ class UnmatchedModelOverrideTests(unittest.TestCase):
             "supported_efforts": [],
         }
 
-    def _build(self, provider, candidate, override):
+    def _build(self, provider, candidate, override, versioned=False):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._write_provider(root, provider)
-            path = root / ".harness" / "model-overrides" / "unmatched-models.json"
+            prefix = "harness" if versioned else ".harness"
+            path = root / prefix / "model-overrides" / "unmatched-models.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"models": {candidate["id"]: override}}), encoding="utf-8")
             score_path = root / ".harness" / "openrouter" / "model-scores.json"
@@ -156,6 +157,20 @@ class UnmatchedModelOverrideTests(unittest.TestCase):
         self.assertEqual(row["cost"], 5.0)
         self.assertEqual(row["context_window"], 272000)  # provider-declared context wins
         self.assertEqual(row["score_override"]["strategy"], "direct")
+
+    def test_versioned_fallback_supplies_direct_scores(self):
+        row = self._build("codex", self._candidate("gpt-reserve", "openai"), {
+            "strategy": "direct", "scores": {"capabilities": {"reasoning": 3.9, "coding": 4.4, "tool_use": 4.1, "reliability": 4.1}, "cost": 0.001, "latency": 2.0, "context_window": 272000},
+        }, versioned=True)
+        self.assertEqual(row["capabilities"]["reasoning"], 3.9)
+        self.assertEqual(row["cost"], 0.001)
+
+    def test_versioned_fallback_supplies_big_pickle_scores(self):
+        row = self._build("opencode", self._candidate("opencode/big-pickle", "opencode"), {
+            "strategy": "direct", "scores": {"capabilities": {"reasoning": 3.1, "coding": 3.5, "tool_use": 3.2, "reliability": 3.3}, "cost": 0.0, "latency": 3.0, "context_window": 200000},
+        }, versioned=True)
+        self.assertEqual(row["capabilities"]["coding"], 3.5)
+        self.assertEqual(row["context_window"], 272000)
 
 
 if __name__ == "__main__":

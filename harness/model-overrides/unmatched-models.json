@@ -1,0 +1,7 @@
+{
+  "models": {
+    "opencode/big-pickle": {"strategy": "direct", "scores": {"capabilities": {"reasoning": 3.1, "coding": 3.5, "tool_use": 3.2, "reliability": 3.3}, "cost": 0.0, "latency": 3.0, "context_window": 200000}},
+    "gpt-reserve": {"strategy": "direct", "scores": {"capabilities": {"reasoning": 3.9, "coding": 4.4, "tool_use": 4.1, "reliability": 4.1}, "cost": 0.001, "latency": 2.0, "context_window": 272000}},
+    "codex-auto-review": {"strategy": "direct", "scores": {"capabilities": {"reasoning": 3.0, "coding": 3.0, "tool_use": 3.2, "reliability": 3.8}, "cost": 0.001, "latency": 3.0, "context_window": 272000}}
+  }
+}
