@@ -2147,12 +2147,27 @@ def build_provider_inventory_from_scores(
         oid = candidate.get("openrouter_id")
         central = score_idx.get(oid, {}) if oid else {}
         score_override = None
-        if not central and candidate.get("openrouter_match") in {"unmatched", "ambiguous"}:
-            override = unmatched_overrides.get(native_id, {})
-            if override:
-                central, score_override = _override_score_row(
-                    native_id, override, score_idx
-                )
+        override = unmatched_overrides.get(native_id, {})
+        central_caps = central.get("capabilities", {}) if central else {}
+        quality_unknown = not central or any(
+            float(central_caps.get(field) or 0.0) <= 0.0
+            for field in ("reasoning", "coding")
+        )
+        if override and (
+            candidate.get("openrouter_match") in {"unmatched", "ambiguous"}
+            or quality_unknown
+        ):
+            override_row, score_override = _override_score_row(
+                native_id, override, score_idx
+            )
+            if central and override_row:
+                merged_caps = dict(central_caps)
+                for field, value in override_row.get("capabilities", {}).items():
+                    if float(merged_caps.get(field) or 0.0) <= 0.0 and float(value or 0.0) > 0.0:
+                        merged_caps[field] = value
+                central = {**central, "capabilities": merged_caps}
+            elif override_row:
+                central = override_row
 
         central_caps = central.get("capabilities", {}) if central else {}
         central_raw = central.get("raw_metrics", {}) if central else {}
