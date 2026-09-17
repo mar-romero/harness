@@ -93,10 +93,16 @@ class RuntimeRootTests(unittest.TestCase):
     def test_task_check_environment_uses_synthetic_windows_profile(self):
         env = _safe_env(ROOT)
         with _isolated_child_env(env) as child:
-            self.assertNotEqual(child.get("USERPROFILE"), __import__("os").environ.get("USERPROFILE"))
-            self.assertNotEqual(child.get("APPDATA"), __import__("os").environ.get("APPDATA"))
-            self.assertEqual(child.get("GIT_CONFIG_NOSYSTEM"), "1")
-            self.assertEqual(child.get("GIT_CONFIG_GLOBAL"), __import__("os").devnull)
+            if os.name == "nt":
+                self.assertNotEqual(child.get("USERPROFILE"), os.environ.get("USERPROFILE"))
+                self.assertNotEqual(child.get("APPDATA"), os.environ.get("APPDATA"))
+                self.assertEqual(child.get("GIT_CONFIG_NOSYSTEM"), "1")
+                self.assertEqual(child.get("GIT_CONFIG_GLOBAL"), os.devnull)
+            else:
+                self.assertIs(child, env)
+                self.assertNotIn("USERPROFILE", child)
+                self.assertNotIn("APPDATA", child)
+                self.assertNotIn("GIT_CONFIG_NOSYSTEM", child)
 
 
 if __name__ == "__main__":
