@@ -227,6 +227,13 @@ def _worktree_entry(cwd: Path, rel: str) -> dict:
     if not stat.S_ISREG(st.st_mode):
         raise ValueError(f"unsupported candidate path type: {rel}")
     raw = p.read_bytes()
+    if os.name == "nt" and p.suffix.lower() in {
+        ".cmd", ".css", ".html", ".js", ".json", ".md", ".mjs", ".py",
+        ".sh", ".toml", ".ts", ".txt", ".yaml", ".yml",
+    }:
+        # Git's Windows checkout normalization must not change the candidate
+        # subject when the same bytes are later read from a published blob.
+        raw = raw.replace(b"\r\n", b"\n")
     mode = "100755" if (st.st_mode & 0o111) else "100644"
     # Windows can report every checked-out file as executable even when the
     # Git tree records mode 100644.  Prefer the index mode for tracked files

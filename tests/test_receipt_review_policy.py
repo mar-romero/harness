@@ -46,10 +46,11 @@ class ReceiptAssessmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             path = root / "harness.cmd"
-            path.write_bytes(b"echo harness\n")
+            path.write_bytes(b"echo harness\r\n")
             with patch.object(mod, "_run_text", return_value="100644 blob deadbeef\tharness.cmd"):
                 entry = mod._worktree_entry(root, "harness.cmd")
         self.assertEqual(entry["mode"], "100644")
+        self.assertEqual(entry["sha256"], mod.hashlib.sha256(b"echo harness\n").hexdigest())
 
 
 if __name__ == "__main__":
