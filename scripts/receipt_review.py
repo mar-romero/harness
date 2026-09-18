@@ -227,23 +227,22 @@ def _worktree_entry(cwd: Path, rel: str) -> dict:
     if not stat.S_ISREG(st.st_mode):
         raise ValueError(f"unsupported candidate path type: {rel}")
     raw = p.read_bytes()
-    if os.name == "nt" and p.suffix.lower() in {
-        ".cmd", ".css", ".html", ".js", ".json", ".md", ".mjs", ".py",
-        ".sh", ".toml", ".ts", ".txt", ".yaml", ".yml",
-    }:
-        # Git's Windows checkout normalization must not change the candidate
-        # subject when the same bytes are later read from a published blob.
-        raw = raw.replace(b"\r\n", b"\n")
     mode = "100755" if (st.st_mode & 0o111) else "100644"
-    # Windows can report every checked-out file as executable even when the
-    # Git tree records mode 100644.  Prefer the index mode for tracked files
+    # Windows can report every checked-out file as executable and can apply
+    # checkout conversion. Prefer the committed tree for clean tracked files
     # so a worktree snapshot hashes the same subject as its published commit.
     try:
-        indexed = _run_text("ls-files", "--stage", "--", rel, cwd=cwd).strip()
+        tree = _run_text("ls-tree", "HEAD", "--", rel, cwd=cwd).strip()
     except Exception:
-        indexed = ""
-    if indexed:
-        mode = indexed.split()[0]
+        tree = ""
+    if tree:
+        mode = tree.split(None, 2)[0]
+        try:
+            clean = _run_bytes("diff", "--quiet", "HEAD", "--", rel, cwd=cwd, check=False).returncode == 0
+        except Exception:
+            clean = False
+        if clean:
+            raw = _run_bytes("show", f"HEAD:{rel}", cwd=cwd).stdout
     return {"path": rel, "kind": "file", "mode": mode, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
 
 
