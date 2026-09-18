@@ -1,5 +1,4 @@
 import importlib.util
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -48,9 +47,7 @@ class ReceiptAssessmentTests(unittest.TestCase):
             root = Path(raw)
             path = root / "harness.cmd"
             path.write_bytes(b"echo harness\r\n")
-            completed = subprocess.CompletedProcess([], 0, stdout=b"echo harness\n", stderr=b"")
-            with patch.object(mod, "_run_text", return_value="100644 blob deadbeef\tharness.cmd"), \
-                 patch.object(mod, "_run_bytes", return_value=completed):
+            with patch.object(mod.os, "name", "nt"):
                 entry = mod._worktree_entry(root, "harness.cmd")
         self.assertEqual(entry["mode"], "100644")
         self.assertEqual(entry["sha256"], mod.hashlib.sha256(b"echo harness\n").hexdigest())

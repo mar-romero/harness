@@ -226,24 +226,29 @@ def _worktree_entry(cwd: Path, rel: str) -> dict:
         return {"path": rel, "kind": "symlink", "mode": "120000", "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
     if not stat.S_ISREG(st.st_mode):
         raise ValueError(f"unsupported candidate path type: {rel}")
-    raw = p.read_bytes()
-    mode = "100755" if (st.st_mode & 0o111) else "100644"
-    # Windows can report every checked-out file as executable and can apply
-    # checkout conversion. Prefer the committed tree for clean tracked files
-    # so a worktree snapshot hashes the same subject as its published commit.
-    try:
-        tree = _run_text("ls-tree", "HEAD", "--", rel, cwd=cwd).strip()
-    except Exception:
-        tree = ""
-    if tree:
-        mode = tree.split(None, 2)[0]
-        try:
-            clean = _run_bytes("diff", "--quiet", "HEAD", "--", rel, cwd=cwd, check=False).returncode == 0
-        except Exception:
-            clean = False
-        if clean:
-            raw = _run_bytes("show", f"HEAD:{rel}", cwd=cwd).stdout
+    raw = _canonical_snapshot_bytes(rel, p.read_bytes())
+    mode = _canonical_snapshot_mode("100755" if (st.st_mode & 0o111) else "100644")
     return {"path": rel, "kind": "file", "mode": mode, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
+
+
+_TEXT_SUFFIXES = {
+    ".cmd", ".css", ".html", ".js", ".json", ".md", ".mjs", ".py",
+    ".sh", ".toml", ".ts", ".txt", ".yaml", ".yml",
+}
+
+
+def _canonical_snapshot_bytes(rel: str, raw: bytes) -> bytes:
+    if os.name == "nt" and Path(rel).suffix.lower() in _TEXT_SUFFIXES:
+        return raw.replace(b"\r\n", b"\n")
+    return raw
+
+
+def _canonical_snapshot_mode(mode: str) -> str:
+    # Windows checkouts do not preserve Git's executable bit. Normalize the
+    # worktree and published-blob sides to the same regular-file mode.
+    if os.name == "nt" and mode == "100755":
+        return "100644"
+    return mode
 
 
 def _commit_entry(commit: str, rel: str) -> dict:
@@ -256,6 +261,8 @@ def _commit_entry(commit: str, rel: str) -> dict:
         raise ValueError(f"unsupported committed candidate path type: {rel}")
     raw = _run_bytes("show", f"{commit}:{rel}", cwd=ROOT).stdout
     kind = "symlink" if mode == "120000" else "file"
+    raw = _canonical_snapshot_bytes(rel, raw)
+    mode = _canonical_snapshot_mode(mode)
     return {"path": rel, "kind": kind, "mode": mode, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
 
 
