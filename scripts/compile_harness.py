@@ -269,7 +269,7 @@ def compile_all(check=False):
         if check:
             if not p.exists() or p.read_text(encoding='utf-8')!=content: bad.append(rel.as_posix())
         else:
-            p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8')
+            p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8',newline='\n')
     if check and bad:
         print('OUT-OF-DATE GENERATED ADAPTERS:'); [print(' -',x) for x in bad]; return 1
     print('generated artifacts are in sync' if check else f'generated {len(expected)} provider artifacts'); return 0
