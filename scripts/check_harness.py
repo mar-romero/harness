@@ -78,6 +78,8 @@ def main():
             ['git', 'ls-files', '--', '.harness/runs'],
             cwd=ROOT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,

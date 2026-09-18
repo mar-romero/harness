@@ -10,7 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from harnesslib import write_json_atomic
+from harnesslib import (
+    provider_audit_path, provider_session_path, read_provider_active,
+    runtime_reference, write_json_atomic,
+)
 
 
 def audit_session_boundary(payload: dict) -> None:
@@ -18,7 +21,9 @@ def audit_session_boundary(payload: dict) -> None:
 
     Record only lifecycle metadata: never prompts, tool arguments, or context.
     """
-    audit = ROOT / ".harness" / "codex" / "permission-audit.jsonl"
+    # Reject legacy state before creating any new audit/session artifact.
+    read_provider_active("codex")
+    audit = provider_audit_path("codex")
     audit.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "at": datetime.now(timezone.utc).isoformat(),
@@ -32,7 +37,7 @@ def audit_session_boundary(payload: dict) -> None:
     # RECEIPT_RDD_SESSION_V1:START
     if payload.get("hook_event_name") == "SessionStart" and payload.get("session_id"):
         write_json_atomic(
-            ROOT / ".harness" / "codex" / "session.json",
+            provider_session_path("codex"),
             {
                 "schema_version": 1,
                 "session_id": str(payload["session_id"]),
@@ -43,16 +48,14 @@ def audit_session_boundary(payload: dict) -> None:
 
 
 def _context() -> str | None:
-    active_path = ROOT / ".harness" / "codex" / "active-task.json"
-    if not active_path.is_file():
+    active = read_provider_active("codex")
+    if active is None:
         return None
-    active = json.loads(active_path.read_text(encoding="utf-8"))
     required = ("task_id", "risk", "route_path", "context_path", "progress_path", "task_snapshot_path")
     if any(not active.get(key) for key in required):
         raise ValueError("active Codex task binding is incomplete")
     for key in ("route_path", "context_path", "progress_path", "task_snapshot_path"):
-        artifact = (ROOT / active[key]).resolve()
-        artifact.relative_to(ROOT.resolve())
+        artifact = runtime_reference(active[key])
         if not artifact.is_file():
             raise ValueError(f"active Codex artifact is missing: {active[key]}")
     return (
@@ -69,8 +72,8 @@ def main() -> int:
     if event not in {"SessionStart", "SubagentStart"}:
         return 0
     try:
-        audit_session_boundary(payload)
         context = _context()
+        audit_session_boundary(payload)
         if context:
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": event,

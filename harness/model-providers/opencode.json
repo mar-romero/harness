@@ -2,7 +2,7 @@
   "schema_version": 1,
   "provider": "opencode",
   "description": "OpenCode host adapter. Runtime catalog membership is authoritative; OpenRouter only enriches discovered models.",
-  "runtime_catalog": ".harness/opencode/catalog-snapshot.json",
+  "runtime_catalog": ".harness/overlays/{worktree_id}/opencode/catalog-snapshot.json",
   "runtime_requirements": {
     "agentic_structured_output": {
       "tool_choice_modes": [
@@ -30,8 +30,8 @@
     "opencode/nemotron-3.5-lightning-free": "nvidia/nemotron-3.5-lightning"
   },
   "openrouter_catalog": ".harness/openrouter/model-inventory.json",
-  "raw_inventory": ".harness/opencode/model-inventory.json",
-  "enriched_inventory": ".harness/model-inventories/opencode.json",
+  "raw_inventory": ".harness/overlays/{worktree_id}/opencode/model-inventory.json",
+  "enriched_inventory": ".harness/overlays/{worktree_id}/opencode/enriched-inventory.json",
   "openrouter": {
     "id_strategy": "native-provider-slash-model",
     "benchmark_source": "artificial-analysis",

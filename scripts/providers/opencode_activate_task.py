@@ -18,7 +18,11 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harnesslib import run_dir, runtime_root, safe_task_id, write_json_atomic  # noqa: E402
+from harnesslib import (  # noqa: E402
+    assert_overlay_writable, provider_active_path, provider_enriched_inventory_path, provider_model_selections_path,
+    run_dir, runtime_root, safe_task_id, sha256_file, worktree_identity, write_json_atomic,
+    write_json_immutable,
+)
 from task_router import route  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
 from orchestrator import init_progress  # noqa: E402
@@ -31,9 +35,8 @@ from request_normalizer import normalize_task  # noqa: E402
 from model_router import load_inventory, selections_for_task  # noqa: E402
 from openrouter_sync import discover_provider, load_provider_config  # noqa: E402
 
-RUNTIME = runtime_root() / ".harness" / "opencode"
-ENRICHED_INVENTORY = runtime_root() / ".harness" / "model-inventories" / "opencode.json"
-ACTIVE = RUNTIME / "active-task.json"
+ENRICHED_INVENTORY = provider_enriched_inventory_path("opencode")
+ACTIVE = provider_active_path("opencode")
 
 
 def resolve_task(value: str) -> Path:
@@ -77,32 +80,53 @@ def _select_inventory() -> tuple[dict | None, Path | None, dict]:
     return inventory, path, status
 
 
+def _load_or_route(task: dict, route_path: Path) -> dict:
+    """Reuse the frozen route after assessment; never silently rewrite it."""
+    if route_path.exists():
+        frozen = json.loads(route_path.read_text(encoding='utf-8'))
+        if frozen.get('task_id') != task.get('id'):
+            raise ValueError('frozen route task_id mismatch; refusing activation')
+        return frozen
+    return route(task)
+
+
 def activate(task_path: Path) -> dict:
+    # Fail before touching shared run evidence if an old global binding could
+    # make this operation select or overwrite another checkout's state.
+    assert_overlay_writable("opencode")
     task = json.loads(task_path.read_text(encoding="utf-8"))
     if task.get("request"):
         task = normalize_task(task)
     task_id = safe_task_id(task.get("id", ""))
-    routed = route(task)
     out_dir = run_dir(task_id)
     route_path = out_dir / "route.json"
+    routed = _load_or_route(task, route_path)
     context_path = out_dir / "context.json"
-    models_path = out_dir / "model-selections.json"
+    models_path = provider_model_selections_path("opencode")
     task_snapshot_path = out_dir / "task.json"
 
     # Freeze the authorized task surface for the lifetime of this run. Publication
     # must not trust a mutable tasks/*.json file after activation.
-    write_json_atomic(task_snapshot_path, task)
-    write_json_atomic(route_path, routed)
+    write_json_immutable(task_snapshot_path, task)
+    write_json_immutable(route_path, routed)
     progress = init_progress(task_id, routed)
-    context = build_context(task, routed)
-    write_json_atomic(context_path, context)
+    context = (
+        json.loads(context_path.read_text(encoding='utf-8'))
+        if context_path.exists()
+        else build_context(task, routed)
+    )
+    write_json_immutable(context_path, context)
 
     # HARNESS_IMPACT_BUDGET_ACTIVATION
     baseline = capture_impact_baseline(task_id)
 
-    impact = build_impact_plan(task, routed, context)    
     impact_path = out_dir / "impact.json"
-    write_json_atomic(impact_path, impact)
+    impact = (
+        json.loads(impact_path.read_text(encoding='utf-8'))
+        if impact_path.exists()
+        else build_impact_plan(task, routed, context)
+    )
+    write_json_immutable(impact_path, impact)
     agent_budget = init_agent_budget(task, routed)
     budget_path = out_dir / "agent-budget.json"
 
@@ -112,14 +136,17 @@ def activate(task_path: Path) -> dict:
         "schema_version": 2,
         "task_id": task_id,
         "provider": "opencode",
-        "inventory_path": str(inventory_path) if inventory_path else None,
+        "inventory_path": inventory_path.relative_to(ROOT).as_posix() if inventory_path else None,
+        "inventory_sha256": sha256_file(inventory_path) if inventory_path else None,
         "inventory_status": inventory_status,
         "selections": selections,
     }
     write_json_atomic(models_path, model_payload)
 
     active = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "provider": "opencode",
+        "overlay": worktree_identity(),
         "activated_at": datetime.now(timezone.utc).isoformat(),
         "task_id": task_id,
         "task_path": task_path.relative_to(ROOT).as_posix(),
@@ -131,7 +158,8 @@ def activate(task_path: Path) -> dict:
         "agent_budget_path": budget_path.relative_to(runtime_root()).as_posix(),
         "current_agents": agent_budget.get("current_agents", []),
         "mandatory_gate_agents": agent_budget.get("mandatory_gate_agents", []),
-        "model_selections_path": models_path.relative_to(runtime_root()).as_posix(),
+        "model_selections_path": models_path.relative_to(ROOT).as_posix(),
+        "model_selections_sha256": sha256_file(models_path),
         "agents": routed["agents"],
         "human_gate": routed["human_gate"],
         "progress_path": (out_dir / "progress.json").relative_to(runtime_root()).as_posix(),
@@ -150,6 +178,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.clear:
+        assert_overlay_writable("opencode")
         ACTIVE.unlink(missing_ok=True)
         print(json.dumps({"cleared": True, "path": str(ACTIVE.relative_to(ROOT))}, indent=2))
         return 0

@@ -17,7 +17,7 @@ class CompileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             active = Path(td) / "active-task.json"
 
-            with patch.object(compile_harness, "CODEX_ACTIVE", active):
+            with patch.object(compile_harness, "read_provider_active", return_value=None):
                 without_active_task = compile_harness.generated()[
                     Path(".codex/agents/explorer.toml")
                 ]
@@ -40,9 +40,10 @@ class CompileTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-                with_active_task = compile_harness.generated()[
-                    Path(".codex/agents/explorer.toml")
-                ]
+                with patch.object(compile_harness, "read_provider_active", return_value=json.loads(active.read_text(encoding="utf-8"))):
+                    with_active_task = compile_harness.generated()[
+                        Path(".codex/agents/explorer.toml")
+                    ]
 
             self.assertEqual(without_active_task, with_active_task)
 

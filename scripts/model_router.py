@@ -22,7 +22,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from harnesslib import ROOT, load_manifest, run_dir, safe_task_id, write_json_atomic
+from harnesslib import (
+    ROOT, load_manifest, provider_inventory_binding_path, provider_model_selections_path,
+    run_dir, safe_task_id, sha256_file, write_json_atomic,
+)
 from task_router import route
 from model_task_profile import CAP_KEYS, profile_task, target_for_agent
 
@@ -59,11 +62,20 @@ def inventory_age_hours(inventory: dict[str, Any], now: datetime | None = None) 
 
 
 def resolve_inventory_path(provider: str, explicit: str | None) -> Path | None:
+    expected = provider_inventory_binding_path(provider)
     if explicit:
-        return Path(explicit).expanduser().resolve()
+        path = Path(explicit).expanduser().resolve()
+        if path != expected.resolve():
+            raise ValueError("inventory path must be the active provider-local inventory")
+        return path
     key = "HARNESS_MODEL_INVENTORY_" + provider.upper().replace("-", "_")
     value = os.getenv(key) or os.getenv("HARNESS_MODEL_INVENTORY")
-    return Path(value).expanduser().resolve() if value else None
+    if not value:
+        return None
+    path = Path(value).expanduser().resolve()
+    if path != expected.resolve():
+        raise ValueError("inventory path must be the active provider-local inventory")
+    return path
 
 
 def load_inventory(provider: str, explicit: str | None = None) -> tuple[dict[str, Any] | None, Path | None]:
@@ -72,8 +84,11 @@ def load_inventory(provider: str, explicit: str | None = None) -> tuple[dict[str
         return None, None
     data = json.loads(path.read_text(encoding="utf-8"))
     inv_provider = data.get("provider")
-    if inv_provider and inv_provider != provider:
+    if inv_provider != provider:
         raise ValueError(f"inventory provider {inv_provider!r} does not match requested provider {provider!r}")
+    expected_schema = 1 if provider == "subscriptions" else 3
+    if data.get("schema_version") != expected_schema:
+        raise ValueError("inventory schema does not match the provider contract")
     if not isinstance(data.get("models"), list):
         raise ValueError("inventory.models must be a list")
     return data, path
@@ -636,12 +651,15 @@ def main() -> int:
         "schema_version": 2,
         "task_id": task["id"],
         "provider": args.provider,
-        "inventory_path": str(inventory_path) if inventory_path else None,
+        "inventory_path": inventory_path.relative_to(ROOT).as_posix() if inventory_path else None,
+        "inventory_sha256": sha256_file(inventory_path) if inventory_path else None,
         "selections": selections,
     }
-    dest = Path(args.output) if args.output else run_dir(task["id"]) / "model-selections.json"
+    dest = Path(args.output) if args.output else provider_model_selections_path(args.provider)
     if not dest.is_absolute():
         dest = ROOT / dest
+    if dest.resolve() != provider_model_selections_path(args.provider).resolve():
+        raise SystemExit("model selections output must be provider-local")
     write_json_atomic(dest, payload)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 2 if any(x["action"] == "block" for x in selections) else 0

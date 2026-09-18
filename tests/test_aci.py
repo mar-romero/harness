@@ -83,6 +83,8 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         except OSError as exc:
             self.fail(f"configured MCP launcher could not start: {exc}")
@@ -155,7 +157,7 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
         system_node = shutil.which("node.exe")
         self.assertIsNotNone(powershell, "configured PowerShell executable is unavailable")
         self.assertIsNotNone(system_node, "a system Node executable is required for the fixture")
-        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, timeout=10)
+        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
         self.assertEqual(probe.returncode, 0, probe.stderr)
 
         with tempfile.TemporaryDirectory() as td:
@@ -186,7 +188,7 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
         system_node = shutil.which("node.exe")
         self.assertIsNotNone(powershell, "configured PowerShell executable is unavailable")
         self.assertIsNotNone(system_node, "a system Node executable is required for the fixture")
-        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, timeout=10)
+        probe = subprocess.run([system_node, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
         self.assertEqual(probe.returncode, 0, probe.stderr)
 
         with tempfile.TemporaryDirectory() as td:
@@ -246,6 +248,8 @@ class ACIConfiguredLauncherTests(unittest.TestCase):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
             except OSError as exc:
                 self.fail(f"configured MCP launcher could not start cleanly: {exc}")
@@ -281,6 +285,8 @@ class ACICoreTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         assert proc.stdin and proc.stdout
         try:
@@ -366,6 +372,8 @@ class ACIMCPProtocolTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         assert proc.stdin and proc.stdout
         responses = []

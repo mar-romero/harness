@@ -22,7 +22,12 @@ SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harnesslib import load_manifest, run_dir, safe_task_id, write_json_atomic  # noqa: E402
+from harnesslib import (  # noqa: E402
+    assert_overlay_writable, load_manifest, provider_active_path, provider_inventory_path,
+    provider_model_selections_path, read_provider_active, run_dir, runtime_reference,
+    runtime_root, safe_task_id, sha256_file, worktree_identity, write_json_atomic,
+    write_json_immutable,
+)
 from task_router import route  # noqa: E402
 from request_normalizer import normalize_task  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
@@ -33,10 +38,11 @@ from model_router import selections_for_task  # noqa: E402
 from subscription_runtime import execute, find_executable, provider_config, sanitized_environment  # noqa: E402
 from skill_compiler import compile_skill_pack  # noqa: E402
 from provider_capabilities import probe as probe_capabilities  # noqa: E402
+from worktree import wt as task_worktree  # noqa: E402
 
 CONFIG_PATH = ROOT / "harness" / "subscription-providers.json"
-INVENTORY_PATH = ROOT / ".harness" / "model-inventories" / "subscriptions.json"
-ACTIVE_PATH = ROOT / ".harness" / "subscriptions" / "active-task.json"
+INVENTORY_PATH = provider_inventory_path("subscriptions")
+ACTIVE_PATH = provider_active_path("subscriptions")
 
 PROFILES: dict[str, dict[str, Any]] = {
     "fast": {"capabilities": {"reasoning": 3.2, "coding": 3.2, "tool_use": 4.0, "reliability": 3.5}, "cost": 5.0, "latency": 4.8},
@@ -59,7 +65,10 @@ def load_config() -> dict[str, Any]:
 def _run_status(argv: list[str], provider: str, timeout: int = 12) -> tuple[int, str]:
     env, _ = sanitized_environment(provider)
     try:
-        proc = subprocess.run(argv, cwd=ROOT, env=env, text=True, capture_output=True, timeout=timeout, check=False)
+        proc = subprocess.run(
+            argv, cwd=ROOT, env=env, text=True, encoding='utf-8',
+            errors='replace', capture_output=True, timeout=timeout, check=False,
+        )
         return proc.returncode, (proc.stdout + "\n" + proc.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 124, str(exc)
@@ -292,20 +301,21 @@ def resolve_task(value: str) -> Path:
 
 
 def activate(task_path: Path, providers: list[str] | None = None, *, create_worktree: bool = False) -> dict[str, Any]:
+    assert_overlay_writable("subscriptions")
     task = json.loads(task_path.read_text(encoding="utf-8"))
     if task.get("request"):
         task = normalize_task(task)
     task_id = safe_task_id(task.get("id", ""))
     routed = route(task)
     out_dir = run_dir(task_id)
-    write_json_atomic(out_dir / "task.json", task)
-    write_json_atomic(out_dir / "route.json", routed)
+    write_json_immutable(out_dir / "task.json", task)
+    write_json_immutable(out_dir / "route.json", routed)
     progress = init_progress(task_id, routed)
     context = build_context(task, routed)
-    write_json_atomic(out_dir / "context.json", context)
+    write_json_immutable(out_dir / "context.json", context)
     capture_impact_baseline(task_id)
     impact = build_impact_plan(task, routed, context)
-    write_json_atomic(out_dir / "impact.json", impact)
+    write_json_immutable(out_dir / "impact.json", impact)
     agent_budget = init_agent_budget(task, routed)
 
     provider_scope = _provider_scope_for_refresh(providers)
@@ -317,9 +327,11 @@ def activate(task_path: Path, providers: list[str] | None = None, *, create_work
         "task_id": task_id,
         "provider": "subscriptions",
         "inventory_path": str(INVENTORY_PATH.relative_to(ROOT)),
+        "inventory_sha256": sha256_file(INVENTORY_PATH),
         "selections": selections,
     }
-    write_json_atomic(out_dir / "model-selections.json", model_payload)
+    models_path = provider_model_selections_path("subscriptions")
+    write_json_atomic(models_path, model_payload)
 
     worktree_info = None
     if create_worktree and routed.get("isolation") == "worktree":
@@ -327,15 +339,21 @@ def activate(task_path: Path, providers: list[str] | None = None, *, create_work
         worktree_info = create(task_id, execute=True)
 
     active = {
-        "schema_version": 1,
+        "schema_version": 3,
+        "provider": "subscriptions",
+        "overlay": worktree_identity(),
         "activated_at": now_iso(),
         "task_id": task_id,
         "task_path": task_path.relative_to(ROOT).as_posix(),
-        "task_snapshot_path": (out_dir / "task.json").relative_to(ROOT).as_posix(),
+        "task_snapshot_path": (out_dir / "task.json").relative_to(runtime_root()).as_posix(),
         "risk": routed["risk"],
-        "route_path": (out_dir / "route.json").relative_to(ROOT).as_posix(),
-        "context_path": (out_dir / "context.json").relative_to(ROOT).as_posix(),
-        "model_selections_path": (out_dir / "model-selections.json").relative_to(ROOT).as_posix(),
+        "route_path": (out_dir / "route.json").relative_to(runtime_root()).as_posix(),
+        "context_path": (out_dir / "context.json").relative_to(runtime_root()).as_posix(),
+        "progress_path": (out_dir / "progress.json").relative_to(runtime_root()).as_posix(),
+        "impact_path": (out_dir / "impact.json").relative_to(runtime_root()).as_posix(),
+        "agent_budget_path": (out_dir / "agent-budget.json").relative_to(runtime_root()).as_posix(),
+        "model_selections_path": models_path.relative_to(ROOT).as_posix(),
+        "model_selections_sha256": sha256_file(models_path),
         "current_agents": agent_budget.get("current_agents", []),
         "mandatory_gate_agents": agent_budget.get("mandatory_gate_agents", []),
         "progress_state": progress["state"],
@@ -350,6 +368,7 @@ def activate(task_path: Path, providers: list[str] | None = None, *, create_work
 def refresh_models(task_id: str, providers: list[str] | None = None) -> dict[str, Any]:
     """Rebuild subscription inventory/model selections for an already activated task."""
     task_id = safe_task_id(task_id)
+    assert_overlay_writable("subscriptions")
     out = run_dir(task_id)
     task_path = out / "task.json"
     if not task_path.is_file():
@@ -364,27 +383,30 @@ def refresh_models(task_id: str, providers: list[str] | None = None) -> dict[str
         "task_id": task_id,
         "provider": "subscriptions",
         "inventory_path": str(INVENTORY_PATH.relative_to(ROOT)),
+        "inventory_sha256": sha256_file(INVENTORY_PATH),
         "selections": selections,
     }
-    write_json_atomic(out / "model-selections.json", payload)
-    if ACTIVE_PATH.is_file():
-        try:
-            active = json.loads(ACTIVE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            active = {}
-        if active.get("task_id") == task_id:
-            active["selections"] = selections
-            active["model_selections_path"] = (out / "model-selections.json").relative_to(ROOT).as_posix()
-            write_json_atomic(ACTIVE_PATH, active)
+    models_path = provider_model_selections_path("subscriptions")
+    write_json_atomic(models_path, payload)
+    active = read_provider_active("subscriptions")
+    if active is not None and active.get("task_id") == task_id:
+        active["selections"] = selections
+        active["model_selections_path"] = models_path.relative_to(ROOT).as_posix()
+        active["model_selections_sha256"] = sha256_file(models_path)
+        write_json_atomic(ACTIVE_PATH, active)
     return payload
 
 
 def _load_run_artifacts(task_id: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     out = run_dir(task_id)
-    required = [out / "task.json", out / "route.json", out / "context.json", out / "model-selections.json"]
-    if not all(p.is_file() for p in required):
+    required = [out / "task.json", out / "route.json", out / "context.json"]
+    active = read_provider_active("subscriptions")
+    if active is None or active.get("task_id") != task_id:
+        raise SystemExit(f"task {task_id} is not the current subscription binding")
+    model_path = provider_model_selections_path("subscriptions")
+    if not all(p.is_file() for p in required) or not model_path.is_file():
         raise SystemExit(f"task {task_id} is not activated for subscription routing")
-    return tuple(json.loads(p.read_text(encoding="utf-8")) for p in required)  # type: ignore[return-value]
+    return tuple(json.loads(p.read_text(encoding="utf-8")) for p in required) + (json.loads(model_path.read_text(encoding="utf-8")),)  # type: ignore[return-value]
 
 
 def _compact_context(context: dict[str, Any]) -> dict[str, Any]:
@@ -443,6 +465,9 @@ def run_agent(task_id: str, role: str, *, prompt: str | None = None, provider_ov
     if role not in manifest.get("agents", {}):
         raise SystemExit(f"unknown role: {role}")
     task, routed, context, models = _load_run_artifacts(task_id)
+    active = read_provider_active("subscriptions")
+    if active is None or active.get("task_id") != task_id:
+        raise SystemExit("subscription task binding does not match the requested task")
     if role not in routed.get("agents", []):
         raise SystemExit(f"role {role} is not routed for task {task_id}")
     selection = _selection_for(role, models)
@@ -468,9 +493,17 @@ def run_agent(task_id: str, role: str, *, prompt: str | None = None, provider_ov
     else:
         wt = ROOT / ".worktrees" / task_id
         cwd = wt if wt.is_dir() else ROOT
-    if mode == "writer" and cwd == ROOT.resolve() and not allow_main_worktree:
+    own_worktree = task_worktree(task_id).resolve() if task_worktree(task_id).is_dir() else None
+    if mode == "writer" and own_worktree is None:
+        raise SystemExit("writer role requires a registered task worktree")
+    allowed_roots = [own_worktree] if mode == "writer" else [ROOT.resolve()]
+    if mode != "writer" and own_worktree:
+        allowed_roots.append(own_worktree)
+    if not cwd.is_dir() or not any(cwd == base or base in cwd.parents for base in allowed_roots if base):
+        raise SystemExit("subscription runtime cwd must stay inside the canonical repository or registered task worktree")
+    if mode == "writer" and cwd != own_worktree:
         raise SystemExit(
-            "writer role requires its isolated .worktrees/<task> directory; run activate with --create-worktree or pass --allow-main-worktree explicitly"
+            "writer role requires the exact registered isolated worktree"
         )
     actual_prompt = prompt or _default_prompt(role, task, routed, context)
     result = execute(

@@ -42,6 +42,8 @@ class WorktreeLockTests(unittest.TestCase):
             ["git", *args],
             cwd=cwd or self.repo,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=True,
         )
@@ -66,6 +68,29 @@ class WorktreeLockTests(unittest.TestCase):
         self.assertTrue(state["lock_valid"], state)
         self.assertEqual(state["branch"], f"agent/{self.task}")
         self.assertEqual(state["integration_branch"], "main")
+
+    def test_lock_records_and_verifies_resolved_git_identity(self):
+        worktree.create(self.task, execute=True)
+        lock = self._read_lock()
+        for key in ("worktree_root", "git_common_dir", "git_dir", "worktree_id"):
+            self.assertTrue(lock.get(key), key)
+        lock["worktree_id"] = "0" * 64
+        self._write_lock(lock)
+        state = worktree.status(self.task)
+        self.assertFalse(state["lock_valid"], state)
+        self.assertIn("worktree identity mismatch", state["lock_reason"])
+
+    def test_reparse_worktree_path_is_rejected_before_git_access(self):
+        outside = self.repo.parent / "outside-worktree"
+        outside.mkdir(exist_ok=True)
+        link = self.repo / ".worktrees" / self.task
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink unavailable: {exc}")
+        with self.assertRaisesRegex(ValueError, "reparse|symlink"):
+            worktree.create(self.task, execute=True)
 
     def test_common_lock_namespace_is_visible_from_linked_worktree(self):
         created = worktree.create(self.task, execute=True)

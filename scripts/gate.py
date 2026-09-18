@@ -8,6 +8,8 @@ from handoff import validate as validate_handoff
 from impact_analysis import finish_decision as impact_finish_decision
 from tdd_evidence import finish_decision as tdd_finish_decision
 from receipt_review import finish_decision as receipt_finish_decision
+from receipt_review import candidate_snapshot
+from attest import validate_current as validate_attestation_current
 
 INFERRED_ALLOWED_CATEGORIES={'exploration','planning','test_design','implementation','review','test_audit','verification','security_review'}
 ROLE_EVIDENCE={'explorer':'exploration','planner':'planning','test-designer':'test_design','implementer':'implementation','test-auditor':'test_audit'}
@@ -22,15 +24,19 @@ def command_decision(command, risk='R1'):
     return {'allow':True,'reason':'no blocking policy matched','human_gate':False}
 
 def path_decision(path):
-    p=load_json('harness/policies/risk-policy.json'); rel=Path(path)
+    p=load_json('harness/policies/risk-policy.json')
+    evolution=load_json('harness/evolution-policy.json'); rel=Path(path)
     candidate=rel if rel.is_absolute() else ROOT/rel
     try:
         normalized=candidate.resolve().relative_to(ROOT.resolve()).as_posix()
     except Exception:
         return {'allow':False,'reason':'write path resolves outside the project workspace','human_gate':False}
     if rel.name == '.env.example': return {'allow':True,'reason':'documented non-secret environment template','human_gate':False}
-    for protected in p.get('protected_paths',[]):
-        if normalized == protected:
+    normalized = normalized.lower().rstrip('/')
+    protected_paths=[*p.get('protected_paths',[]), *evolution.get('protected_paths',[])]
+    for protected in protected_paths:
+        protected = str(protected).replace('\\', '/').lower().rstrip('/')
+        if normalized == protected or normalized.startswith(protected + '/'):
             return {'allow':False,'reason':'human approval required to modify harness policy/control-plane file','human_gate':True}
     for g in p['secret_path_patterns']:
         if fnmatch.fnmatch(rel.name,g) or fnmatch.fnmatch(normalized,g): return {'allow':False,'reason':'secret-sensitive path','human_gate':False}
@@ -70,7 +76,8 @@ def _handoff_decision(task, route):
             failing.append(f'handoff:{role}')
     return missing,failing
 
-def _authoritative_checks_decision(task, latest):
+def _authoritative_checks_decision(task, latest, route=None):
+    route = route or {}
     row=latest.get('checks')
     if not row:
         return False,'acceptance:checks_missing'
@@ -90,13 +97,24 @@ def _authoritative_checks_decision(task, latest):
         return False,'acceptance:checks_report_invalid'
     if report.get('task_id')!=task or report.get('status')!='PASS':
         return False,'acceptance:checks_report_not_pass'
+    if route.get('isolation') == 'worktree':
+        try:
+            candidate = candidate_snapshot(task)
+        except Exception:
+            return False,'acceptance:checks_candidate_unavailable'
+        for key in ('subject_hash', 'base_commit'):
+            report_key = 'candidate_' + key
+            if report.get(report_key) != candidate.get(key):
+                return False,'acceptance:checks_candidate_mismatch'
+        if report.get('scope_expansion_sha256') != candidate.get('scope_expansion_sha256'):
+            return False,'acceptance:checks_scope_mismatch'
     return True,None
 
 def _acceptance_decision(task, route, latest):
     # Acceptance is derived from authoritative workflow provenance. A standalone
     # `acceptance` ledger row is intentionally ignored so the finish gate cannot
     # be satisfied by evidence laundering after a failed CLOSE attempt.
-    checks_ok,reason=_authoritative_checks_decision(task,latest)
+    checks_ok,reason=_authoritative_checks_decision(task,latest,route)
     if not checks_ok:
         return False,reason
 
@@ -197,6 +215,16 @@ def finish_decision(task,risk,require_publication=True):
     receipt=receipt_finish_decision(task)
     missing += receipt.get('missing',[]); failing += receipt.get('failing',[])
     combined_req += list(receipt.get('required',[]))
+
+    if authoritative_risk == 'R3':
+        attestation_path = run_dir(task) / 'attestation.json'
+        if attestation_path.is_file():
+            try:
+                validate_attestation_current(attestation_path, task, authoritative_risk)
+            except Exception as exc:
+                failing.append('attestation:' + str(exc))
+        else:
+            missing.append('attestation')
 
     if require_publication and route.get('isolation') == 'worktree':
         from worktree import publish_status

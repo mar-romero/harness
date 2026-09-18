@@ -23,7 +23,7 @@ SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harnesslib import load_json, load_manifest, run_dir, safe_task_id, write_json_atomic  # noqa: E402
+from harnesslib import load_json, load_manifest, provider_model_selections_path, read_provider_active, run_dir, safe_task_id, write_json_atomic  # noqa: E402
 from context_compiler import excluded as context_excluded  # noqa: E402
 from handoff import validate as validate_handoff  # noqa: E402
 from orchestrator import SUBAGENT_STAGES, commit as commit_handoff, load as load_progress, record, reconcile, resume  # noqa: E402
@@ -237,7 +237,11 @@ def _base_stage_prompt(task_id: str, role: str, extra: str = "") -> str:
 
 
 def _runtime_selection(task_id: str, role: str) -> dict[str, Any]:
-    models = json.loads((run_dir(task_id) / "model-selections.json").read_text(encoding="utf-8"))
+    active = read_provider_active("subscriptions")
+    if not active or active.get("task_id") != task_id:
+        raise ValueError("validated subscription binding required for model selection")
+    model_path = provider_model_selections_path("subscriptions")
+    models = json.loads(model_path.read_text(encoding="utf-8"))
     for row in models.get("selections", []):
         if row.get("agent") == role:
             return row
@@ -550,11 +554,12 @@ def run_parallel_review_batch(task_id: str, state: dict[str, Any], *, io: Runner
 
 
 def _task_source_path(task_id: str) -> Path | None:
-    if not ACTIVE_PATH.is_file():
-        return None
     try:
-        active = json.loads(ACTIVE_PATH.read_text(encoding="utf-8"))
-    except Exception:
+        from harnesslib import read_provider_active
+        active = read_provider_active("subscriptions")
+    except ValueError:
+        return None
+    if active is None:
         return None
     if active.get("task_id") != task_id:
         return None
@@ -701,7 +706,8 @@ def _review_consent(task_id: str, *, io: RunnerIO) -> bool:
     if not io.confirm("La política Receipt-RDD requiere tu consentimiento para que un reviewer emita un receipt en esta sesión. ¿Aprobar?", False):
         record(task_id, "BLOCKED", step="REVIEW_CONSENT", note="human declined receipt review consent")
         return False
-    session = ROOT / ".harness" / "subscriptions" / "session.json"
+    from harnesslib import provider_session_path
+    session = provider_session_path("subscriptions")
     sid = None
     if session.is_file():
         try:

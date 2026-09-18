@@ -22,13 +22,16 @@ SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harnesslib import run_dir, write_json_atomic  # noqa: E402
+from harnesslib import (  # noqa: E402
+    provider_model_selections_path, provider_session_path, read_provider_active,
+    reject_legacy_provider_state, run_dir, write_json_atomic,
+)
 from subscription_bridge import ACTIVE_PATH, doctor, login  # noqa: E402
 from autonomous_orchestrator import RunnerIO, run_to_completion  # noqa: E402
 
 CHAT_DIR = ROOT / ".harness" / "chat"
 SETUP_PATH = CHAT_DIR / "setup.json"
-SESSION_PATH = ROOT / ".harness" / "subscriptions" / "session.json"
+SESSION_PATH = provider_session_path("subscriptions")
 TASK_DIR = CHAT_DIR / "tasks"
 
 
@@ -37,6 +40,8 @@ def now_iso() -> str:
 
 
 def ensure_session() -> str:
+    # Legacy unscoped state must be rejected before creating a new session.
+    reject_legacy_provider_state("subscriptions")
     SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
     sid = None
     if SESSION_PATH.is_file():
@@ -138,11 +143,11 @@ def create_task(text: str) -> Path:
 
 
 def active_task() -> tuple[str, Path] | None:
-    if not ACTIVE_PATH.is_file():
-        return None
     try:
-        data = json.loads(ACTIVE_PATH.read_text(encoding="utf-8"))
+        data = read_provider_active("subscriptions")
     except Exception:
+        return None
+    if data is None:
         return None
     task_id = data.get("task_id")
     raw = data.get("task_path")
@@ -157,7 +162,14 @@ def active_task() -> tuple[str, Path] | None:
         return None
     if state.get("state") == "DONE":
         return None
-    path = (ROOT / raw).resolve()
+    relative = Path(raw)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    path = (ROOT / relative).resolve()
+    try:
+        path.relative_to(ROOT.resolve())
+    except ValueError:
+        return None
     if not path.is_file():
         return None
     return task_id, path
@@ -171,8 +183,9 @@ def show_active_status() -> None:
     task_id, _ = active
     progress = json.loads((run_dir(task_id) / "progress.json").read_text(encoding="utf-8"))
     models = {}
-    mp = run_dir(task_id) / "model-selections.json"
-    if mp.is_file():
+    binding = read_provider_active("subscriptions")
+    mp = provider_model_selections_path("subscriptions") if binding and binding.get("task_id") == task_id else None
+    if mp is not None and mp.is_file():
         try:
             models = json.loads(mp.read_text(encoding="utf-8"))
         except Exception:

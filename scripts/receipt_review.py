@@ -12,7 +12,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from harnesslib import ROOT, load_json, load_manifest, run_dir, runtime_root, safe_task_id, write_json_atomic
+from harnesslib import (
+    ROOT, load_json, load_manifest, provider_active_path, provider_model_selections_path,
+    provider_session_path, read_provider_active, run_dir, runtime_reference,
+    runtime_root, safe_task_id, scope_expansion_digest, sha256_file, write_json_atomic,
+)
 
 POLICY_PATH = "harness/receipt-policy.json"
 RUNTIME: Path | None = None
@@ -77,12 +81,8 @@ def set_mode(enabled: bool) -> dict:
 def _active_provider(task: str) -> str | None:
     found = []
     for provider in ("codex", "opencode", "subscriptions"):
-        p = runtime_root() / ".harness" / provider / "active-task.json"
-        if not p.is_file():
-            continue
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        data = read_provider_active(provider)
+        if data is None:
             continue
         if data.get("task_id") == task:
             found.append(provider)
@@ -93,13 +93,26 @@ def _active_provider(task: str) -> str | None:
     return None
 
 
+def _model_selections_path(task: str) -> Path:
+    provider = _active_provider(task)
+    if provider:
+        active = read_provider_active(provider)
+        if active and active.get("model_selections_path"):
+            return provider_model_selections_path(provider)
+        return provider_model_selections_path(provider)
+    raise ValueError("validated provider binding required for model selections")
+
+
 def _session_id(provider: str, explicit: str | None = None) -> str:
     if explicit:
         return explicit
     env = os.environ.get("HARNESS_SESSION_ID")
     if env:
         return env
-    p = runtime_root() / ".harness" / provider / "session.json"
+    # This validates legacy/owner state before a session can confer review
+    # consent.  A session stored by another worktree is never a fallback.
+    read_provider_active(provider)
+    p = provider_session_path(provider)
     if not p.is_file():
         raise ValueError(f"current {provider} session id unavailable; start/resume the provider session first or pass --session-id")
     data = json.loads(p.read_text(encoding="utf-8"))
@@ -173,7 +186,10 @@ def _task_route(task: str) -> dict:
 def _lock_or_publish(task: str) -> tuple[str, str | None, Path | None]:
     lock = runtime_root() / ".harness" / "locks" / f"{task}.json"
     if lock.is_file():
-        data = json.loads(lock.read_text(encoding="utf-8"))
+        # Reuse the canonical lock validator so receipt snapshots cannot hash
+        # an attacker-selected or reparse-backed directory from raw JSON.
+        from worktree import _load_lock
+        data = _load_lock(task)
         base = data.get("base_commit")
         worktree = Path(data.get("worktree", ""))
         if not base or not worktree.is_dir():
@@ -273,6 +289,7 @@ def candidate_snapshot(task: str) -> dict:
         "changed_paths": len(entries),
         "changed_lines": _changed_lines(base, commit, worktree, paths),
         "subject_hash": _json_digest(subject),
+        "scope_expansion_sha256": scope_expansion_digest(task),
     }
 
 
@@ -322,6 +339,7 @@ def assess(task: str) -> dict:
         "risk": risk,
         "reasons": reasons,
         "subject_hash": snap["subject_hash"],
+        "scope_expansion_sha256": snap.get("scope_expansion_sha256"),
         "changed_paths": snap["changed_paths"],
         "changed_lines": snap["changed_lines"],
         "base_commit": snap["base_commit"],
@@ -331,7 +349,7 @@ def assess(task: str) -> dict:
 
 
 def _small_implementer(task: str) -> tuple[bool, str]:
-    p = run_dir(task) / "model-selections.json"
+    p = _model_selections_path(task)
     if not p.is_file():
         return False, "no explicit implementer model selection"
     data = json.loads(p.read_text(encoding="utf-8"))
@@ -386,7 +404,7 @@ def _selected_identity(selection: dict) -> tuple[str | None, str | None, str | N
 def _ensure_dynamic_agent_models(task: str, route: dict, added_agents: list[str]) -> list[dict]:
     if not added_agents:
         return []
-    models_path = run_dir(task) / "model-selections.json"
+    models_path = _model_selections_path(task)
     task_path = run_dir(task) / "task.json"
     if not models_path.is_file() or not task_path.is_file():
         raise ValueError("dynamic review/verification routing requires task snapshot and model-selections.json")
@@ -441,12 +459,13 @@ def _ensure_dynamic_agent_models(task: str, route: dict, added_agents: list[str]
 
     payload["selections"] = selections
     write_json_atomic(models_path, payload)
-    active_path = runtime_root() / ".harness" / provider / "active-task.json"
-    if active_path.is_file():
-        active = json.loads(active_path.read_text(encoding="utf-8"))
+    active_path = provider_active_path(provider)
+    active = read_provider_active(provider)
+    if active is not None:
         if active.get("task_id") == task:
             active["selections"] = selections
             active["agents"] = route.get("agents", [])
+            active["model_selections_sha256"] = sha256_file(models_path)
             write_json_atomic(active_path, active)
 
     if provider == "codex":
@@ -567,6 +586,8 @@ def verification_finish_decision(task: str) -> dict:
     failing = []
     if assessment.get("subject_hash") != snap.get("subject_hash"):
         failing.append("candidate_changed_after_assess")
+    if assessment.get("scope_expansion_sha256") != snap.get("scope_expansion_sha256"):
+        failing.append("scope_expansion_changed_after_assess")
     rr = route.get("receipt_review") or {}
     if rr.get("plan_hash") != plan.get("plan_hash"):
         failing.append("route_verification_plan_mismatch")
@@ -605,6 +626,8 @@ def _receipt_payload(task: str, kind: str, handoff: Path | None, actor: str) -> 
     current = candidate_snapshot(task)
     if current.get("subject_hash") != frozen.get("subject_hash"):
         raise ValueError("candidate changed after freeze; review/receipt must restart")
+    if current.get("scope_expansion_sha256") != frozen.get("scope_expansion_sha256"):
+        raise ValueError("scope expansion changed after freeze; review/receipt must restart")
     if mode_status().get("mode") != "on":
         raise ValueError("Receipt-RDD is not enabled")
 
@@ -619,6 +642,7 @@ def _receipt_payload(task: str, kind: str, handoff: Path | None, actor: str) -> 
         "schema_version": 1,
         "task_id": task,
         "subject_hash": frozen["subject_hash"],
+        "scope_expansion_sha256": frozen.get("scope_expansion_sha256"),
         "kind": kind,
         "status": "PASS",
         "actor": actor,
@@ -674,6 +698,8 @@ def receipt_validate(task: str) -> dict:
         failing.append("receipt_integrity")
     if data.get("subject_hash") != snap.get("subject_hash"):
         failing.append("receipt_subject_changed")
+    if data.get("scope_expansion_sha256") != snap.get("scope_expansion_sha256"):
+        failing.append("receipt_scope_expansion_changed")
     if data.get("kind") == "review":
         handoff = run_dir(task) / "handoffs" / "reviewer.json"
         if not handoff.is_file():

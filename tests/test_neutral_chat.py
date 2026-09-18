@@ -11,6 +11,7 @@ from scripts import autonomous_orchestrator as ao
 from scripts import harness_chat as hc
 from scripts import receipt_review
 from scripts import task_checks
+import harnesslib
 from scripts.harnesslib import ROOT, run_dir, write_json_atomic
 
 
@@ -153,15 +154,43 @@ class NeutralChatTests(unittest.TestCase):
         run.mkdir(parents=True, exist_ok=True)
         snapshot = run / "task.json"
         write_json_atomic(snapshot, {"id": task_id, "description": "test", "files": []})
-        active = ROOT / ".harness" / "subscriptions" / "active-task.json"
+        active = __import__('harnesslib').provider_active_path("subscriptions")
+        for name in ("route.json", "context.json", "progress.json", "impact.json", "agent-budget.json"):
+            write_json_atomic(run / name, {"task_id": task_id})
+        model_path = __import__('harnesslib').provider_model_selections_path("subscriptions")
+        inventory_path = __import__('harnesslib').provider_inventory_path("subscriptions")
+        write_json_atomic(inventory_path, {"schema_version": 1, "provider": "subscriptions", "models": []})
+        write_json_atomic(model_path, {
+            "schema_version": 2,
+            "task_id": task_id,
+            "provider": "subscriptions",
+            "inventory_path": inventory_path.relative_to(__import__('harnesslib').ROOT).as_posix(),
+            "inventory_sha256": __import__('harnesslib').sha256_file(inventory_path),
+            "selections": [],
+        })
         old = active.read_bytes() if active.exists() else None
         try:
             write_json_atomic(active, {
-                "schema_version": 1,
+                "schema_version": 3,
+                "provider": "subscriptions",
+                "overlay": __import__('harnesslib').worktree_identity(),
                 "task_id": task_id,
+                "task_path": f"tasks/{task_id}.json",
                 "task_snapshot_path": snapshot.relative_to(__import__('harnesslib').runtime_root()).as_posix(),
+                "route_path": f".harness/runs/{task_id}/route.json",
+                "context_path": f".harness/runs/{task_id}/context.json",
+                "progress_path": f".harness/runs/{task_id}/progress.json",
+                "impact_path": f".harness/runs/{task_id}/impact.json",
+                "agent_budget_path": f".harness/runs/{task_id}/agent-budget.json",
+                "model_selections_path": model_path.relative_to(__import__('harnesslib').ROOT).as_posix(),
+                "model_selections_sha256": __import__('harnesslib').sha256_file(model_path),
+                "selections": [],
             })
-            task, path = task_checks._load_active_task(task_id)
+            def only_fixture_binding(provider):
+                return harnesslib.read_provider_active(provider) if provider == "subscriptions" else None
+            with patch.object(harnesslib, "reject_legacy_provider_state"), \
+                 patch.object(task_checks, "read_provider_active", side_effect=only_fixture_binding):
+                task, path = task_checks._load_active_task(task_id)
             self.assertEqual(task["id"], task_id)
             self.assertEqual(path, snapshot.resolve())
         finally:
@@ -169,6 +198,7 @@ class NeutralChatTests(unittest.TestCase):
                 active.unlink(missing_ok=True)
             else:
                 active.write_bytes(old)
+            model_path.unlink(missing_ok=True)
             shutil.rmtree(run, ignore_errors=True)
 
     def test_receipt_consent_can_bind_to_neutral_subscription_session(self):

@@ -193,7 +193,10 @@ def _git_bytes(cwd: Path, args: list[str]) -> bytes:
 
 
 def git_fingerprint(cwd: Path) -> str | None:
-    inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=cwd, text=True, capture_output=True, check=False)
+    inside = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"], cwd=cwd, text=True,
+        encoding="utf-8", errors="replace", capture_output=True, check=False,
+    )
     if inside.returncode != 0:
         return None
     h = hashlib.sha256()

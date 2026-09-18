@@ -1,9 +1,9 @@
-import json, shutil, subprocess, sys, unittest
+import json, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from harnesslib import runtime_root
+from harnesslib import provider_active_path, provider_enriched_inventory_path, runtime_root
 from compile_harness import generated
 
 class OpenCodeIntegrationTests(unittest.TestCase):
@@ -43,12 +43,56 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         src=ROOT/'.opencode/plugins/harness/index.ts'
         tmp=ROOT/'.harness/opencode/plugin-syntax.mjs'
         tmp.parent.mkdir(parents=True,exist_ok=True)
+        tmp.unlink(missing_ok=True)
         tmp.write_text(src.read_text())
         try:
-            p=subprocess.run([node,'--check',str(tmp)],text=True,capture_output=True)
+            p=subprocess.run([node,'--check',str(tmp)],text=True,encoding='utf-8',errors='replace',capture_output=True)
             self.assertEqual(p.returncode,0,p.stderr)
         finally:
             tmp.unlink(missing_ok=True)
+
+    def test_plugin_cwd_containment_is_async_and_reparse_safe(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node unavailable')
+        helper = (ROOT / '.opencode/plugins/harness/path_guards.mjs').resolve()
+        script = r'''
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, symlink, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+const { insideReal, assertNoReparse } = await import(pathToFileURL(process.argv[1]).href);
+const root = await mkdtemp(path.join(os.tmpdir(), "harness-cwd-"));
+const outside = await mkdtemp(path.join(os.tmpdir(), "harness-outside-"));
+try {
+  assert.equal(await insideReal(root, root), true);
+  assert.equal(await insideReal(root, outside), false);
+  const link = path.join(root, "link");
+  try {
+    await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+    assert.equal(await insideReal(root, link), false);
+    await assert.rejects(() => assertNoReparse(root, link));
+  } catch (error) {
+    if (error?.code !== "EPERM" && error?.code !== "EACCES") throw error;
+  }
+} finally {
+  await rm(root, { recursive: true, force: true });
+  await rm(outside, { recursive: true, force: true });
+}
+'''
+        result = subprocess.run(
+            [node, '--input-type=module', '-e', script, str(helper)],
+            cwd=ROOT, text=True, encoding='utf-8', errors='replace',
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_plugin_rechecks_reparse_boundaries_for_reads_and_atomic_temp_writes(self):
+        text = (ROOT / '.opencode/plugins/harness/index.ts').read_text()
+        self.assertIn('await assertNoReparse(root, selectionFile)', text)
+        self.assertIn('await assertNoReparse(root, inventoryFile)', text)
+        self.assertGreaterEqual(text.count('await assertNoReparse(root, tmp)'), 2)
 
     def test_orchestrator_has_narrow_control_plane_shell_permissions(self):
         text=(ROOT/'.opencode/agents/harness-orchestrator.md').read_text()
@@ -133,11 +177,35 @@ class OpenCodeIntegrationTests(unittest.TestCase):
 
     def test_activate_task_writes_runtime_binding(self):
         task=ROOT/'tasks/TEST-OPENCODE-OVERLAY.json'
-        runtime=runtime_root()/'.harness/opencode'
-        active=runtime/'active-task.json'
-        inventory=runtime_root()/'.harness/model-inventories/opencode.json'
+        active=provider_active_path('opencode')
+        inventory=provider_enriched_inventory_path('opencode')
+        legacy_root=runtime_root()/'.harness/opencode'
+        legacy_names=(
+            'active-task.json', 'session.json', 'permission-audit.jsonl',
+            'catalog-snapshot.json', 'model-inventory.json',
+        )
 
         old_inventory=inventory.read_text() if inventory.exists() else None
+        # The live provider session may still emit legacy diagnostics while the
+        # subprocess fixture runs. Quarantine the exact pre-existing bytes so
+        # this test exercises the fail-closed migration boundary without
+        # overwriting another session's state.
+        held_legacy={}
+        worktree_legacy_root=ROOT/'.harness/opencode'
+        held_worktree_legacy={}
+        quarantine=tempfile.TemporaryDirectory(prefix='harness-opencode-legacy-')
+        quarantine_root=Path(quarantine.name)
+        for name in legacy_names:
+            path=legacy_root/name
+            if path.exists():
+                held_legacy[name]=path.read_bytes()
+                path.unlink()
+            local_path=worktree_legacy_root/name
+            if local_path.exists():
+                held_worktree_legacy[name]=local_path.read_bytes()
+                local_path.unlink()
+        held_active=active.read_bytes() if active.exists() else None
+        active.unlink(missing_ok=True)
         task.parent.mkdir(parents=True, exist_ok=True)
 
         task.write_text(json.dumps({
@@ -147,11 +215,11 @@ class OpenCodeIntegrationTests(unittest.TestCase):
         }))
 
         # Empty-but-fresh scored inventory is valid for R1 and safely results in inherit.
-        runtime.mkdir(parents=True,exist_ok=True)
+        active.parent.mkdir(parents=True,exist_ok=True)
         inventory.parent.mkdir(parents=True,exist_ok=True)
 
         inventory.write_text(json.dumps({
-            'schema_version':2,
+            'schema_version':3,
             'provider':'opencode',
             'generated_at':'2099-01-01T00:00:00Z',
             'source':'test',
@@ -167,6 +235,8 @@ class OpenCodeIntegrationTests(unittest.TestCase):
                 ],
                 cwd=ROOT,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 capture_output=True
             )
 
@@ -174,6 +244,8 @@ class OpenCodeIntegrationTests(unittest.TestCase):
 
             data=json.loads(active.read_text())
             self.assertEqual(data['task_id'],'TEST-OPENCODE')
+            self.assertEqual(data['provider'], 'opencode')
+            self.assertIn('worktree_id', data['overlay'])
             self.assertEqual(data['risk'],'R1')
             self.assertTrue(data['selections'])
             self.assertTrue(
@@ -193,8 +265,32 @@ class OpenCodeIntegrationTests(unittest.TestCase):
             shutil.rmtree(runtime_root()/'.harness/runs/TEST-OPENCODE',ignore_errors=True)
             active.unlink(missing_ok=True)
 
+            # Preserve any diagnostic emitted during the subprocess in the
+            # quarantine, then restore the exact pre-test legacy bytes. This
+            # avoids a silent overwrite while keeping the integration fixture
+            # side-effect free for the rest of the suite.
+            for name in legacy_names:
+                path=legacy_root/name
+                if path.exists():
+                    path.replace(quarantine_root/name)
+                if name in held_legacy:
+                    legacy_root.mkdir(parents=True,exist_ok=True)
+                    path.write_bytes(held_legacy[name])
+                local_path=worktree_legacy_root/name
+                if local_path.exists():
+                    local_path.unlink()
+                if name in held_worktree_legacy:
+                    worktree_legacy_root.mkdir(parents=True,exist_ok=True)
+                    local_path.write_bytes(held_worktree_legacy[name])
+            if active.exists():
+                active.replace(quarantine_root/'active-task.json')
+            if held_active is not None:
+                active.parent.mkdir(parents=True,exist_ok=True)
+                active.write_bytes(held_active)
+
             if old_inventory is None:
                 inventory.unlink(missing_ok=True)
             else:
                 inventory.write_text(old_inventory)
+            quarantine.cleanup()
 if __name__=='__main__': unittest.main()

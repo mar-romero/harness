@@ -4,7 +4,7 @@
   "type": "object",
   "required": ["schema_version", "provider", "generated_at", "models"],
   "properties": {
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "provider": {"type": "string", "minLength": 1},
     "generated_at": {"type": "string", "minLength": 1},
     "source": {"type": "string"},
