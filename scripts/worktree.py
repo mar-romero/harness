@@ -186,7 +186,7 @@ def _validate_lock_data(task: str, data: dict) -> dict:
 
 
 def _root_branch():
-    branch = git('branch', '--show-current').stdout.strip()
+    branch = git('branch', '--show-current', cwd=_common_repo_root()).stdout.strip()
     if not branch:
         raise ValueError('canonical repository is detached; worktree publication requires a named integration branch')
     return branch
@@ -781,7 +781,7 @@ def publish(task, execute=False):
             if not execute:
                 return data
             commit = data.get('commit')
-            if git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip() != commit:
+            if git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip() != commit:
                 raise ValueError('cannot resume publication: canonical HEAD no longer equals integrated commit')
             return _finalize_integrated_artifact(task, data)
 
@@ -810,7 +810,7 @@ def publish(task, execute=False):
         )
 
     branch_head = git('rev-parse', 'HEAD', cwd=path).stdout.strip()
-    integrated = git('merge-base', '--is-ancestor', 'HEAD', branch_head, cwd=ROOT, check=False)
+    integrated = git('merge-base', '--is-ancestor', 'HEAD', branch_head, cwd=_common_repo_root(), check=False)
     if integrated.returncode != 0:
         raise ValueError(
             'canonical HEAD is not incorporated into the task branch; publication requires explicit reconciliation'
