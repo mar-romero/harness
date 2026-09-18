@@ -228,6 +228,15 @@ def _worktree_entry(cwd: Path, rel: str) -> dict:
         raise ValueError(f"unsupported candidate path type: {rel}")
     raw = p.read_bytes()
     mode = "100755" if (st.st_mode & 0o111) else "100644"
+    # Windows can report every checked-out file as executable even when the
+    # Git tree records mode 100644.  Prefer the index mode for tracked files
+    # so a worktree snapshot hashes the same subject as its published commit.
+    try:
+        indexed = _run_text("ls-files", "--stage", "--", rel, cwd=cwd).strip()
+    except Exception:
+        indexed = ""
+    if indexed:
+        mode = indexed.split()[0]
     return {"path": rel, "kind": "file", "mode": mode, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
 
 

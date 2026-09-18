@@ -1,7 +1,9 @@
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -39,6 +41,15 @@ class ReceiptAssessmentTests(unittest.TestCase):
         snap = {"files": [{"path": "src/calc.py", "mode": "100644"}], "changed_paths": 1, "changed_lines": 10}
         risk, _ = mod.classify_snapshot(snap, {"risk": "R1"}, self.cfg())
         self.assertEqual(risk, "medium")
+
+    def test_worktree_entry_uses_index_mode_for_tracked_files(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            path = root / "harness.cmd"
+            path.write_bytes(b"echo harness\n")
+            with patch.object(mod, "_run_text", return_value="100644 blob deadbeef\tharness.cmd"):
+                entry = mod._worktree_entry(root, "harness.cmd")
+        self.assertEqual(entry["mode"], "100644")
 
 
 if __name__ == "__main__":
