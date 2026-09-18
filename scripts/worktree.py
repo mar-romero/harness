@@ -631,12 +631,12 @@ def _publication_preconditions(task):
 
 
 def _root_has_tracked_changes():
-    r = git('diff', '--quiet', 'HEAD', '--', cwd=ROOT, check=False)
+    r = git('diff', '--quiet', 'HEAD', '--', cwd=_common_repo_root(), check=False)
     return r.returncode != 0
 
 
 def _root_untracked_overlap(changed):
-    untracked = set(_git_lines('ls-files', '--others', '--exclude-standard', cwd=ROOT))
+    untracked = set(_git_lines('ls-files', '--others', '--exclude-standard', cwd=_common_repo_root()))
     return sorted(untracked & set(changed))
 
 
@@ -657,7 +657,7 @@ def _cleanup_published_worktree(task, meta):
                 )
 
         try:
-            git("worktree", "remove", str(path))
+            git("worktree", "remove", str(path), cwd=_common_repo_root())
         except Exception as exc:
             # On Windows Git can successfully unregister the worktree and
             # still return a non-zero exit code because physical directory
@@ -690,10 +690,10 @@ def _cleanup_published_worktree(task, meta):
     _safe_lock(task).unlink(missing_ok=True)
 
     branches = set(
-        _git_lines("branch", "--format=%(refname:short)", cwd=ROOT)
+        _git_lines("branch", "--format=%(refname:short)", cwd=_common_repo_root())
     )
     if branch in branches:
-        git("branch", "-d", branch, cwd=ROOT)
+        git("branch", "-d", branch, cwd=_common_repo_root())
 
     return {
         "cleaned_up": (
@@ -736,14 +736,14 @@ def publish_status(task):
     commit = data.get('commit')
     if not commit:
         return {'task_id': task, 'published': False, 'reason': 'publish commit missing'}
-    current_branch = git('branch', '--show-current', cwd=ROOT, check=False)
+    current_branch = git('branch', '--show-current', cwd=_common_repo_root(), check=False)
     if current_branch.returncode != 0 or current_branch.stdout.strip() != data.get('integration_branch'):
         return {
             'task_id': task,
             'published': False,
             'reason': 'canonical repository is not on the recorded integration branch',
         }
-    ancestor = git('merge-base', '--is-ancestor', commit, 'HEAD', cwd=ROOT, check=False)
+    ancestor = git('merge-base', '--is-ancestor', commit, 'HEAD', cwd=_common_repo_root(), check=False)
     if ancestor.returncode != 0:
         return {
             'task_id': task,
@@ -819,7 +819,7 @@ def publish(task, execute=False):
     # The lock base proves creation provenance.  Publication instead compares
     # against the current integration tip already incorporated in this branch,
     # so an explicit upstream merge is not misclassified as task-owned work.
-    root_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    root_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     allowed = _authorized_surface(task)
     changed = _candidate_files(path, root_head)
     _assert_authorized_surface(changed, allowed)
@@ -861,16 +861,16 @@ def publish(task, execute=False):
             git('commit', '-m', f'harness(task): publish {task}', cwd=path)
 
     candidate = git('rev-parse', 'HEAD', cwd=path).stdout.strip()
-    integration_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    integration_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     committed = _committed_files(path, integration_head)
     _assert_authorized_surface(committed, allowed)
     if candidate == integration_head or not committed:
         raise ValueError('publication produced no committed task change')
 
     # Re-check the integration base immediately before the fast-forward.
-    root_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    root_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     if root_head == integration_head:
-        git('merge', '--ff-only', candidate, cwd=ROOT)
+        git('merge', '--ff-only', candidate, cwd=_common_repo_root())
     elif root_head != candidate:
         raise ValueError('canonical HEAD moved before fast-forward integration')
 
