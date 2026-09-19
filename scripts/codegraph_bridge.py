@@ -81,6 +81,8 @@ def _run(args: list[str], *, timeout: int = 45, max_chars: int = 32000) -> dict[
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=False,
             timeout=max(1, int(timeout)),
             check=False,

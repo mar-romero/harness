@@ -2,8 +2,8 @@
   "schema_version": 1,
   "provider": "codex",
   "description": "Codex host adapter. Discover account/build-visible models from CODEX_HOME/models_cache.json; fall back to `codex debug models --bundled` only when no cache exists.",
-  "enriched_inventory": ".harness/model-inventories/codex.json",
-  "active_task": ".harness/codex/active-task.json",
+  "enriched_inventory": ".harness/overlays/{worktree_id}/codex/enriched-inventory.json",
+  "active_task": ".harness/overlays/{worktree_id}/codex/active-task.json",
   "discovery": {
     "codex_home_env": "CODEX_HOME",
     "cache_file": "models_cache.json",
@@ -17,7 +17,7 @@
   },
   "openrouter_aliases": {},
   "openrouter_catalog": ".harness/openrouter/model-inventory.json",
-  "raw_inventory": ".harness/codex/model-inventory.json",
+  "raw_inventory": ".harness/overlays/{worktree_id}/codex/model-inventory.json",
   "openrouter": {
     "id_prefix": "openai/",
     "benchmark_source": "artificial-analysis",

@@ -23,7 +23,10 @@ from pathlib import Path
 from typing import Any
 
 import harnesslib
-from harnesslib import ROOT, runtime_root, write_json_atomic
+from harnesslib import (
+    ROOT, provider_catalog_path, provider_enriched_inventory_path,
+    provider_inventory_path, runtime_root, write_json_atomic,
+)
 
 OPENROUTER = "https://openrouter.ai/api/v1"
 PROVIDER_DIR = ROOT / "harness" / "model-providers"
@@ -338,7 +341,7 @@ def _resolve_benchmark_id(
 def discover_opencode(
     cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    catalog = ROOT / cfg["runtime_catalog"]
+    catalog = provider_catalog_path("opencode") if cfg.get("provider") == "opencode" else ROOT / cfg["runtime_catalog"]
     data = _load_json(catalog, {})
 
     catalog_generated_at = (
@@ -383,6 +386,8 @@ def discover_opencode(
                         cwd=ROOT,
                         capture_output=True,
                         text=True,
+                        encoding="utf-8",
+                        errors="replace",
                         timeout=30,
                         shell=False,
                         check=False,
@@ -629,6 +634,8 @@ def _codex_bundled_candidates(
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             shell=False,
             check=False,
@@ -1089,7 +1096,12 @@ def _write_raw_provider_inventory(
             }
         )
 
-    dest = ROOT / str(raw_path)
+    if harnesslib.ROOT == ROOT and "{worktree_id}" in str(raw_path):
+        dest = provider_inventory_path(provider)
+    else:
+        # Isolated test seams do not have Git worktree metadata; retain their
+        # requested fixture path without creating a production legacy fallback.
+        dest = ROOT / str(raw_path).replace("{worktree_id}", "fixture")
     write_json_atomic(
         dest,
         {
@@ -1252,7 +1264,7 @@ def refresh_provider_inventory(
 
         candidate["openrouter_id"] = oid
         candidate["openrouter_match"] = match_type
-    
+
     intelligence = {
         mid: x
         for mid, row in bench_idx.items()
@@ -2310,7 +2322,10 @@ def build_provider_inventory_from_scores(
         )
 
     raw_dest = str(cfg["enriched_inventory"])
-    dest = _runtime_artifact(raw_dest) if raw_dest.startswith(".harness/") else ROOT / raw_dest
+    if "{worktree_id}" in raw_dest:
+        dest = provider_enriched_inventory_path(provider)
+    else:
+        dest = _runtime_artifact(raw_dest) if raw_dest.startswith(".harness/") else ROOT / raw_dest
     availability_times = [
         candidate.get("availability_generated_at")
         for candidate in candidates

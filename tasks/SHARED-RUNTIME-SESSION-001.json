@@ -1,0 +1,51 @@
+{
+  "id": "SHARED-RUNTIME-SESSION-001",
+  "description": "Separate worktree/session-specific provider activation overlays and diagnostics from the shared durable runtime so concurrent local worktrees cannot overwrite each other's active state.",
+  "acceptance_criteria": [
+    "Provider active-task state is isolated by a stable worktree or session identity.",
+    "Two worktrees can hold distinct active-provider state without collision.",
+    "Shared durable task evidence remains visible to both worktrees.",
+    "Legacy session files are migrated or rejected explicitly without silent overwrite.",
+    "Tests cover concurrent-worktree state separation."
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": true,
+    "financial": false,
+    "external_contract": false,
+    "migration": false,
+    "persistence": true,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "files": [
+    "scripts/harnesslib.py",
+    "scripts/providers/codex_activate_task.py",
+    "scripts/providers/opencode_activate_task.py",
+    "scripts/codex_context_hook.py",
+    "scripts/task_checks.py",
+    "tests/test_shared_runtime_sessions.py"
+  ],
+  "tags": ["runtime", "session", "provider", "worktree", "derived-work", "product-discovery"],
+  "origin": {
+    "kind": "derived_from_approved_discovery",
+    "discovery_id": "SHARED-WORKTREE-RUNTIME-001",
+    "project_id": null,
+    "parent_id": "SHARED-WORKTREE-RUNTIME-FEATURE-001",
+    "source_language": "es",
+    "source_request_preserved_at": "planning/discovery/SHARED-WORKTREE-RUNTIME-001.json"
+  },
+  "planning": {
+    "title": "Scope provider session state by worktree",
+    "size": "M",
+    "dependencies": ["SHARED-RUNTIME-ROOT-003"],
+    "priority_score": 4.45
+  }
+}

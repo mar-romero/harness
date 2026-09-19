@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 from __future__ import annotations
-import argparse, base64, hashlib, json, os, platform, subprocess, tempfile
+import argparse, base64, binascii, hashlib, json, os, platform, subprocess, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from harnesslib import ROOT, run_dir, sha256_file, write_json_atomic, git
-from evidence import append, head_hash, validate
+from harnesslib import (
+    ROOT, git, provider_active_path, provider_model_selections_path,
+    read_provider_active, run_dir, scope_expansion_digest, sha256_file,
+    validate_model_selections, write_json_atomic,
+)
+from evidence import append, head_hash, validate, read as read_evidence
+from receipt_review import candidate_snapshot
 
 def now(): return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
-def fhash(p): return sha256_file(p) if p.exists() and p.is_file() else None
+def fhash(p): return sha256_file(p) if p is not None and p.exists() and p.is_file() else None
 def gitval(*args):
     cp=git(*args,check=False); return cp.stdout.strip() if cp.returncode==0 else None
 
@@ -31,7 +36,55 @@ def make_payload(task,risk):
     v=validate(task)
     if not v['valid']: raise ValueError('evidence ledger invalid: '+v['reason'])
     rd=run_dir(task)
-    return {'schema_version':1,'task_id':task,'risk':risk,'created_at':now(),'git_head':gitval('rev-parse','HEAD'),'git_tree':gitval('write-tree'),'manifest_sha256':fhash(ROOT/'harness/manifest.yaml'),'route_sha256':fhash(rd/'route.json'),'context_sha256':fhash(rd/'context.json'),'model_selections_sha256':fhash(rd/'model-selections.json'),'evidence_head_hash':head_hash(task),'python_version':platform.python_version()}
+    provider = None
+    selection_path = None
+    active_path = None
+    active = None
+    snapshot = candidate_snapshot(task)
+    if risk == 'R3':
+        bindings = []
+        for candidate in ('codex', 'opencode', 'subscriptions'):
+            binding = read_provider_active(candidate)
+            if binding is not None and binding.get('task_id') == task:
+                bindings.append((candidate, binding))
+        if len(bindings) != 1:
+            raise ValueError('R3 attestation requires exactly one validated active provider binding')
+        provider, active = bindings[0]
+        active_path = provider_active_path(provider)
+        selection_path = provider_model_selections_path(provider)
+        if not selection_path.is_file():
+            raise ValueError('R3 attestation requires the active provider model selections file')
+        validate_model_selections(provider, task, selection_path)
+    route_path = rd / 'route.json'
+    context_path = rd / 'context.json'
+    if not route_path.is_file() or not context_path.is_file():
+        raise ValueError('attestation requires route.json and context.json')
+    payload = {
+        'schema_version': 2,
+        'task_id': task,
+        'risk': risk,
+        'created_at': now(),
+        'git_head': gitval('rev-parse','HEAD'),
+        'git_tree': gitval('write-tree'),
+        'manifest_sha256': fhash(ROOT/'harness/manifest.yaml'),
+        'route_sha256': fhash(route_path),
+        'context_sha256': fhash(context_path),
+        'model_selections_provider': provider,
+        'model_selections_sha256': fhash(selection_path),
+        'active_binding_sha256': fhash(active_path),
+        'inventory_path': None,
+        'inventory_sha256': None,
+        'candidate_subject_hash': snapshot['subject_hash'],
+        'candidate_base_commit': snapshot['base_commit'],
+        'scope_expansion_sha256': scope_expansion_digest(task),
+        'evidence_head_hash': head_hash(task),
+        'python_version': platform.python_version(),
+    }
+    if provider:
+        selection = json.loads(selection_path.read_text(encoding='utf-8'))
+        payload['inventory_path'] = selection.get('inventory_path')
+        payload['inventory_sha256'] = selection.get('inventory_sha256')
+    return payload
 
 def create(task,risk,key,output=None):
     key=Path(key).expanduser().resolve()
@@ -49,6 +102,61 @@ def create(task,risk,key,output=None):
 
 def verify(path,key):
     doc=json.loads(Path(path).read_text(encoding='utf-8')); sig=base64.b64decode(doc['signature']['value_base64']); return verify_bytes(canonical(doc['payload']),sig,Path(key).expanduser())
+
+def _trusted_public_key() -> Path:
+    raw = os.getenv('HARNESS_ATTESTATION_PUBLIC_KEY')
+    if not raw:
+        raise ValueError('R3 attestation public key required via HARNESS_ATTESTATION_PUBLIC_KEY')
+    key = Path(raw).expanduser().resolve()
+    try:
+        key.relative_to(ROOT.resolve())
+    except ValueError:
+        return key
+    raise ValueError('attestation public key must not be stored inside the repository')
+
+def _public_key_fingerprint(key: Path) -> str:
+    cp = subprocess.run(
+        ['openssl', 'pkey', '-pubin', '-in', str(key), '-outform', 'DER'],
+        capture_output=True,
+    )
+    if cp.returncode != 0:
+        raise ValueError('configured attestation public key is invalid')
+    return hashlib.sha256(cp.stdout).hexdigest()
+
+
+def validate_current(path: Path, task: str, risk: str) -> dict:
+    """Revalidate all mutable candidate state bound into an attestation."""
+    doc = json.loads(path.read_text(encoding='utf-8'))
+    payload = doc.get('payload') or {}
+    if payload.get('schema_version') != 2 or payload.get('task_id') != task or payload.get('risk') != risk:
+        raise ValueError('attestation task/risk/schema binding mismatch')
+    if doc.get('signature', {}).get('algorithm') != 'Ed25519':
+        raise ValueError('attestation algorithm mismatch')
+    try:
+        base64.b64decode(doc['signature']['value_base64'], validate=True)
+    except (KeyError, ValueError, binascii.Error) as exc:
+        raise ValueError('attestation signature encoding is invalid') from exc
+    trusted = _trusted_public_key()
+    if not verify(path, trusted):
+        raise ValueError('attestation signature verification failed')
+    if doc['signature'].get('public_key_sha256') != _public_key_fingerprint(trusted):
+        raise ValueError('attestation signer fingerprint mismatch')
+    current = make_payload(task, risk)
+    immutable_keys = (
+        'task_id', 'risk', 'git_head', 'git_tree', 'manifest_sha256',
+        'route_sha256', 'context_sha256', 'model_selections_provider',
+        'model_selections_sha256', 'active_binding_sha256', 'inventory_path',
+        'inventory_sha256', 'candidate_subject_hash', 'candidate_base_commit',
+        'scope_expansion_sha256',
+    )
+    changed = [key for key in immutable_keys if payload.get(key) != current.get(key)]
+    if changed:
+        raise ValueError('attestation-bound state changed: ' + ', '.join(changed))
+    if payload.get('evidence_head_hash') != current.get('evidence_head_hash'):
+        rows = read_evidence(task)
+        if not rows or rows[-1].get('category') != 'attestation' or rows[-1].get('prev_hash') != payload.get('evidence_head_hash'):
+            raise ValueError('attestation evidence head changed outside the attestation append')
+    return {'allow': True, 'task_id': task, 'risk': risk}
 
 def main():
     ap=argparse.ArgumentParser(); sub=ap.add_subparsers(dest='cmd',required=True)

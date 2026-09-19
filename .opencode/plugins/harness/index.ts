@@ -1,7 +1,9 @@
 import { Plugin } from "@opencode-ai/plugin"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { spawn } from "node:child_process"
+import { createHash } from "node:crypto"
+import { spawn, spawnSync } from "node:child_process"
+import { assertNoReparse, insideReal } from "./path_guards.mjs"
 
 const REFRESH_MS = 5 * 60 * 1000
 
@@ -26,10 +28,77 @@ function parseModelRef(value) {
   return { providerID, id: remainder.slice(0, hash), variant: remainder.slice(hash + 1) }
 }
 
-function inside(root, candidate) {
-  const r = path.resolve(root)
-  const c = path.resolve(candidate)
-  return c === r || c.startsWith(r + path.sep)
+function worktreeOverlay(root, provider) {
+  // Match harnesslib.worktree_identity(): Git metadata, rather than cwd or a
+  // host canonical path, defines the isolated provider namespace.
+  const checkout = path.resolve(root)
+  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: checkout, encoding: "utf8" })
+  const common = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: checkout, encoding: "utf8" })
+  if (top.status !== 0 || common.status !== 0) throw new Error("Harness: worktree Git metadata unavailable")
+  const worktreeRoot = path.resolve(String(top.stdout || "").trim())
+  const commonRaw = String(common.stdout || "").trim()
+  const commonDir = path.resolve(checkout, commonRaw)
+  if (!commonRaw || worktreeRoot !== checkout) throw new Error("Harness: worktree root does not match Git checkout")
+  const normal = (value) => process.platform === "win32" ? value.toLowerCase() : value
+  const id = createHash("sha256").update(`${normal(worktreeRoot)}\0${normal(commonDir)}`, "utf8").digest("hex")
+  return path.join(worktreeRoot, ".harness", "overlays", id, provider)
+}
+
+async function validateActive(active, provider, ownerId, root) {
+  if (!active || typeof active !== "object") throw new Error("Harness: active binding is invalid")
+  if (active.schema_version !== 3 || active.provider !== provider) throw new Error("Harness: active binding schema/provider mismatch")
+  if (!active.overlay || active.overlay.schema_version !== 1 || active.overlay.worktree_id !== ownerId) {
+    throw new Error("Harness: active binding belongs to another worktree")
+  }
+  if (typeof active.task_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/.test(active.task_id)) {
+    throw new Error("Harness: active binding task id is invalid")
+  }
+  const expected = {
+    route_path: `.harness/runs/${active.task_id}/route.json`,
+    context_path: `.harness/runs/${active.task_id}/context.json`,
+    progress_path: `.harness/runs/${active.task_id}/progress.json`,
+    task_snapshot_path: `.harness/runs/${active.task_id}/task.json`,
+    impact_path: `.harness/runs/${active.task_id}/impact.json`,
+    agent_budget_path: `.harness/runs/${active.task_id}/agent-budget.json`,
+  }
+  for (const key of Object.keys(expected)) {
+    const value = active[key]
+    if (typeof value !== "string" || !value || path.isAbsolute(value) || value.split(/[\\/]+/).includes("..")) {
+      throw new Error(`Harness: active binding ${key} is invalid`)
+    }
+    if (value !== expected[key]) throw new Error(`Harness: active binding ${key} does not match task id`)
+  }
+  const expectedModel = path.join(".harness", "overlays", ownerId, provider, "model-selections.json")
+  if (path.normalize(active.model_selections_path) !== path.normalize(expectedModel)) throw new Error("Harness: active model selections path is not local")
+  const selectionFile = path.resolve(root, active.model_selections_path)
+  await assertNoReparse(root, selectionFile)
+  const selectionRaw = await fs.readFile(selectionFile, "utf8")
+  const selections = JSON.parse(selectionRaw)
+  if (selections.schema_version !== 2 || selections.provider !== provider || selections.task_id !== active.task_id) {
+    throw new Error("Harness: model selections task/provider/schema mismatch")
+  }
+  if (active.model_selections_sha256 && createHash("sha256").update(selectionRaw, "utf8").digest("hex") !== active.model_selections_sha256) {
+    throw new Error("Harness: active model selections integrity mismatch")
+  }
+  const inventoryFile = path.resolve(root, selections.inventory_path || "")
+  const expectedInventory = path.resolve(root, ".harness", "overlays", ownerId, provider, "enriched-inventory.json")
+  await assertNoReparse(root, inventoryFile)
+  if (inventoryFile !== expectedInventory || selections.inventory_sha256 !== createHash("sha256").update(await fs.readFile(inventoryFile)).digest("hex")) {
+    throw new Error("Harness: model selection inventory binding is invalid")
+  }
+  const inventory = JSON.parse(await fs.readFile(inventoryFile, "utf8"))
+  const modelIds = new Set((inventory.models || []).map((model) => String(model.id)))
+  for (const selection of selections.selections || []) {
+    if (selection.action === "use" && selection.status === "selected" && !modelIds.has(String(selection.model_id || selection.base_model_id))) {
+      throw new Error("Harness: selected model is absent from the provider-local inventory")
+    }
+  }
+  if (JSON.stringify(active.selections || []) !== JSON.stringify(selections.selections || [])) {
+    throw new Error("Harness: active selections differ from the provider-local selection file")
+  }
+  if (active.task_path !== `tasks/${active.task_id}.json`) throw new Error("Harness: active task path does not match task id")
+  await assertNoReparse(root, path.join(root, active.task_path))
+  return active
 }
 
 async function readJson(file, fallback) {
@@ -40,23 +109,45 @@ async function readJson(file, fallback) {
   }
 }
 
-async function writeJsonAtomic(file, value) {
+async function assertNoLegacyState(root, provider) {
+  const common = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: root, encoding: "utf8" })
+  const commonRoot = common.status === 0 ? path.dirname(path.resolve(root, String(common.stdout || "").trim())) : root
+  for (const base of [...new Set([path.resolve(root), commonRoot])]) {
+    const legacy = path.join(base, ".harness", provider)
+    for (const name of ["active-task.json", "session.json", "permission-audit.jsonl", "catalog-snapshot.json", "model-inventory.json", "enriched-inventory.json", "model-selections.json"]) {
+      try {
+        await fs.stat(path.join(legacy, name))
+        throw new Error(`Harness: legacy unscoped ${provider} state detected (${name})`)
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error
+      }
+    }
+  }
+}
+
+async function writeJsonAtomic(file, value, root) {
+  if (root) await assertNoReparse(root, file)
   await fs.mkdir(path.dirname(file), { recursive: true })
   const tmp = file + ".tmp"
+  if (root) await assertNoReparse(root, tmp)
   await fs.writeFile(tmp, JSON.stringify(value, null, 2) + "\n", "utf8")
+  if (root) await assertNoReparse(root, tmp)
+  if (root) await assertNoReparse(root, file)
   await fs.rename(tmp, file)
 }
 
-async function appendJsonLine(file, value) {
+async function appendJsonLine(file, value, root) {
+  if (root) await assertNoReparse(root, file)
   await fs.mkdir(path.dirname(file), { recursive: true })
+  if (root) await assertNoReparse(root, file)
   await fs.appendFile(file, JSON.stringify(value) + "\n", "utf8")
 }
 
-function runPython(root, args) {
+function runPython(root, args, inventoryPath) {
   return new Promise((resolve, reject) => {
     const child = spawn("python", args, {
       cwd: root,
-      env: { ...process.env, HARNESS_MODEL_INVENTORY_OPENCODE: path.join(root, ".harness/opencode/model-inventory.json") },
+      env: { ...process.env, HARNESS_MODEL_INVENTORY_OPENCODE: inventoryPath },
       stdio: ["ignore", "pipe", "pipe"],
     })
     let stdout = ""
@@ -82,9 +173,14 @@ function rawPrice(model) {
 export default Plugin.define({
   id: "portable-harness.opencode",
   async setup(ctx) {
-    const root = path.resolve(ctx.location?.project?.canonical || ctx.location?.project?.directory || ctx.location?.directory || process.cwd())
-    const runtimeDir = path.join(root, ".harness/opencode")
+    // `directory` identifies the checkout hosting this OpenCode session;
+    // `canonical` can point at another linked worktree and must not win.
+    const root = path.resolve(ctx.location?.project?.directory || ctx.location?.directory || ctx.location?.project?.canonical || process.cwd())
+    if (await fs.realpath(root) !== root) throw new Error("Harness: project root must not be a symlink or junction")
+    const runtimeDir = worktreeOverlay(root, "opencode")
+    const ownerId = path.basename(path.dirname(runtimeDir))
     const inventoryFile = path.join(runtimeDir, "model-inventory.json")
+    const enrichedInventoryFile = path.join(runtimeDir, "enriched-inventory.json")
     const catalogFile = path.join(runtimeDir, "catalog-snapshot.json")
     const activeFile = path.join(runtimeDir, "active-task.json")
     const sessionFile = path.join(runtimeDir, "session.json")
@@ -97,6 +193,7 @@ export default Plugin.define({
     let modelMap = new Map()
 
     async function refreshInventory(force = false) {
+      await assertNoLegacyState(root, "opencode")
       const ts = Date.now()
       if (!force && ts - lastInventoryRefresh < REFRESH_MS) return
       const result = await ctx.catalog.model.list()
@@ -138,14 +235,16 @@ export default Plugin.define({
         })
       }
 
-      await writeJsonAtomic(catalogFile, { generated_at: nowIso(), models })
-      await writeJsonAtomic(inventoryFile, {
-        schema_version: 1,
+      await writeJsonAtomic(catalogFile, { generated_at: nowIso(), models }, root)
+      const inventoryPayload = {
+        schema_version: 3,
         provider: "opencode",
         generated_at: nowIso(),
         source: "OpenCode V2 runtime catalog via local harness plugin + reviewed harness/opencode-model-overrides.json",
         models: normalized,
-      })
+      }
+      await writeJsonAtomic(inventoryFile, inventoryPayload, root)
+      await writeJsonAtomic(enrichedInventoryFile, inventoryPayload, root)
       lastInventoryRefresh = ts
     }
 
@@ -163,7 +262,7 @@ export default Plugin.define({
         return
       }
       if (stat.mtimeMs === activeMtime) return
-      const active = await readJson(activeFile, {})
+      const active = await validateActive(await readJson(activeFile, {}), "opencode", ownerId, root)
       activeRisk = typeof active?.risk === "string" ? active.risk : "R1"
       const next = new Map()
       for (const selection of active?.selections || []) {
@@ -176,6 +275,7 @@ export default Plugin.define({
       await ctx.agent.reload()
     }
 
+    await assertNoLegacyState(root, "opencode")
     await refreshInventory(true)
     await refreshActiveModels()
 
@@ -189,7 +289,13 @@ export default Plugin.define({
     await ctx.session.hook("context", async (event) => {
       await refreshInventory(false)
       await refreshActiveModels()
-      const active = await readJson(activeFile, {})
+      let active = null
+      try {
+        await fs.stat(activeFile)
+        active = await validateActive(await readJson(activeFile, {}), "opencode", ownerId, root)
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error
+      }
       if (active?.task_id) {
         event.system.push({
           text: `Harness runtime: task=${active.task_id}; risk=${active.risk}; route=${active.route_path}; context=${active.context_path}; evidence=.harness/runs/${active.task_id}/evidence.jsonl. Treat these durable artifacts as authoritative and respect the role boundaries of agent ${event.agent}.`,
@@ -197,34 +303,48 @@ export default Plugin.define({
       }
     })
 
-    await ctx.shell.hook("create.before", (event) => {
-      if (!inside(root, event.cwd)) throw new Error("Harness: shell cwd outside project is not allowed")
+    await ctx.shell.hook("create.before", async (event) => {
+      await assertNoReparse(root, event.cwd)
+      if (!(await insideReal(root, event.cwd))) throw new Error("Harness: shell cwd outside project is not allowed")
       event.timeout = Math.min(Number(event.timeout || 300000), 300000)
-      event.env.HARNESS_MODEL_INVENTORY_OPENCODE = inventoryFile
+      event.env.HARNESS_MODEL_INVENTORY_OPENCODE = enrichedInventoryFile
     })
 
     await ctx.permission.hook("evaluate", async (event) => {
+      await assertNoLegacyState(root, "opencode")
       // RECEIPT_RDD_SESSION_V1: capture provider session identity before the shell/edit runs.
       if (event.sessionID) {
-        await writeJsonAtomic(sessionFile, { schema_version: 1, session_id: String(event.sessionID), observed_at: nowIso() })
+        await writeJsonAtomic(sessionFile, { schema_version: 1, session_id: String(event.sessionID), observed_at: nowIso() }, root)
       }
       await refreshActiveModels()
-      let decision
+      let decision = null
       if (event.action === "shell") {
+        decision = { allow: false, human_gate: false, reason: "no valid harness gate decision" }
         for (const command of event.resources || []) {
-          const result = await runPython(root, ["scripts/gate.py", "command", String(command), "--risk", activeRisk])
+          const result = await runPython(root, ["scripts/gate.py", "command", String(command), "--risk", activeRisk], enrichedInventoryFile)
           if (result.code !== 0) {
             try { decision = JSON.parse(result.stdout) } catch { decision = { allow: false, human_gate: false, reason: result.stderr || "shell gate failed closed" } }
             break
           }
+          try {
+            const parsed = JSON.parse(result.stdout)
+            if (typeof parsed.allow !== "boolean") throw new Error("invalid gate response")
+            decision = parsed
+          } catch { decision = { allow: false, human_gate: false, reason: "malformed shell gate response" }; break }
         }
       } else if (event.action === "edit") {
+        decision = { allow: false, human_gate: false, reason: "no valid harness gate decision" }
         for (const resource of event.resources || []) {
-          const result = await runPython(root, ["scripts/gate.py", "path", String(resource)])
+          const result = await runPython(root, ["scripts/gate.py", "path", String(resource)], enrichedInventoryFile)
           if (result.code !== 0) {
             try { decision = JSON.parse(result.stdout) } catch { decision = { allow: false, human_gate: false, reason: result.stderr || "path gate failed closed" } }
             break
           }
+          try {
+            const parsed = JSON.parse(result.stdout)
+            if (typeof parsed.allow !== "boolean") throw new Error("invalid gate response")
+            decision = parsed
+          } catch { decision = { allow: false, human_gate: false, reason: "malformed path gate response" }; break }
         }
       }
 
@@ -241,7 +361,7 @@ export default Plugin.define({
         resources: event.resources,
         effect: event.effect,
         message: event.message || null,
-      })
+      }, root)
     })
 
     const timer = setInterval(() => {

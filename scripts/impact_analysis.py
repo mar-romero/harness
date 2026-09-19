@@ -191,7 +191,10 @@ def _git_changed(base: str = "HEAD", cwd: Path = ROOT) -> list[str]:
     ]
     out = []
     for cmd in cmds:
-        cp = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+        cp = subprocess.run(
+            cmd, cwd=cwd, text=True, encoding='utf-8', errors='replace',
+            capture_output=True,
+        )
         if cp.returncode == 0:
             out.extend(x.strip() for x in cp.stdout.splitlines() if x.strip())
     return sorted(dict.fromkeys(out))

@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
-    path = ROOT / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+    from harnesslib import provider_overlay_dir
+    path = provider_overlay_dir("codex") / "aci-mcp-diagnostics.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"event": "entrypoint_started"}) + "\n")

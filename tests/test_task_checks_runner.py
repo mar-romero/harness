@@ -31,6 +31,11 @@ class TaskChecksRunnerTests(unittest.TestCase):
                     'PYTHONPATH': str(project / 'src'),
                     'PYTHONDONTWRITEBYTECODE': '1',
                     'HARNESS_ACI_PYTHON': sys.executable,
+                    'GIT_CONFIG_COUNT': '2',
+                    'GIT_CONFIG_KEY_0': 'safe.directory',
+                    'GIT_CONFIG_VALUE_0': str(project.resolve()),
+                    'GIT_CONFIG_KEY_1': 'safe.directory',
+                    'GIT_CONFIG_VALUE_1': str(project.resolve()),
                 })
 
     def test_safe_env_disables_python_bytecode(self):
@@ -64,13 +69,13 @@ class TaskChecksRunnerTests(unittest.TestCase):
             snapshot = root / '.harness/runs/T/task.json'
             snapshot.parent.mkdir(parents=True)
             snapshot.write_text(json.dumps({'id': 'T', 'files': ['src/a.py']}), encoding='utf-8')
-            active = root / '.harness/codex/active-task.json'
-            active.parent.mkdir(parents=True)
-            active.write_text(json.dumps({
+            active = {
                 'task_id': 'T',
                 'task_snapshot_path': '.harness/runs/T/task.json',
-            }), encoding='utf-8')
-            task, path = task_checks._load_active_task('T')
+            }
+            with patch.object(task_checks, 'read_provider_active', side_effect=[active, None, None]), \
+                 patch.object(task_checks, 'runtime_reference', return_value=snapshot):
+                task, path = task_checks._load_active_task('T')
         self.assertEqual(task['id'], 'T')
         self.assertEqual(path.name, 'task.json')
 
