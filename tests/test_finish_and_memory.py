@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import evidence, attest, memory
 import gate
-from harnesslib import runtime_root
+from harnesslib import read_provider_active, runtime_root
 from gate import finish_decision
 from handoff import validate as validate_handoff
 
@@ -257,6 +257,17 @@ class RealR3FinishIntegrationTests(unittest.TestCase):
 
     def test_real_r3_finish_rejects_mutated_candidate_after_signed_attestation(self):
         rd = evidence.run_dir(self.TASK)
+        if not rd.is_dir():
+            self.skipTest('requires the durable SHARED-RUNTIME-SESSION-001 fixture')
+        active = []
+        for provider in ('codex', 'opencode', 'subscriptions'):
+            try:
+                if read_provider_active(provider) is not None:
+                    active.append(provider)
+            except ValueError:
+                pass
+        if len(active) != 1:
+            self.skipTest('requires exactly one active provider binding for the durable fixture')
         backup = Path(tempfile.mkdtemp(prefix='harness-r3-finish-backup-')) / self.TASK
         shutil.copytree(rd, backup)
         target = ROOT / '.opencode/plugins/harness/index.ts'
