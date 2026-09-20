@@ -58,7 +58,10 @@ FEATURE_TOKENS: dict[str, dict[str, tuple[str, ...]]] = {
 @lru_cache(maxsize=32)
 def probe(provider: str, executable: str) -> dict[str, Any]:
     try:
-        proc = subprocess.run(_help_argv(provider, executable), text=True, capture_output=True, timeout=8, check=False)
+        proc = subprocess.run(
+            _help_argv(provider, executable), text=True, encoding="utf-8",
+            errors="replace", capture_output=True, timeout=8, check=False,
+        )
         text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
         ok = proc.returncode == 0 or bool(text.strip())
     except Exception as exc:

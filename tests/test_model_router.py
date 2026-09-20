@@ -168,7 +168,7 @@ class ModelRouterTests(unittest.TestCase):
             'sufficient_models': {'type': 'integer', 'minimum': 0},
         }
 
-        self.assertEqual(inventory_schema['properties']['schema_version']['const'], 2)
+        self.assertEqual(inventory_schema['properties']['schema_version']['const'], 3)
         self.assertTrue(required_model_fields.issubset(model_schema['required']))
         self.assertNotIn('size_tier', model_schema['required'])
         self.assertEqual(size_tier_schema['type'], 'number')

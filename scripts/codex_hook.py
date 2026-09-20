@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from gate import command_decision, path_decision
+from harnesslib import provider_audit_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AUDIT = ROOT / ".harness" / "codex" / "permission-audit.jsonl"
+AUDIT = provider_audit_path("codex")
 PATCH_PATH = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$", re.MULTILINE)
 
 

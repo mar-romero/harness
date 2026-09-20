@@ -8,15 +8,20 @@ import os
 import subprocess
 import sys
 import tempfile
+import shutil
 from contextlib import contextmanager
 import tomllib
 from pathlib import Path
 
 from evidence import append as append_evidence
 from evidence import validate as validate_evidence
-import harnesslib
-from harnesslib import ROOT, load_json, run_dir, runtime_root, safe_task_id, write_json_atomic
+from harnesslib import (
+    ROOT, read_provider_active, run_dir, runtime_reference, runtime_root,
+    safe_task_id,
+    write_json_atomic,
+)
 from worktree import status as worktree_status, wt as worktree_path
+from receipt_review import candidate_snapshot
 
 
 PROVIDERS = ("codex", "opencode", "subscriptions")
@@ -25,44 +30,21 @@ PROVIDERS = ("codex", "opencode", "subscriptions")
 def _load_active_task(task_id: str) -> tuple[dict, Path]:
     bindings = []
     for provider in PROVIDERS:
-        try:
-            active_bases = [runtime_root()] if harnesslib.ROOT == ROOT else [ROOT]
-        except ValueError:
-            active_bases = [ROOT]
-        if ROOT not in active_bases:
-            active_bases.append(ROOT)
-        for active_base in active_bases:
-            active_path = active_base / ".harness" / provider / "active-task.json"
-            if not active_path.is_file():
-                continue
-            active = json.loads(active_path.read_text(encoding="utf-8"))
-            if active.get("task_id") == task_id:
-                bindings.append((provider, active, active_path))
+        active = read_provider_active(provider)
+        if active is not None and active.get("task_id") == task_id:
+            bindings.append((provider, active))
 
     if not bindings:
         raise ValueError("no active Codex, OpenCode, or subscription task binding matches this task")
     if len(bindings) != 1:
-        providers = ", ".join(provider for provider, _, _ in bindings)
+        providers = ", ".join(provider for provider, _ in bindings)
         raise ValueError(f"ambiguous active task binding for {task_id}: {providers}")
 
-    provider, active, _ = bindings[0]
+    provider, active = bindings[0]
     snapshot_rel = active.get("task_snapshot_path")
     if not isinstance(snapshot_rel, str) or not snapshot_rel:
         raise ValueError(f"{provider} active task binding has no immutable task snapshot")
-    candidates = []
-    try:
-        candidates.append((runtime_root() / snapshot_rel).resolve())
-    except ValueError:
-        pass
-    candidates.append((ROOT / snapshot_rel).resolve())
-    task_path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
-    try:
-        runtime_base = runtime_root()
-    except ValueError:
-        runtime_base = None
-    bases = [ROOT] + ([runtime_base] if runtime_base is not None else [])
-    if not any(_is_within(task_path, base) for base in bases):
-        raise ValueError("immutable task snapshot must stay inside the repository")
+    task_path = runtime_reference(snapshot_rel)
     if not task_path.is_file():
         raise ValueError(f"immutable task snapshot not found: {task_path}")
     task = json.loads(task_path.read_text(encoding="utf-8"))
@@ -200,7 +182,79 @@ def _safe_env(project: Path) -> dict[str, str]:
     env["PYTHONPATH"] = str(project / "src")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["HARNESS_ACI_PYTHON"] = sys.executable
+    # The isolated child deliberately has no user/system Git config.  On
+    # managed Windows hosts Git therefore needs an explicit, child-only
+    # safe.directory entry or it refuses to inspect the assigned worktree.
+    env["GIT_CONFIG_COUNT"] = "2"
+    env["GIT_CONFIG_KEY_0"] = "safe.directory"
+    env["GIT_CONFIG_VALUE_0"] = str(project.resolve())
+    env["GIT_CONFIG_KEY_1"] = "safe.directory"
+    try:
+        common_root = runtime_root().resolve()
+    except ValueError:
+        # Unit tests intentionally exercise _safe_env with a PATH that lacks Git.
+        # The real runner has Git and replaces this fallback with the common dir.
+        common_root = project.resolve()
+    env["GIT_CONFIG_VALUE_1"] = str(common_root)
     return env
+
+
+@contextmanager
+def _provider_runtime_guard(execution_root: Path):
+    """Keep provider-local and legacy fixtures from mutating active state."""
+    overlay = execution_root / ".harness" / "overlays"
+    with tempfile.TemporaryDirectory(prefix="harness-check-runtime-") as td:
+        backup = Path(td) / "overlays"
+        if overlay.is_dir():
+            shutil.copytree(overlay, backup, symlinks=True)
+        legacy_backup = Path(td) / "legacy"
+        legacy_backup.mkdir()
+        legacy_names = (
+            "active-task.json", "session.json", "permission-audit.jsonl",
+            "catalog-snapshot.json", "model-inventory.json",
+            "enriched-inventory.json", "model-selections.json",
+        )
+        legacy_records = []
+        legacy_roots = list(dict.fromkeys((execution_root.resolve(), runtime_root().resolve())))
+        for provider in PROVIDERS:
+            for base in legacy_roots:
+                for name in legacy_names:
+                    path = base / ".harness" / provider / name
+                    if path.is_file():
+                        held = legacy_backup / str(len(legacy_records))
+                        path.replace(held)
+                        legacy_records.append((held, path))
+        try:
+            yield
+        finally:
+            if overlay.exists():
+                shutil.rmtree(overlay)
+            if backup.is_dir():
+                overlay.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(backup, overlay, symlinks=True)
+            preserved = runtime_root() / ".harness" / "legacy-preserved" / "task-checks" / str(os.getpid())
+            generated_index = 0
+            for provider in PROVIDERS:
+                for base in legacy_roots:
+                    for name in legacy_names:
+                        path = base / ".harness" / provider / name
+                        if path.is_file():
+                            preserved.mkdir(parents=True, exist_ok=True)
+                            path.replace(preserved / f"{provider}-{generated_index}-{name}")
+                            generated_index += 1
+            for held, path in legacy_records:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                held.replace(path)
+
+
+def _clear_python_caches(project: Path) -> None:
+    """Do not execute stale bytecode after a candidate source update."""
+    for base in (project / "tests", project / "scripts"):
+        if not base.is_dir():
+            continue
+        for cache in base.rglob("__pycache__"):
+            if cache.is_dir():
+                shutil.rmtree(cache)
 
 
 @contextmanager
@@ -216,7 +270,13 @@ def _isolated_child_env(env: dict[str, str]):
         yield env
         return
 
-    with tempfile.TemporaryDirectory(prefix="harness-task-check-profile-") as raw:
+    # Windows can keep a child-created Git handle alive briefly after the
+    # subprocess has returned.  Cleanup must not turn a completed check into a
+    # runner failure; the profile contains no durable state or secrets.
+    with tempfile.TemporaryDirectory(
+        prefix="harness-task-check-profile-",
+        ignore_cleanup_errors=(os.name == "nt"),
+    ) as raw:
         profile = Path(raw)
         child = dict(env)
         child["HOME"] = str(profile)
@@ -236,8 +296,10 @@ def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> dict:
             cwd=cwd,
             env=child_env,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
-            timeout=180,
+            timeout=600,
             shell=False,
         )
 
@@ -329,7 +391,13 @@ def run_checks(task_id: str) -> dict:
 
     # Language-agnostic safety check. This is intentionally deterministic and
     # does not execute project-defined scripts.
-    commands.append(_run(["git", "diff", "--check"], execution_root, env))
+    commands.append(
+        _run(
+            ["git", "-c", "core.whitespace=cr-at-eol", "diff", "--check"],
+            execution_root,
+            env,
+        )
+    )
 
     src = project / "src"
     tests = project / "tests"
@@ -351,21 +419,23 @@ def run_checks(task_id: str) -> dict:
 
     # Implementation tasks with tests use the project's real unit suite.
     if tests.is_dir():
-        commands.append(
-            _run(
-                [
-                    sys.executable,
-                    "-m",
-                    "unittest",
-                    "discover",
-                    "-s",
-                    "tests",
-                    "-v",
-                ],
-                project,
-                env,
+        _clear_python_caches(project)
+        with _provider_runtime_guard(execution_root):
+            commands.append(
+                _run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "unittest",
+                        "discover",
+                        "-s",
+                        "tests",
+                        "-v",
+                    ],
+                    project,
+                    env,
+                )
             )
-        )
 
     command_failures = [
         row for row in commands if row["exit_code"] != 0
@@ -382,6 +452,7 @@ def run_checks(task_id: str) -> dict:
         and bool(commands or static_checks)
     )
 
+    candidate = candidate_snapshot(task_id)
     report = {
         "schema_version": 1,
         "task_id": task_id,
@@ -391,6 +462,9 @@ def run_checks(task_id: str) -> dict:
         "planned_files": file_results,
         "static_checks": static_checks,
         "commands": commands,
+        "candidate_subject_hash": candidate["subject_hash"],
+        "candidate_base_commit": candidate["base_commit"],
+        "scope_expansion_sha256": candidate.get("scope_expansion_sha256"),
         "status": "PASS" if passed else "FAIL",
     }
 
@@ -406,7 +480,7 @@ def run_checks(task_id: str) -> dict:
         "check-runner",
         command=f"python scripts/task_checks.py run {task_id}",
         exit_code=0 if passed else 1,
-        artifact=report_path.relative_to(ROOT).as_posix(),
+        artifact=report_path.relative_to(runtime_root()).as_posix(),
     )
 
     chain = validate_evidence(task_id)

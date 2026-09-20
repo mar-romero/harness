@@ -17,7 +17,8 @@ from task_checks import _isolated_child_env, _safe_env
 class RuntimeRootTests(unittest.TestCase):
     def _git(self, cwd, *args):
         return subprocess.run(
-            ["git", *args], cwd=cwd, text=True, capture_output=True, check=True
+            ["git", *args], cwd=cwd, text=True, encoding="utf-8", errors="replace",
+            capture_output=True, check=True
         )
 
     def _repo_with_linked_worktree(self, base: Path):

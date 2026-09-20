@@ -5,7 +5,11 @@ import argparse, json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-INVENTORY = ROOT / '.harness/opencode/model-inventory.json'
+import sys
+sys.path.insert(0, str(ROOT / 'scripts'))
+from harnesslib import provider_inventory_path
+
+INVENTORY = provider_inventory_path('opencode')
 OVERRIDES = ROOT / 'harness/opencode-model-overrides.json'
 
 

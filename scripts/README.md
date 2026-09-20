@@ -6,7 +6,7 @@ This folder contains the executable control-plane implementation.
 - `request_normalizer.py`: preserves the original request and creates canonical English.
 - `task_router.py`: calculates risk, route, agents, skills, and TDD.
 - `tdd_policy.py`: selects the adaptive TDD mode.
-- `tdd_evidence.py`: validates append-only RED/GREEN evidence.
+- `tdd_evidence.py`: validates append-only RED/GREEN evidence and explicitly supersedes invalid attempts.
 - `research_discovery.py`: assesses Research-RDD and artifact readiness.
 - `product_planning.py`: validates and materializes approved planning.
 - `context_graph.py`: builds a bounded lexical dependency graph.
@@ -56,6 +56,25 @@ resolved from that configured checkout.
 - `README.md`: explains the executable control-plane boundary.
 
 Scripts read policy from `harness/`; they must not contain project-specific logic or secrets.
+
+## Superseding invalid TDD evidence
+
+Run `python scripts/tdd_evidence.py supersede <TASK> --reason "<failure/recovery explanation>"`
+to preserve an invalid chain and select a fresh attempt. The operation uses the
+same interprocess task lock as evidence appends. It leaves the failed file's bytes
+untouched and atomically writes `tdd-attempts.json` in the shared task run directory,
+recording each failed path, SHA-256, validation error, reason and timestamp.
+The active chain is explicitly named under `tdd-attempts/`; repeated supersession
+retains every previous failure. Valid chains cannot be superseded by this operation.
+
+`add`, `summary`, the IMPLEMENT prerequisite and finish gates use only the selected
+attempt. Required design/RED/GREEN evidence must be recorded afresh; no phase is
+inherited. New records bind their task and attempt into the hash chain. Missing or
+invalid selection, missing active evidence, or altered historical bytes fail closed.
+An attempts directory without its selector also blocks legacy fallback, including
+after an interrupted first selection. An orphaned attempt from interrupted publication
+is never overwritten; explicit operator recovery is required. Supersession does not
+modify progress or handoffs and does not itself authorize task completion.
 
 ## Neutral terminal orchestrator
 

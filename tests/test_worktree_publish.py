@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import subprocess
@@ -60,6 +61,8 @@ class WorktreePublishTests(unittest.TestCase):
             ["git", "worktree", "list", "--porcelain"],
             cwd=self.repo,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=True,
         ).stdout
@@ -73,6 +76,7 @@ class WorktreePublishTests(unittest.TestCase):
         subprocess.run(['git', 'config', 'user.email', 'harness@test.invalid'], cwd=self.repo, check=True)
         subprocess.run(['git', 'config', 'user.name', 'Harness Test'], cwd=self.repo, check=True)
         (self.repo / 'README.md').write_text('base\n', encoding='utf-8')
+        shutil.copytree(ROOT / 'harness', self.repo / 'harness')
         subprocess.run(['git', 'add', 'README.md'], cwd=self.repo, check=True)
         subprocess.run(['git', 'commit', '-m', 'base'], cwd=self.repo, check=True, capture_output=True)
 
@@ -127,7 +131,10 @@ class WorktreePublishTests(unittest.TestCase):
         self.assertTrue((self.repo / 'src/app.py').is_file())
         self.assertFalse(path.exists())
         self.assertFalse(worktree.lock(self.task).exists())
-        head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=self.repo, text=True, capture_output=True, check=True).stdout.strip()
+        head = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'], cwd=self.repo, text=True,
+            encoding='utf-8', errors='replace', capture_output=True, check=True,
+        ).stdout.strip()
         self.assertNotEqual(head, base)
         status = worktree.publish_status(self.task)
         self.assertTrue(status['published'], status)
@@ -174,9 +181,35 @@ class WorktreePublishTests(unittest.TestCase):
 
     def test_publish_rejects_active_codex_model_binding(self):
         self._runtime(['src/app.py'])
-        active = self.repo / '.harness/codex/active-task.json'
+        active = harnesslib.provider_active_path('codex', self.repo)
         active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_text(json.dumps({'task_id': self.task}), encoding='utf-8')
+        run = harnesslib.run_dir(self.task)
+        for name in ('context.json', 'impact.json', 'agent-budget.json'):
+            (run / name).write_text(json.dumps({'task_id': self.task}), encoding='utf-8')
+        model_path = harnesslib.provider_model_selections_path('codex', self.repo)
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path.write_text(json.dumps({
+            'schema_version': 2,
+            'task_id': self.task,
+            'provider': 'codex',
+            'inventory_path': None,
+            'inventory_sha256': None,
+            'selections': [],
+        }), encoding='utf-8')
+        active.write_text(json.dumps({
+            'schema_version': 3, 'provider': 'codex', 'task_id': self.task,
+            'overlay': harnesslib.worktree_identity(self.repo),
+            'task_path': f'tasks/{self.task}.json',
+            'route_path': f'.harness/runs/{self.task}/route.json',
+            'context_path': f'.harness/runs/{self.task}/context.json',
+            'progress_path': f'.harness/runs/{self.task}/progress.json',
+            'task_snapshot_path': f'.harness/runs/{self.task}/task.json',
+            'impact_path': f'.harness/runs/{self.task}/impact.json',
+            'agent_budget_path': f'.harness/runs/{self.task}/agent-budget.json',
+            'model_selections_path': model_path.relative_to(self.repo).as_posix(),
+            'model_selections_sha256': harnesslib.sha256_file(model_path),
+            'selections': [],
+        }), encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'Codex task binding is still active'):
             worktree._publication_preconditions(self.task)
 
@@ -200,6 +233,63 @@ class WorktreePublishTests(unittest.TestCase):
 
         self.assertTrue((self.repo / 'legacy.py').is_file())
         self.assertFalse((self.repo / 'src/app.py').exists())
+
+    def test_publish_accepts_immutable_candidate_bound_scope_expansion(self):
+        self._runtime(['src/app.py'])
+        created = worktree.create(self.task, execute=True)
+        path = Path(created['worktree'])
+        (path / 'src').mkdir(parents=True)
+        (path / 'src/app.py').write_text('VALUE = 1\n', encoding='utf-8')
+        (path / 'tests').mkdir(parents=True)
+        (path / 'tests/test_finish_and_memory.py').write_text('fixture\n', encoding='utf-8')
+
+        import receipt_review
+        candidate = receipt_review.candidate_snapshot(self.task)
+        expansion = {
+            'schema_version': 2,
+            'task_id': self.task,
+            'status': 'APPROVED',
+            'approved_by': 'verifier',
+            'reason': 'reviewed hardening coverage',
+            'base_commit': created['base_commit'],
+            'candidate_subject_hash': candidate['subject_hash'],
+            'expanded_files': ['tests/test_finish_and_memory.py'],
+            'changed_files': ['tests/test_finish_and_memory.py'],
+        }
+        expansion['document_sha256'] = hashlib.sha256(
+            json.dumps(expansion, sort_keys=True, separators=(',', ':')).encode()
+        ).hexdigest()
+        expansion_path = harnesslib.run_dir(self.task) / 'scope-expansion.json'
+        expansion_path.write_text(json.dumps(expansion), encoding='utf-8')
+
+        with patch('gate.finish_decision', return_value={'allow': True, 'missing': [], 'failing': []}):
+            result = worktree.publish(self.task, execute=True)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['changed_files'], ['src/app.py', 'tests/test_finish_and_memory.py'])
+
+    def test_scope_expansion_mutation_and_secret_paths_are_rejected(self):
+        self._runtime(['src/app.py'])
+        created = worktree.create(self.task, execute=True)
+        path = Path(created['worktree'])
+        (path / 'src').mkdir(parents=True)
+        (path / 'src/app.py').write_text('VALUE = 1\n', encoding='utf-8')
+        import receipt_review
+        candidate = receipt_review.candidate_snapshot(self.task)
+        expansion = {
+            'schema_version': 2, 'task_id': self.task, 'status': 'APPROVED',
+            'approved_by': 'verifier', 'reason': 'fixture',
+            'base_commit': created['base_commit'],
+            'candidate_subject_hash': candidate['subject_hash'],
+            'expanded_files': ['secrets.pem'], 'changed_files': ['secrets.pem'],
+        }
+        expansion['document_sha256'] = hashlib.sha256(
+            json.dumps(expansion, sort_keys=True, separators=(',', ':')).encode()
+        ).hexdigest()
+        expansion_path = harnesslib.run_dir(self.task) / 'scope-expansion.json'
+        expansion_path.write_text(json.dumps(expansion), encoding='utf-8')
+        with patch('gate.finish_decision', return_value={'allow': True, 'missing': [], 'failing': []}):
+            with self.assertRaisesRegex(ValueError, 'protected or secret|scope-expansion'):
+                worktree.publish(self.task, execute=True)
 
 
 if __name__ == '__main__':

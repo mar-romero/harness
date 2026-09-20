@@ -8,7 +8,10 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 
-from harnesslib import ROOT, git, run_dir, runtime_root, safe_task_id, write_json_atomic
+from harnesslib import (
+    ROOT, git, load_json, read_provider_active, resolved_git_identity, run_dir,
+    runtime_root, safe_task_id, scope_expansion_digest, secure_path, write_json_atomic,
+)
 
 
 def _norm_path(path) -> str:
@@ -17,6 +20,14 @@ def _norm_path(path) -> str:
 
 def _same_path(left, right) -> bool:
     return _norm_path(left) == _norm_path(right)
+
+
+def _safe_worktree(task: str) -> Path:
+    return secure_path(wt(task), _common_repo_root())
+
+
+def _safe_lock(task: str) -> Path:
+    return secure_path(lock(task), _common_repo_root())
 
 
 def _common_repo_root() -> Path:
@@ -121,17 +132,27 @@ def _resolve_commit(commit: str, label: str, cwd: Path) -> str:
 def _validate_lock_data(task: str, data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError('writer lock is not a JSON object')
-    if data.get('schema_version') != 2:
+    if data.get('schema_version') != 3:
         raise ValueError('writer lock schema_version mismatch')
     if data.get('task_id') != task:
         raise ValueError('writer lock task_id mismatch')
 
-    path = wt(task)
+    path = _safe_worktree(task)
     branch = _expected_branch(task)
     if not data.get('worktree') or not _same_path(data.get('worktree'), path):
         raise ValueError('writer lock worktree path mismatch')
     if data.get('branch') != branch:
         raise ValueError('writer lock branch mismatch')
+
+    identity = resolved_git_identity(path)
+    for key, message in (
+        ('worktree_root', 'writer lock Git worktree root mismatch'),
+        ('git_common_dir', 'writer lock Git common directory mismatch'),
+        ('git_dir', 'writer lock Git directory mismatch'),
+        ('worktree_id', 'writer lock worktree identity mismatch'),
+    ):
+        if data.get(key) != identity[key]:
+            raise ValueError(message)
 
     _validate_ref_name(data.get('integration_branch'), 'integration_branch')
     base_commit = _resolve_commit(data.get('base_commit'), 'base_commit', _common_repo_root())
@@ -165,14 +186,14 @@ def _validate_lock_data(task: str, data: dict) -> dict:
 
 
 def _root_branch():
-    branch = git('branch', '--show-current').stdout.strip()
+    branch = git('branch', '--show-current', cwd=_common_repo_root()).stdout.strip()
     if not branch:
         raise ValueError('canonical repository is detached; worktree publication requires a named integration branch')
     return branch
 
 
 def _load_lock(task):
-    p = lock(task)
+    p = _safe_lock(task)
     if not p.is_file():
         raise ValueError(f'writer lock missing: {p}')
     try:
@@ -271,19 +292,20 @@ def _recoverable_provenance(branch: str) -> tuple[str, str]:
 
 def _lock_metadata(task: str, path: Path, branch: str, integration_branch: str, base_commit: str) -> dict:
     return {
-        'schema_version': 2,
+        'schema_version': 3,
         'task_id': task,
         'worktree': str(path),
         'branch': branch,
         'integration_branch': integration_branch,
         'base_commit': base_commit,
+        **resolved_git_identity(path),
         'pid': os.getpid(),
     }
 
 
 def _acquire_lock(task: str, data: dict) -> None:
     _validate_lock_data(task, data)
-    _write_lock_exclusive(lock(task), data)
+    _write_lock_exclusive(_safe_lock(task), data)
 
 
 def _load_route(task):
@@ -345,7 +367,43 @@ def _authorized_surface(task):
     files = data.get('files')
     if not isinstance(files, list) or not files:
         raise ValueError('task.files must be a non-empty authorized publication surface')
+    expansion_path = run_dir(task) / 'scope-expansion.json'
+    if expansion_path.is_file():
+        expansion = json.loads(expansion_path.read_text(encoding='utf-8'))
+        if (
+            expansion.get('schema_version') != 2
+            or expansion.get('task_id') != task
+            or expansion.get('status') != 'APPROVED'
+            or not isinstance(expansion.get('expanded_files'), list)
+        ):
+            raise ValueError('scope-expansion.json is not an approved task-surface expansion')
+        scope_expansion_digest(task)
+        current = _current_candidate_subject_hash(task)
+        if expansion.get('candidate_subject_hash') != current:
+            raise ValueError('scope-expansion.json is bound to a different candidate')
+        if expansion.get('base_commit') != _load_lock(task).get('base_commit'):
+            raise ValueError('scope-expansion.json base commit does not match writer lock')
+        expanded = [_normalize_surface_path(x) for x in expansion['expanded_files']]
+        changed = [_normalize_surface_path(x) for x in expansion.get('changed_files', [])]
+        policy = load_json('harness/policies/risk-policy.json')
+        evolution = load_json('harness/evolution-policy.json')
+        protected = {
+            str(item).replace('\\', '/').strip().lower().rstrip('/')
+            for item in [*policy.get('protected_paths', []), *evolution.get('protected_paths', [])]
+        }
+        for path in expanded:
+            path_key = path.lower().rstrip('/')
+            if any(path_key == item or path_key.startswith(item + '/') for item in protected) or any(__import__('fnmatch').fnmatch(path, pattern) or __import__('fnmatch').fnmatch(Path(path).name, pattern) for pattern in policy.get('secret_path_patterns', [])):
+                raise ValueError(f'scope expansion contains protected or secret path: {path}')
+        files = list(files) + expanded
+        expansion['_changed_files'] = changed
+        expansion['_expanded_files'] = expanded
     return sorted({_normalize_surface_path(x) for x in files})
+
+
+def _current_candidate_subject_hash(task: str) -> str:
+    from receipt_review import candidate_snapshot
+    return candidate_snapshot(task)['subject_hash']
 
 
 def _assert_authorized_surface(changed, allowed):
@@ -358,6 +416,25 @@ def _assert_authorized_surface(changed, allowed):
             + ', '.join(extra)
         )
     return sorted(changed_set)
+
+
+def _assert_scope_expansion_covers_changes(task: str, changed: list[str]) -> None:
+    expansion_path = run_dir(task) / 'scope-expansion.json'
+    if not expansion_path.is_file():
+        return
+    expansion = json.loads(expansion_path.read_text(encoding='utf-8'))
+    original = {
+        _normalize_surface_path(path)
+        for path in (_load_task_snapshot(task).get('files') or [])
+    }
+    actual_expanded = set(_normalize_surface_path(path) for path in changed) - original
+    claimed = {
+        _normalize_surface_path(path)
+        for path in (expansion.get('changed_files') or [])
+    }
+    missing = sorted(actual_expanded - claimed)
+    if missing:
+        raise ValueError('scope-expansion.json does not include changed authorized files: ' + ', '.join(missing))
 
 
 def _dirty_files(path):
@@ -377,8 +454,8 @@ def _candidate_files(path, base_commit):
 def create(task, base='HEAD', execute=False):
     task = safe_task_id(task)
     ensure_git()
-    path = wt(task)
-    lk = lock(task)
+    path = _safe_worktree(task)
+    lk = _safe_lock(task)
     if lk.exists():
         raise SystemExit(f'writer lock already exists: {lk}')
     if path.exists():
@@ -423,9 +500,12 @@ def create(task, base='HEAD', execute=False):
 
 def status(task):
     task = safe_task_id(task)
-    path = wt(task)
-    lk = lock(task)
-    d = {'task_id': task, 'exists': path.exists(), 'lock': False}
+    try:
+        path = _safe_worktree(task)
+        lk = _safe_lock(task)
+    except ValueError as exc:
+        return {'task_id': task, 'exists': False, 'lock': False, 'lock_valid': False, 'lock_reason': str(exc)}
+    d = {'task_id': task, 'exists': path.is_dir(), 'lock': False}
     try:
         meta = _load_lock(task)
         d['lock'] = True
@@ -436,7 +516,7 @@ def status(task):
     except ValueError as exc:
         d['lock_valid'] = False
         d['lock_reason'] = str(exc)
-    if path.exists():
+    if path.is_dir():
         r = git('status', '--porcelain', cwd=path, check=False)
         d['dirty'] = bool(r.stdout.strip())
         d['status'] = r.stdout.splitlines()
@@ -451,8 +531,8 @@ def recover(task, execute=False):
     task = safe_task_id(task)
     ensure_git()
 
-    path = wt(task)
-    lk = lock(task)
+    path = _safe_worktree(task)
+    lk = _safe_lock(task)
     if lk.exists():
         raise SystemExit(f'writer lock already exists: {lk}')
     if not path.is_dir():
@@ -509,11 +589,12 @@ def remove(task, execute=False, force=False):
     d = status(task)
     if d.get('dirty') and not force:
         raise SystemExit('worktree has uncommitted changes; refuse removal without --force')
-    cmd = ['worktree', 'remove', str(wt(task))] + (['--force'] if force else [])
+    path = _safe_worktree(task)
+    cmd = ['worktree', 'remove', str(path)] + (['--force'] if force else [])
     if execute:
-        if wt(task).exists():
+        if path.exists():
             git(*cmd)
-        lock(task).unlink(missing_ok=True)
+        _safe_lock(task).unlink(missing_ok=True)
     return {'execute': execute, 'command': ['git', *cmd]}
 
 
@@ -522,16 +603,15 @@ def _publication_preconditions(task):
     if route.get('isolation') != 'worktree':
         raise ValueError('publish is only valid for routes with isolation=worktree')
 
-    codex_active = runtime_root() / '.harness' / 'codex' / 'active-task.json'
-    if codex_active.is_file():
-        try:
-            binding = json.loads(codex_active.read_text(encoding='utf-8'))
-        except Exception as exc:
-            raise ValueError(f'Codex active task binding is invalid: {exc}') from exc
-        if binding.get('task_id') == task:
-            raise ValueError(
-                'Codex task binding is still active; clear the task-scoped model overlay before publication'
-            )
+    # Publication is initiated from the primary checkout, but the binding that
+    # matters belongs to the task's linked checkout.  Never inspect a global
+    # direct-path legacy binding as a substitute.
+    binding_root = _safe_worktree(task) if _safe_worktree(task).is_dir() else ROOT
+    binding = read_provider_active('codex', binding_root)
+    if binding is not None and binding.get('task_id') == task:
+        raise ValueError(
+            'Codex task binding is still active; clear the task-scoped model overlay before publication'
+        )
 
     progress = _load_progress(task)
     if progress.get('current_step') != 'CLOSE' or progress.get('state') != 'RUNNING':
@@ -551,17 +631,17 @@ def _publication_preconditions(task):
 
 
 def _root_has_tracked_changes():
-    r = git('diff', '--quiet', 'HEAD', '--', cwd=ROOT, check=False)
+    r = git('diff', '--quiet', 'HEAD', '--', cwd=_common_repo_root(), check=False)
     return r.returncode != 0
 
 
 def _root_untracked_overlap(changed):
-    untracked = set(_git_lines('ls-files', '--others', '--exclude-standard', cwd=ROOT))
+    untracked = set(_git_lines('ls-files', '--others', '--exclude-standard', cwd=_common_repo_root()))
     return sorted(untracked & set(changed))
 
 
 def _cleanup_published_worktree(task, meta):
-    path = wt(task)
+    path = _safe_worktree(task)
     branch = meta["branch"]
     cleanup_warning = None
 
@@ -577,7 +657,7 @@ def _cleanup_published_worktree(task, meta):
                 )
 
         try:
-            git("worktree", "remove", str(path))
+            git("worktree", "remove", str(path), cwd=_common_repo_root())
         except Exception as exc:
             # On Windows Git can successfully unregister the worktree and
             # still return a non-zero exit code because physical directory
@@ -607,13 +687,13 @@ def _cleanup_published_worktree(task, meta):
                 else residue_warning
             )
 
-    lock(task).unlink(missing_ok=True)
+    _safe_lock(task).unlink(missing_ok=True)
 
     branches = set(
-        _git_lines("branch", "--format=%(refname:short)", cwd=ROOT)
+        _git_lines("branch", "--format=%(refname:short)", cwd=_common_repo_root())
     )
     if branch in branches:
-        git("branch", "-d", branch, cwd=ROOT)
+        git("branch", "-d", branch, cwd=_common_repo_root())
 
     return {
         "cleaned_up": (
@@ -656,21 +736,21 @@ def publish_status(task):
     commit = data.get('commit')
     if not commit:
         return {'task_id': task, 'published': False, 'reason': 'publish commit missing'}
-    current_branch = git('branch', '--show-current', cwd=ROOT, check=False)
+    current_branch = git('branch', '--show-current', cwd=_common_repo_root(), check=False)
     if current_branch.returncode != 0 or current_branch.stdout.strip() != data.get('integration_branch'):
         return {
             'task_id': task,
             'published': False,
             'reason': 'canonical repository is not on the recorded integration branch',
         }
-    ancestor = git('merge-base', '--is-ancestor', commit, 'HEAD', cwd=ROOT, check=False)
+    ancestor = git('merge-base', '--is-ancestor', commit, 'HEAD', cwd=_common_repo_root(), check=False)
     if ancestor.returncode != 0:
         return {
             'task_id': task,
             'published': False,
             'reason': 'published commit is not integrated into canonical HEAD',
         }
-    if wt(task).exists() or lock(task).exists():
+    if _safe_worktree(task).exists() or _safe_lock(task).exists():
         return {
             'task_id': task,
             'published': False,
@@ -701,13 +781,13 @@ def publish(task, execute=False):
             if not execute:
                 return data
             commit = data.get('commit')
-            if git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip() != commit:
+            if git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip() != commit:
                 raise ValueError('cannot resume publication: canonical HEAD no longer equals integrated commit')
             return _finalize_integrated_artifact(task, data)
 
     _publication_preconditions(task)
     meta = _load_lock(task)
-    path = wt(task)
+    path = _safe_worktree(task)
     if not path.is_dir():
         raise ValueError('assigned task worktree does not exist')
 
@@ -730,7 +810,7 @@ def publish(task, execute=False):
         )
 
     branch_head = git('rev-parse', 'HEAD', cwd=path).stdout.strip()
-    integrated = git('merge-base', '--is-ancestor', 'HEAD', branch_head, cwd=ROOT, check=False)
+    integrated = git('merge-base', '--is-ancestor', 'HEAD', branch_head, cwd=_common_repo_root(), check=False)
     if integrated.returncode != 0:
         raise ValueError(
             'canonical HEAD is not incorporated into the task branch; publication requires explicit reconciliation'
@@ -739,10 +819,11 @@ def publish(task, execute=False):
     # The lock base proves creation provenance.  Publication instead compares
     # against the current integration tip already incorporated in this branch,
     # so an explicit upstream merge is not misclassified as task-owned work.
-    root_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    root_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     allowed = _authorized_surface(task)
     changed = _candidate_files(path, root_head)
     _assert_authorized_surface(changed, allowed)
+    _assert_scope_expansion_covers_changes(task, changed)
     if not changed:
         raise ValueError('worktree has no task changes to publish')
 
@@ -771,6 +852,7 @@ def publish(task, execute=False):
 
     dirty = _dirty_files(path)
     _assert_authorized_surface(dirty, allowed)
+    _assert_scope_expansion_covers_changes(task, dirty)
     if dirty:
         git('add', '-A', '--', *dirty, cwd=path)
         staged = _git_lines('diff', '--cached', '--no-renames', '--name-only', '--', cwd=path)
@@ -779,16 +861,16 @@ def publish(task, execute=False):
             git('commit', '-m', f'harness(task): publish {task}', cwd=path)
 
     candidate = git('rev-parse', 'HEAD', cwd=path).stdout.strip()
-    integration_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    integration_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     committed = _committed_files(path, integration_head)
     _assert_authorized_surface(committed, allowed)
     if candidate == integration_head or not committed:
         raise ValueError('publication produced no committed task change')
 
     # Re-check the integration base immediately before the fast-forward.
-    root_head = git('rev-parse', 'HEAD', cwd=ROOT).stdout.strip()
+    root_head = git('rev-parse', 'HEAD', cwd=_common_repo_root()).stdout.strip()
     if root_head == integration_head:
-        git('merge', '--ff-only', candidate, cwd=ROOT)
+        git('merge', '--ff-only', candidate, cwd=_common_repo_root())
     elif root_head != candidate:
         raise ValueError('canonical HEAD moved before fast-forward integration')
 

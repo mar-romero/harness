@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from aci_core import ACIError, call_tool, tool_definitions
+from harnesslib import provider_overlay_dir
 
 MODERN_VERSION = "2026-07-28"
 LEGACY_VERSIONS = ("2025-11-25", "2025-06-18")
@@ -23,8 +24,7 @@ def _diagnostic(event: str, **fields: Any) -> None:
     if os.environ.get("HARNESS_ACI_DIAGNOSTICS") != "1":
         return
     try:
-        root = Path(__file__).resolve().parents[1]
-        path = root / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+        path = provider_overlay_dir("codex") / "aci-mcp-diagnostics.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"event": event, **fields}, sort_keys=True) + "\n")

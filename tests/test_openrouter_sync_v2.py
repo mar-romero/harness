@@ -282,7 +282,7 @@ class OpenRouterSyncV2Tests(unittest.TestCase):
                 td, '.harness/openrouter/model-inventory.json'
             ).read_text(encoding='utf-8'))
             raw = json.loads(Path(
-                td, '.harness/codex/model-inventory.json'
+                td, '.harness/overlays/fixture/codex/model-inventory.json'
             ).read_text(encoding='utf-8'))
 
         self.assertEqual(shared['provider'], 'openrouter')
@@ -296,7 +296,7 @@ class OpenRouterSyncV2Tests(unittest.TestCase):
         )
         self.assertEqual(
             payload['raw_inventory_path'],
-            '.harness/codex/model-inventory.json',
+            '.harness/overlays/fixture/codex/model-inventory.json',
         )
 
     def test_refresh_falls_back_to_shared_openrouter_catalog(self):

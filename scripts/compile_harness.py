@@ -2,7 +2,7 @@
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
-from harnesslib import ROOT, load_manifest
+from harnesslib import ROOT, load_manifest, read_provider_active
 
 ACI_SERVER = "harness-aci"
 ACI_INSPECT_TOOLS = [
@@ -10,7 +10,6 @@ ACI_INSPECT_TOOLS = [
     "repo_dependencies", "git_status", "git_diff",
 ]
 ACI_CHECK_TOOLS = ["tests_run", "lint_run", "diagnostics_get"]
-CODEX_ACTIVE = ROOT / ".harness" / "codex" / "active-task.json"
 CODEX_ORCHESTRATOR = Path(".codex/agents/harness-orchestrator.toml")
 CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
 CODEX_HOOKS = Path(".codex/hooks.json")
@@ -31,8 +30,10 @@ def _codex_hook_command(script: str) -> str:
 def _codex_binding(name):
     """Return one active per-agent Codex model binding, if a task is activated."""
     try:
-        active = json.loads(CODEX_ACTIVE.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        active = read_provider_active("codex")
+    except ValueError:
+        return None
+    if active is None:
         return None
     for selection in active.get("selections", []):
         if selection.get("agent") != name:
@@ -170,7 +171,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 if os.environ.get("HARNESS_ACI_DIAGNOSTICS") == "1":
-    path = ROOT / ".harness" / "codex" / "aci-mcp-diagnostics.jsonl"
+    from harnesslib import provider_overlay_dir
+    path = provider_overlay_dir("codex") / "aci-mcp-diagnostics.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"event": "entrypoint_started"}) + "\\n")
@@ -267,7 +269,7 @@ def compile_all(check=False):
         if check:
             if not p.exists() or p.read_text(encoding='utf-8')!=content: bad.append(rel.as_posix())
         else:
-            p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8')
+            p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8',newline='\n')
     if check and bad:
         print('OUT-OF-DATE GENERATED ADAPTERS:'); [print(' -',x) for x in bad]; return 1
     print('generated artifacts are in sync' if check else f'generated {len(expected)} provider artifacts'); return 0

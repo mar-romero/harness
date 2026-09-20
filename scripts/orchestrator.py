@@ -238,7 +238,7 @@ def _validate_pass_prerequisites(task, step, via_commit=False):
                 'CHECKS evidence must reference the authoritative checks report'
             )
 
-        report_path = ROOT / artifact
+        report_path = runtime_root() / artifact
         if not report_path.is_file():
             raise ValueError('CHECKS authoritative checks report is missing')
 
