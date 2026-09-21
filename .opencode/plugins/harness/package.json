@@ -1,0 +1,14 @@
+{
+  "name": "portable-harness-opencode",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenCode harness plugin: model routing, permission gates and runtime context injection.",
+  "main": "index.ts",
+  "dependencies": {
+    "@opencode/plugin": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
+  }
+}

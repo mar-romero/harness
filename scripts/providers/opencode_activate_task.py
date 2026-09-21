@@ -178,9 +178,16 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.clear:
-        assert_overlay_writable("opencode")
-        ACTIVE.unlink(missing_ok=True)
-        print(json.dumps({"cleared": True, "path": str(ACTIVE.relative_to(ROOT))}, indent=2))
+        from harnesslib import reject_legacy_provider_state, quarantine_provider_active
+        reject_legacy_provider_state("opencode")
+        receipt = quarantine_provider_active("opencode", reason="cleared via opencode_activate_task.py --clear")
+        if receipt is None:
+            ACTIVE.unlink(missing_ok=True)
+        print(json.dumps({
+            "cleared": True,
+            "quarantined": receipt is not None,
+            "path": str(ACTIVE.relative_to(ROOT)),
+        }, indent=2))
         return 0
     if not args.task:
         ap.error("task is required unless --clear is used")

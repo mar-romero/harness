@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { createHash } from "node:crypto"
@@ -196,7 +196,7 @@ export default Plugin.define({
       await assertNoLegacyState(root, "opencode")
       const ts = Date.now()
       if (!force && ts - lastInventoryRefresh < REFRESH_MS) return
-      const result = await ctx.catalog.model.list()
+      const result = await ctx.model.list()
       const models = unwrapList(result).filter((m) => m && m.enabled !== false)
       const overrides = await readJson(overridesFile, { profiles: {} })
       const profiles = overrides?.profiles || {}
@@ -262,7 +262,22 @@ export default Plugin.define({
         return
       }
       if (stat.mtimeMs === activeMtime) return
-      const active = await validateActive(await readJson(activeFile, {}), "opencode", ownerId, root)
+      let active
+      try {
+        active = await validateActive(await readJson(activeFile, {}), "opencode", ownerId, root)
+      } catch (error) {
+        console.error(
+          `harness: active binding rejected (${error?.message ?? error}); failing closed without model overrides. ` +
+            `Quarantine .harness/overlays/${ownerId}/opencode/active-task.json to recover.`
+        )
+        if (modelMap.size) {
+          modelMap = new Map()
+          activeRisk = "R1"
+          await ctx.agent.reload()
+        }
+        activeMtime = stat.mtimeMs
+        return
+      }
       activeRisk = typeof active?.risk === "string" ? active.risk : "R1"
       const next = new Map()
       for (const selection of active?.selections || []) {
@@ -294,7 +309,10 @@ export default Plugin.define({
         await fs.stat(activeFile)
         active = await validateActive(await readJson(activeFile, {}), "opencode", ownerId, root)
       } catch (error) {
-        if (error?.code !== "ENOENT") throw error
+        if (error?.code !== "ENOENT") {
+          console.error(`harness: context hook skipping invalid active binding: ${error?.message ?? error}`)
+          active = null
+        }
       }
       if (active?.task_id) {
         event.system.push({

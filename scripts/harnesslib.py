@@ -420,8 +420,48 @@ def assert_overlay_writable(provider: str, root: Path | None = None) -> Path:
     reject_legacy_provider_state(provider, root)
     path = provider_active_path(provider, root)
     if path.is_file():
-        read_provider_active(provider, root)
+        try:
+            read_provider_active(provider, root)
+        except ValueError as exc:
+            raise ValueError(
+                f'{provider} active binding is invalid inside the overlay ({exc}); '
+                f'quarantine {path} to .harness/legacy-preserved/ with a migration receipt '
+                'before continuing'
+            ) from exc
     return path
+
+
+def quarantine_provider_active(provider: str, root: Path | None = None,
+                               task_id: str = 'HARNESS-PLUGIN-BINDING-001',
+                               reason: str = 'invalid provider active binding') -> dict | None:
+    """Move an invalid overlay binding to legacy-preserved with a durable receipt."""
+    path = provider_active_path(provider, root)
+    if not path.is_file():
+        return None
+    top, _ = _worktree_metadata(root)
+    preserved_base = top / '.harness' / 'legacy-preserved'
+    dest_dir = preserved_base / task_id / provider
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / path.name
+    if dest.exists():
+        raise ValueError(f'quarantine destination already exists: {dest}')
+    payload = path.read_bytes()
+    receipt = {
+        'schema_version': 1,
+        'task_id': task_id,
+        'status': 'PRESERVED_AND_REJECTED',
+        'reason': reason,
+        'entries': [{
+            'provider': provider,
+            'original': str(path.relative_to(top)),
+            'preserved': str(dest.relative_to(preserved_base)),
+            'sha256': hashlib.sha256(payload).hexdigest(),
+        }],
+    }
+    (dest_dir / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
+    dest.write_bytes(payload)
+    path.unlink()
+    return receipt
 
 
 def runtime_reference(path: str) -> Path:
