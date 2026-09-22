@@ -1,0 +1,84 @@
+{
+  "id": "HARNESS-WORKTREE-MIGRATION-001",
+  "description": "Migrate existing repository worktrees to the shared-runtime/session model without losing active task state, diagnostics, provider identity, model selection, durable runs, evidence, receipts, planning files, or unrelated task files.",
+  "risk": "R3",
+  "acceptance_criteria": [
+    "Existing worktrees are inventoried and classified with current runtime state and task ownership.",
+    "Eligible worktrees are migrated to stable per-worktree/session state.",
+    "Active state from one worktree cannot overwrite another worktree's state, including diagnostics, provider identity, and model selection.",
+    "Durable evidence, runs, receipts, and task history remain visible from every migrated worktree through the Git common directory.",
+    "Unrelated untracked files under planning/ and tasks/ are preserved.",
+    "Legacy state is migrated with a durable migration receipt or rejected with a clear reason and no destructive mutation.",
+    "Migration uses reversible steps, backups or quarantine where needed, and never silently overwrites active state or diagnostics.",
+    "Migration is idempotent: rerunning it does not duplicate, corrupt, or overwrite state.",
+    "Concurrent isolation tests cover different active tasks, independent diagnostics and provider state, shared runs/evidence/receipts, collision handling, legacy migration/rejection, and rerun behavior.",
+    "Relevant existing tests, schema checks, diagnostics, and harness checks pass.",
+    "Independent review, test audit, verification, impact verification, and security review pass.",
+    "A human gate is recorded before any destructive or irreversible action; no such action is taken without explicit authorization.",
+    "The external CodeGraph provider is not installed or integrated; compatibility for a future per-worktree CodeGraph index is preserved.",
+    "The completed change is committed and a pull request targeting main is created.",
+    "All decisions, migration results, checks, reviews, verification, residual risks, commit SHA, and PR URL are recorded under .harness/runs/HARNESS-WORKTREE-MIGRATION-001/."
+  ],
+  "files": [
+    "scripts/harnesslib.py",
+    "scripts/worktree.py",
+    "scripts/task_checks.py",
+    "scripts/orchestrator.py",
+    "scripts/providers/codex_activate_task.py",
+    "scripts/providers/opencode_activate_task.py",
+    "harness/schema",
+    "tests",
+    "docs/worktree-isolation.md",
+    "tasks/HARNESS-WORKTREE-MIGRATION-001.json"
+  ],
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": true,
+    "irreversible_change": true,
+    "security_boundary": true,
+    "schema_change": true,
+    "database_change": false,
+    "concurrency": true,
+    "financial": false,
+    "external_contract": false,
+    "migration": true,
+    "persistence": true,
+    "important_calculation": false,
+    "bug_fix": false
+  },
+  "tags": [
+    "worktree",
+    "migration",
+    "runtime",
+    "session",
+    "provider",
+    "evidence",
+    "concurrency",
+    "security",
+    "codegraph-compatible"
+  ],
+  "request": {
+    "original_language": "en",
+    "original_text": "Execute the durable task HARNESS-WORKTREE-MIGRATION-001.\n\nContext:\n\n- SHARED-RUNTIME-SESSION-001 is merged into main.\n- Its shared runtime/session isolation is the prerequisite for this migration.\n- Do not install or integrate external CodeGraph in this task.\n\nObjective:\nMigrate existing repository worktrees to the shared-runtime/session model without losing active task state, diagnostics, provider identity, model selection, durable runs, evidence, receipts, planning files, or unrelated task files.\n\nRequirements:\n- Confirm SHARED-RUNTIME-SESSION-001 is merged and its dependency is closed before implementation.\n- Create and activate HARNESS-WORKTREE-MIGRATION-001 through the canonical harness lifecycle.\n- Use one isolated implementation worktree and one writer only.\n- Inventory all existing worktrees, their current runtime state, and their task ownership.\n- Assign a stable identity per worktree/session.\n- Ensure two worktrees can maintain different active tasks, diagnostics, provider identities, and model selections concurrently.\n- Keep durable evidence, runs, receipts, and task history visible to all worktrees through the Git common directory.\n- Preserve all unrelated untracked files under planning/ and tasks/.\n- Never silently overwrite active state or diagnostics.\n- Detect legacy formats explicitly: migrate them with a durable migration receipt, or reject them with a clear reason and no destructive mutation.\n- Use reversible migration steps, backups or quarantine where needed.\n- Do not delete or reset worktrees, branches, planning files, or task files without explicit evidence and a human gate.\n- Preserve idempotency: running the migration twice must not duplicate, corrupt, or overwrite state.\n- Add concurrent isolation tests covering two worktrees with different active tasks; independent diagnostics and provider state; shared visibility of runs, evidence, and receipts; collision handling; legacy migration and explicit rejection; rerun/idempotency behavior.\n- Keep the external CodeGraph provider out of scope; preserve compatibility for a future per-worktree CodeGraph index.\n\nAcceptance criteria:\n1. Existing worktrees are inventoried and classified.\n2. Eligible worktrees are migrated to stable per-worktree/session state.\n3. Active state from one worktree cannot overwrite another worktree’s state.\n4. Shared durable evidence remains visible from every migrated worktree.\n5. Legacy state is migrated or rejected explicitly, never silently overwritten.\n6. Migration is idempotent and reversible.\n7. All new isolation and migration tests pass.\n8. Relevant existing tests, schema checks, diagnostics, and harness checks pass.\n9. Independent review, test audit, verification, impact verification, and security review pass.\n10. Human gate is recorded before any destructive or irreversible action.\n11. Commit the completed change and create a pull request targeting main.\n12. Do not declare completion without durable evidence under .harness/runs/HARNESS-WORKTREE-MIGRATION-001/.\n\nRun the complete harness flow:\nREQUEST → TASK → ROUTE → RISK → CONTEXT → IMPLEMENT → CHECKS → REVIEW → VERIFY → CLOSE\n\nRecord every decision, migration result, check, review, verification, residual risk, commit SHA, and PR URL in the durable task evidence.",
+    "constraints": [
+      "one isolated implementation worktree",
+      "one writer",
+      "no external CodeGraph installation or integration",
+      "no destructive action without a recorded human gate",
+      "do not silently overwrite active state or diagnostics"
+    ]
+  },
+  "planning": {
+    "title": "Migrate repository worktrees to shared runtime/session isolation",
+    "size": "L",
+    "dependencies": ["SHARED-RUNTIME-SESSION-001"],
+    "priority_score": 5.0,
+    "prerequisite_evidence": {
+      "merged_main_commit": "a728faa",
+      "dependency_run": ".harness/runs/SHARED-RUNTIME-SESSION-001/",
+      "dependency_status": "DONE"
+    }
+  }
+}

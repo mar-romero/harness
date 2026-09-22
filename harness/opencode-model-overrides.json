@@ -3,15 +3,22 @@
   "description": "Reviewed OpenCode model capability overrides. Leave capabilities absent when unknown.",
   "profiles": {
     "opencode/nemotron-3-ultra-free": {
-      "runtime_capabilities": {
-        "tool_choice_modes": [
-          "auto",
-          "required"
-        ]
-      },
+      "runtime_capabilities": { "tool_choice_modes": ["auto", "required"] },
       "evidence": {
         "kind": "vendor_documentation",
         "note": "Nemotron 3 Ultra vendor documentation demonstrates tool_choice=required; OpenCode gateway compatibility must still be locally confirmed."
+      }
+    },
+    "opencode/muse-spark-1.2-contributor-free": {
+      "enabled": true,
+      "reasoning": 4.319,
+      "coding": 4.554,
+      "tool_use": 4.58,
+      "reliability": 5.0,
+      "notes": "_VALUES trasfer­idos del benchmark real OpenRouter (meta/muse-spark-1.2-20260805, confidencia 1.0), guardado en .harness/openrouter/model-scores.json. Los valores no son inventados.",
+      "evidence": {
+        "kind": "external_benchmark",
+        "note": "OpenRouter artificial-analysis, benchmark_model_id meta/muse-spark-1.2-20260805 (confidencialidad 1.0). Reviewed por operator."
       }
     }
   }

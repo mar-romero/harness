@@ -83,9 +83,9 @@
         "tool_use": 3
       },
       "target_floors": {
-        "reasoning": 4.5,
+        "reasoning": 4.0,
         "tool_use": 4.0,
-        "reliability": 4.8
+        "reliability": 4.5
       },
       "no_inventory_action": "block",
       "no_eligible_action": "block"

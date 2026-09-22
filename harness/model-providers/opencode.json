@@ -13,7 +13,7 @@
   },
   "discovery": {
     "command": ["opencode2", "models"],
-    "access_profile": "free",
+    "access_profile": "paid",
     "profiles": {
       "free": {
         "allow_prefixes": ["opencode/"],
@@ -31,7 +31,7 @@
   },
   "openrouter_catalog": ".harness/openrouter/model-inventory.json",
   "raw_inventory": ".harness/overlays/{worktree_id}/opencode/model-inventory.json",
-  "enriched_inventory": ".harness/overlays/{worktree_id}/opencode/enriched-inventory.json",
+  "enriched_inventory": "harness/model-inventories/opencode.json",
   "openrouter": {
     "id_strategy": "native-provider-slash-model",
     "benchmark_source": "artificial-analysis",

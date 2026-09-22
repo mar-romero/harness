@@ -199,8 +199,8 @@ def provider_inventory_path(provider: str, root: Path | None = None) -> Path:
 
 
 def provider_enriched_inventory_path(provider: str, root: Path | None = None) -> Path:
-    """Return the provider-local scored inventory used for activation."""
-    return provider_overlay_dir(provider, root) / 'enriched-inventory.json'
+    """Return the provider scored inventory used for activation (fixed per-repo path)."""
+    return ROOT / 'harness' / 'model-inventories' / f'{provider}.json'
 
 
 def provider_model_selections_path(provider: str, root: Path | None = None) -> Path:
@@ -337,7 +337,7 @@ def validate_model_selections(provider: str, task_id: str, path: Path | None = N
         if not isinstance(inventory_ref, str) or Path(inventory_ref).is_absolute() or '..' in Path(inventory_ref).parts:
             raise ValueError('model selection inventory path is invalid')
         inventory = _contained(top / inventory_ref, top)
-        if inventory != expected_inventory:
+        if inventory.resolve() != Path(expected_inventory).resolve():
             raise ValueError('model selection inventory path is not provider-local')
         if not inventory.is_file():
             raise ValueError('model selection inventory is missing')

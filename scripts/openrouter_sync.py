@@ -2325,7 +2325,7 @@ def build_provider_inventory_from_scores(
     if "{worktree_id}" in raw_dest:
         dest = provider_enriched_inventory_path(provider)
     else:
-        dest = _runtime_artifact(raw_dest) if raw_dest.startswith(".harness/") else ROOT / raw_dest
+        dest = _runtime_artifact(raw_dest) if raw_dest.startswith("harness/") else ROOT / raw_dest
     availability_times = [
         candidate.get("availability_generated_at")
         for candidate in candidates

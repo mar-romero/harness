@@ -2,7 +2,7 @@
   "schema_version": 1,
   "provider": "codex",
   "description": "Codex host adapter. Discover account/build-visible models from CODEX_HOME/models_cache.json; fall back to `codex debug models --bundled` only when no cache exists.",
-  "enriched_inventory": ".harness/overlays/{worktree_id}/codex/enriched-inventory.json",
+  "enriched_inventory": "harness/model-inventories/codex.json",
   "active_task": ".harness/overlays/{worktree_id}/codex/active-task.json",
   "discovery": {
     "codex_home_env": "CODEX_HOME",
