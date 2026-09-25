@@ -54,3 +54,36 @@ Do not manually fabricate, edit, move, or overwrite writer locks. Create and
 recovery both use exclusive lock creation; if another lock already exists, the
 command fails without replacing it. A failed post-worktree lock claim leaves the
 registered worktree in place for explicit inspection or recovery.
+
+## Legacy Provider-State Migration Model
+
+`scripts/worktree_migration.py` migrates worktrees onto the shared
+runtime/session model. The model:
+
+- **worktree_id**: `harnesslib.worktree_identity()` derives a stable, opaque
+  SHA-256 identity from Git's own checkout boundary (`--show-toplevel` plus the
+  Git-common directory, `normcase`-normalized on Windows). It is never taken
+  from cwd, a caller-supplied session id, or a binding's claimed value.
+- **Overlays**: per-worktree active provider state lives only under
+  `<worktree>/.harness/overlays/<worktree_id>/<provider>/` and is never
+  cross-written from another checkout; foreign bindings are rejected by
+  `harnesslib.read_provider_active`.
+- **Git-common sharing**: durable state (`.harness/runs/`, evidence chains,
+  receipts, locks, migration reports) lives under the Git common directory, so
+  every linked worktree observes identical bytes.
+- **Migration, rejection, quarantine**: legacy unscoped
+  `.harness/<provider>/` state is migrated by strict copy-then-validate into
+  the owning worktree's overlay archive (`migrated/`) with an immutable
+  shared-runtime receipt, or rejected durably (`.rejected.json`, no mutation of
+  legacy bytes). Migrated legacy bytes are archived only; a usable
+  current-schema binding must be rebuilt through canonical provider activation.
+  Quarantine is a human-gated operation, but provider active-state quarantine
+  currently preserves the source and records `QUARANTINE_REJECTED` whenever
+  atomic ownership of source removal cannot be proven (including Windows).
+  Callers must treat that result as `cleared=false`; no source is silently
+  deleted. Rollback restores only from verified backups; migration never
+  deletes worktrees, branches, planning files, or task files.
+- **Idempotency**: identical reruns are immutable no-ops (`already_migrated`);
+  differing payloads for the same logical name fail closed as collisions.
+- **CodeGraph**: out of scope for migration, but compatible: no install or
+  integration step is required or performed here.

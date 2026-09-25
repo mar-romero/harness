@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import shutil
+import uuid
 from contextlib import contextmanager
 import tomllib
 from pathlib import Path
@@ -16,9 +17,10 @@ from pathlib import Path
 from evidence import append as append_evidence
 from evidence import validate as validate_evidence
 from harnesslib import (
-    ROOT, read_provider_active, run_dir, runtime_reference, runtime_root,
+    ROOT, _artifact_lock, _reject_reparse_components, read_provider_active, run_dir,
+    runtime_reference, runtime_root,
     safe_task_id,
-    write_json_atomic,
+    write_json_atomic, ensure_exclusive_lock,
 )
 from worktree import status as worktree_status, wt as worktree_path
 from receipt_review import candidate_snapshot
@@ -166,7 +168,6 @@ def _execution_root(task_id: str, route: dict) -> Path:
 def _safe_env(project: Path) -> dict[str, str]:
     allowed = (
         "PATH",
-        "HOME",
         "TMPDIR",
         "TMP",
         "TEMP",
@@ -182,6 +183,13 @@ def _safe_env(project: Path) -> dict[str, str]:
     env["PYTHONPATH"] = str(project / "src")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["HARNESS_ACI_PYTHON"] = sys.executable
+    # Checks must not consult the operator's Git configuration.  In
+    # particular, HOME can point at a profile containing hooks, includes, or
+    # unsafe repository overrides.  The child receives an explicit empty
+    # configuration namespace instead.
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
     # The isolated child deliberately has no user/system Git config.  On
     # managed Windows hosts Git therefore needs an explicit, child-only
     # safe.directory entry or it refuses to inspect the assigned worktree.
@@ -199,11 +207,153 @@ def _safe_env(project: Path) -> dict[str, str]:
     return env
 
 
+def _move_overlay_to_recovery(overlay: Path, destination: Path) -> None:
+    """Remove a failed overlay from the active path without merging trees."""
+    if not overlay.exists():
+        return
+    if destination.exists():
+        destination = destination.with_name(destination.name + "-remainder")
+    # shutil.move is the normal path; os.replace is an atomic directory
+    # fallback when a mocked or interrupted cleanup reports a move failure.
+    try:
+        shutil.move(str(overlay), str(destination))
+    except Exception as move_error:
+        if overlay.exists():
+            try:
+                os.replace(str(overlay), str(destination))
+            except Exception as replace_error:
+                raise RuntimeError(
+                    f'overlay recovery move failed: {move_error}; '
+                    f'atomic fallback failed: {replace_error}'
+                ) from replace_error
+
+
+def _remove_overlay_without_tree_move(overlay: Path) -> None:
+    """Remove a failed overlay without relying on rmtree or directory moves.
+
+    This is a last-resort cleanup path used only after the overlay has been
+    copied to durable recovery evidence.  It deliberately walks deepest-first
+    and does not follow symlinks, so a mocked/partial tree cleanup cannot leave
+    generated provider state active while the backup is restored.
+    """
+    if not overlay.exists():
+        return
+    for path in sorted(overlay.rglob('*'), key=lambda item: len(item.parts), reverse=True):
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            path.rmdir()
+    overlay.rmdir()
+
+
+def _restore_legacy_exclusive(held: Path, destination: Path) -> bool:
+    """Restore one held legacy file without replacing concurrent state."""
+    _reject_reparse_components(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    data = held.read_bytes()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, 'O_NOFOLLOW'):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, 'O_BINARY'):
+        flags |= os.O_BINARY
+    try:
+        fd = os.open(destination, flags, 0o600)
+    except FileExistsError:
+        return False
+    created = os.fstat(fd)
+    handed_to_file = False
+    try:
+        with os.fdopen(fd, 'wb') as handle:
+            handed_to_file = True
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        # Do not leave a corrupt empty/partial destination behind when the
+        # descriptor wrapper or write fails.  Remove only the inode we opened;
+        # if a non-cooperating writer replaced it, fail closed and preserve it.
+        if not handed_to_file:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            current = os.stat(destination)
+            if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                destination.unlink()
+        except OSError:
+            pass
+        raise
+    return True
+
+
+def _preserve_legacy_exclusive(source: Path, destination: Path) -> None:
+    """Move a legacy file without replacing an existing preservation copy."""
+    _reject_reparse_components(source)
+    _reject_reparse_components(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == 'nt':
+        # Windows rename is atomic and fails when the destination already
+        # exists; unlike link-then-unlink it cannot delete a replacement at
+        # the source pathname after an identity check.
+        os.rename(source, destination)
+        return
+    try:
+        os.link(source, destination)
+    except FileExistsError:
+        raise
+    try:
+        _reject_reparse_components(source)
+        source_stat = os.stat(source)
+        destination_stat = os.stat(destination)
+        if (source_stat.st_dev, source_stat.st_ino) != (
+            destination_stat.st_dev, destination_stat.st_ino
+        ):
+            raise RuntimeError('legacy source changed during exclusive preservation')
+        # POSIX has no portable Python primitive that unlinks the directory
+        # entry only if it is still the inode just checked. Keep the source
+        # and fail closed; the hard link remains durable evidence and the
+        # caller will restore only if the source is absent.
+        return
+    except BaseException:
+        # The preservation copy is evidence, so keep it if source removal is
+        # no longer safe.  The caller records the error and fails the guard.
+        raise
+
+
+def _foreign_active_state(overlay: Path, backup: Path, owner: str) -> str | None:
+    """Detect an active binding changed by a writer outside this check run."""
+    for provider in PROVIDERS:
+        current = overlay / provider / "active-task.json"
+        original = backup / provider / "active-task.json"
+        current_bytes = current.read_bytes() if current.is_file() else None
+        original_bytes = original.read_bytes() if original.is_file() else None
+        if current_bytes == original_bytes:
+            continue
+        if current_bytes is None:
+            return f"{provider} active binding disappeared during checks"
+        try:
+            payload = json.loads(current_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return f"{provider} active binding changed to non-JSON state during checks"
+        if payload.get("task_checks_owner") != owner:
+            return f"{provider} active binding changed by an unrelated writer during checks"
+    return None
+
+
 @contextmanager
-def _provider_runtime_guard(execution_root: Path):
+def _provider_runtime_guard(execution_root: Path, child_env: dict[str, str] | None = None):
     """Keep provider-local and legacy fixtures from mutating active state."""
     overlay = execution_root / ".harness" / "overlays"
+    migration_lock = run_dir("HARNESS-WORKTREE-MIGRATION-001") / "migration" / "migration.lock.json"
+    ensure_exclusive_lock(migration_lock)
     with tempfile.TemporaryDirectory(prefix="harness-check-runtime-") as td:
+        migration_guard = _artifact_lock(migration_lock)
+        migration_guard.__enter__()
+        lock_held = True
+        guard_owner = uuid.uuid4().hex
+        if child_env is not None:
+            child_env["HARNESS_TASK_CHECKS_OWNER"] = guard_owner
         backup = Path(td) / "overlays"
         if overlay.is_dir():
             shutil.copytree(overlay, backup, symlinks=True)
@@ -216,35 +366,134 @@ def _provider_runtime_guard(execution_root: Path):
         )
         legacy_records = []
         legacy_roots = list(dict.fromkeys((execution_root.resolve(), runtime_root().resolve())))
-        for provider in PROVIDERS:
-            for base in legacy_roots:
-                for name in legacy_names:
-                    path = base / ".harness" / provider / name
-                    if path.is_file():
-                        held = legacy_backup / str(len(legacy_records))
-                        path.replace(held)
-                        legacy_records.append((held, path))
+        setup_complete = False
         try:
+            for provider in PROVIDERS:
+                for base in legacy_roots:
+                    for name in legacy_names:
+                        path = base / ".harness" / provider / name
+                        _reject_reparse_components(path)
+                        if path.is_file():
+                            held = legacy_backup / str(len(legacy_records))
+                            path.replace(held)
+                            legacy_records.append((held, path))
+            setup_complete = True
+            # Provider activation is itself serialized by the same shared
+            # lock. Release it while the test subprocess runs so activation
+            # cannot deadlock; reacquire before cleanup/restoration.
+            migration_guard.__exit__(None, None, None)
+            lock_held = False
             yield
         finally:
-            if overlay.exists():
-                shutil.rmtree(overlay)
-            if backup.is_dir():
-                overlay.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(backup, overlay, symlinks=True)
+            if lock_held:
+                migration_guard.__exit__(None, None, None)
+                lock_held = False
+            migration_guard = _artifact_lock(migration_lock)
+            migration_guard.__enter__()
+            lock_held = True
+            cleanup_errors = []
+            restore_overlay = True
+            recovery_dir = None
+            try:
+                foreign_state = _foreign_active_state(overlay, backup, guard_owner) if overlay.exists() else None
+                if foreign_state:
+                    # Keep the live overlay in place. Moving it to recovery and
+                    # restoring the stale backup would silently erase another
+                    # session's active task.
+                    restore_overlay = False
+                    cleanup_errors.append(f"provider overlay ownership collision: {foreign_state}")
+                elif overlay.exists():
+                    _reject_reparse_components(overlay)
+                    recovery_root = (
+                        runtime_root() / ".harness" / "legacy-preserved" /
+                        "task-checks-overlay-recovery"
+                    )
+                    recovery_root.mkdir(parents=True, exist_ok=True)
+                    recovery_dir = Path(tempfile.mkdtemp(prefix=f"{os.getpid()}-", dir=recovery_root))
+                    recovery_overlay = recovery_dir / "generated-overlays"
+                    _move_overlay_to_recovery(overlay, recovery_overlay)
+            except Exception as exc:
+                cleanup_errors.append(f"overlay recovery move failed: {exc}")
+                try:
+                    if recovery_dir is None:
+                        recovery_root = (
+                            runtime_root() / ".harness" / "legacy-preserved" /
+                            "task-checks-overlay-recovery"
+                        )
+                        recovery_root.mkdir(parents=True, exist_ok=True)
+                        recovery_dir = Path(tempfile.mkdtemp(prefix=f"{os.getpid()}-", dir=recovery_root))
+                    if backup.is_dir():
+                        shutil.copytree(backup, recovery_dir / "original-overlays", symlinks=True)
+                    if overlay.exists():
+                        failed_overlay = recovery_dir / "failed-overlays"
+                        shutil.copytree(overlay, failed_overlay, symlinks=True)
+                        _remove_overlay_without_tree_move(overlay)
+                    cleanup_errors.append(f"overlay recovery evidence: {recovery_dir}")
+                except Exception as recovery_exc:
+                    cleanup_errors.append(f"overlay recovery evidence failed: {recovery_exc}")
+                    restore_overlay = False
+            try:
+                if restore_overlay and backup.is_dir():
+                    overlay.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(backup, overlay, symlinks=True)
+            except Exception as exc:
+                cleanup_errors.append(f"overlay restore failed: {exc}")
             preserved = runtime_root() / ".harness" / "legacy-preserved" / "task-checks" / str(os.getpid())
             generated_index = 0
             for provider in PROVIDERS:
                 for base in legacy_roots:
                     for name in legacy_names:
+                        if not setup_complete:
+                            continue
                         path = base / ".harness" / provider / name
-                        if path.is_file():
-                            preserved.mkdir(parents=True, exist_ok=True)
-                            path.replace(preserved / f"{provider}-{generated_index}-{name}")
-                            generated_index += 1
-            for held, path in legacy_records:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                held.replace(path)
+                        try:
+                            _reject_reparse_components(path)
+                            present = path.is_file()
+                        except (OSError, ValueError) as exc:
+                            cleanup_errors.append(f"legacy preservation probe failed for {path}: {exc}")
+                            continue
+                        if present:
+                            try:
+                                _reject_reparse_components(path)
+                                preserved.mkdir(parents=True, exist_ok=True)
+                                _preserve_legacy_exclusive(
+                                    path, preserved / f"{provider}-{generated_index}-{name}"
+                                )
+                                generated_index += 1
+                            except (OSError, ValueError, RuntimeError) as exc:
+                                cleanup_errors.append(f"legacy preservation failed for {path}: {exc}")
+            for index, (held, path) in enumerate(legacy_records):
+                try:
+                    restored = _restore_legacy_exclusive(held, path)
+                    if not restored:
+                        raise FileExistsError(f"concurrent legacy state already exists: {path}")
+                except (OSError, ValueError, RuntimeError) as exc:
+                    # Keep a durable recovery copy before TemporaryDirectory cleans
+                    # up the held file; never silently lose legacy state.
+                    recovery = (
+                        runtime_root() / ".harness" / "legacy-preserved" /
+                        "task-checks-recovery" / str(os.getpid()) /
+                        f"{index}-{path.name}"
+                    )
+                    try:
+                        recovery.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(held, recovery)
+                        cleanup_errors.append(
+                            f"legacy restore failed for {path}: {exc}; recovery={recovery}"
+                        )
+                    except (OSError, ValueError) as recovery_exc:
+                        cleanup_errors.append(
+                            f"legacy restore failed for {path}: {exc}; "
+                            f"recovery failed: {recovery_exc}"
+                        )
+            if cleanup_errors:
+                try:
+                    raise RuntimeError("; ".join(cleanup_errors))
+                finally:
+                    migration_guard.__exit__(None, None, None)
+                    lock_held = False
+            migration_guard.__exit__(None, None, None)
+            lock_held = False
 
 
 def _clear_python_caches(project: Path) -> None:
@@ -289,27 +538,64 @@ def _isolated_child_env(env: dict[str, str]):
         yield child
 
 
-def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> dict:
+def _run(
+    argv: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout: int = 600,
+) -> dict:
+    """Run one allowlisted command; a timeout is a recorded FAIL, never an abort."""
     with _isolated_child_env(env) as child_env:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             argv,
             cwd=cwd,
             env=child_env,
             text=True,
             encoding="utf-8",
             errors="replace",
-            capture_output=True,
-            timeout=600,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             shell=False,
         )
+        timed_out = False
+        exit_code: int
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            # Best-effort Windows tree-kill: the direct child may leave
+            # grandchildren (git, unittest children) holding pipes, so kill
+            # the whole tree before reaping.
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=30,
+                    check=False,
+                )
+            else:
+                proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = exc.stdout, exc.stderr
+            # Sentinel exit code plus explicit marker: timeout counts as a
+            # command failure so the partial checks-report.json still gets
+            # persisted with status FAIL instead of aborting run_checks.
+            timed_out = True
+            exit_code = -1
 
-    return {
+    result = {
         "argv": argv,
         "cwd": str(cwd),
-        "exit_code": proc.returncode,
-        "stdout": proc.stdout[-12000:],
-        "stderr": proc.stderr[-12000:],
+        "exit_code": exit_code,
+        "stdout": (stdout or "")[-12000:],
+        "stderr": (stderr or "")[-12000:],
     }
+    if timed_out:
+        result["timed_out"] = True
+    return result
 
 
 
@@ -338,7 +624,11 @@ def _validate_planned_files(task: dict, execution_root: Path) -> list[dict]:
         results.append(
             {
                 "path": raw,
-                "exists": candidate.is_file(),
+                # Task file surfaces may legitimately name directories
+                # (e.g. "harness/schema", "tests"). Existence means the
+                # planned path is present as a file OR a directory; the
+                # containment (reparse-point/escape) check above is unchanged.
+                "exists": candidate.exists(),
             }
         )
 
@@ -386,6 +676,7 @@ def run_checks(task_id: str) -> dict:
                 }
             )
 
+    candidate_before = candidate_snapshot(task_id)
     env = _safe_env(project)
     commands: list[dict] = []
 
@@ -418,9 +709,14 @@ def run_checks(task_id: str) -> dict:
         )
 
     # Implementation tasks with tests use the project's real unit suite.
+    # Timeout budget evidence (measured, Windows dev host): the full suite
+    # finishes in ~483s when healthy, but ~600-900s+ in the isolated child
+    # env on slower/disc-defended hosts, with high run-to-run variance.
+    # Single bounded unittest-discover command (coverage must not be split)
+    # gets 1200s headroom; other commands keep their existing timeouts.
     if tests.is_dir():
         _clear_python_caches(project)
-        with _provider_runtime_guard(execution_root):
+        with _provider_runtime_guard(execution_root, env):
             commands.append(
                 _run(
                     [
@@ -434,6 +730,7 @@ def run_checks(task_id: str) -> dict:
                     ],
                     project,
                     env,
+                    timeout=1200,
                 )
             )
 
@@ -445,14 +742,27 @@ def run_checks(task_id: str) -> dict:
         row for row in static_checks if row.get("status") != "PASS"
     ]
 
+    candidate = candidate_snapshot(task_id)
+    candidate_mutated = candidate_before["subject_hash"] != candidate["subject_hash"]
+    if candidate_mutated:
+        static_checks.append(
+            {
+                "check": "candidate-binding",
+                "status": "FAIL",
+                "before": candidate_before["subject_hash"],
+                "after": candidate["subject_hash"],
+                "error": "candidate changed while authoritative checks were running",
+            }
+        )
+    static_failures = [
+        row for row in static_checks if row.get("status") != "PASS"
+    ]
     passed = (
         not missing
         and not command_failures
         and not static_failures
         and bool(commands or static_checks)
     )
-
-    candidate = candidate_snapshot(task_id)
     report = {
         "schema_version": 1,
         "task_id": task_id,
@@ -463,6 +773,8 @@ def run_checks(task_id: str) -> dict:
         "static_checks": static_checks,
         "commands": commands,
         "candidate_subject_hash": candidate["subject_hash"],
+        "candidate_before_subject_hash": candidate_before["subject_hash"],
+        "candidate_mutated_during_checks": candidate_mutated,
         "candidate_base_commit": candidate["base_commit"],
         "scope_expansion_sha256": candidate.get("scope_expansion_sha256"),
         "status": "PASS" if passed else "FAIL",

@@ -1,7 +1,7 @@
 import { Plugin } from "@opencode/plugin"
-import { promises as fs } from "node:fs"
+import { promises as fs, lstatSync, realpathSync } from "node:fs"
 import path from "node:path"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { spawn, spawnSync } from "node:child_process"
 import { assertNoReparse, insideReal } from "./path_guards.mjs"
 
@@ -28,12 +28,40 @@ function parseModelRef(value) {
   return { providerID, id: remainder.slice(0, hash), variant: remainder.slice(hash + 1) }
 }
 
+function trustedExecutable(name) {
+  const value = process.env[name]
+  if (!value || !path.isAbsolute(value)) {
+    throw new Error(`Harness: ${name} must be an absolute trusted executable path`)
+  }
+  let stat
+  let real
+  try {
+    stat = lstatSync(value)
+    real = realpathSync.native(value)
+  } catch {
+    throw new Error(`Harness: ${name} executable is unavailable`)
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(`Harness: ${name} executable must be a regular non-reparse file`)
+  }
+  const normalize = (candidate) => process.platform === "win32" ? candidate.toLowerCase() : candidate
+  if (normalize(path.resolve(real)) !== normalize(path.resolve(value))) {
+    throw new Error(`Harness: ${name} executable resolves through a reparse point`)
+  }
+  return value
+}
+
+function trustedGit() {
+  return trustedExecutable("HARNESS_GIT_EXECUTABLE")
+}
+
 function worktreeOverlay(root, provider) {
   // Match harnesslib.worktree_identity(): Git metadata, rather than cwd or a
   // host canonical path, defines the isolated provider namespace.
   const checkout = path.resolve(root)
-  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: checkout, encoding: "utf8" })
-  const common = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: checkout, encoding: "utf8" })
+  const git = trustedGit()
+  const top = spawnSync(git, ["rev-parse", "--show-toplevel"], { cwd: checkout, encoding: "utf8" })
+  const common = spawnSync(git, ["rev-parse", "--git-common-dir"], { cwd: checkout, encoding: "utf8" })
   if (top.status !== 0 || common.status !== 0) throw new Error("Harness: worktree Git metadata unavailable")
   const worktreeRoot = path.resolve(String(top.stdout || "").trim())
   const commonRaw = String(common.stdout || "").trim()
@@ -110,7 +138,7 @@ async function readJson(file, fallback) {
 }
 
 async function assertNoLegacyState(root, provider) {
-  const common = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: root, encoding: "utf8" })
+  const common = spawnSync(trustedGit(), ["rev-parse", "--git-common-dir"], { cwd: root, encoding: "utf8" })
   const commonRoot = common.status === 0 ? path.dirname(path.resolve(root, String(common.stdout || "").trim())) : root
   for (const base of [...new Set([path.resolve(root), commonRoot])]) {
     const legacy = path.join(base, ".harness", provider)
@@ -128,7 +156,10 @@ async function assertNoLegacyState(root, provider) {
 async function writeJsonAtomic(file, value, root) {
   if (root) await assertNoReparse(root, file)
   await fs.mkdir(path.dirname(file), { recursive: true })
-  const tmp = file + ".tmp"
+  // A fixed temporary name lets two OpenCode sessions overwrite each other's
+  // in-flight payload.  The unique name keeps the final rename atomic per
+  // writer; the per-file audit lock below serializes appenders.
+  const tmp = `${file}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`
   if (root) await assertNoReparse(root, tmp)
   await fs.writeFile(tmp, JSON.stringify(value, null, 2) + "\n", "utf8")
   if (root) await assertNoReparse(root, tmp)
@@ -139,15 +170,41 @@ async function writeJsonAtomic(file, value, root) {
 async function appendJsonLine(file, value, root) {
   if (root) await assertNoReparse(root, file)
   await fs.mkdir(path.dirname(file), { recursive: true })
-  if (root) await assertNoReparse(root, file)
-  await fs.appendFile(file, JSON.stringify(value) + "\n", "utf8")
+  const lock = `${file}.lockdir`
+  if (root) await assertNoReparse(root, lock)
+  let acquired = false
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    try {
+      await fs.mkdir(lock)
+      acquired = true
+      break
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  if (!acquired) throw new Error("Harness: timed out acquiring permission audit lock")
+  try {
+    if (root) await assertNoReparse(root, file)
+    await fs.appendFile(file, JSON.stringify(value) + "\n", "utf8")
+  } finally {
+    await fs.rm(lock, { recursive: true, force: true })
+  }
 }
 
 function runPython(root, args, inventoryPath) {
   return new Promise((resolve, reject) => {
-    const child = spawn("python", args, {
+    const child = spawn(trustedExecutable("HARNESS_ACI_PYTHON"), args, {
       cwd: root,
-      env: { ...process.env, HARNESS_MODEL_INVENTORY_OPENCODE: inventoryPath },
+      env: {
+        HARNESS_MODEL_INVENTORY_OPENCODE: inventoryPath,
+        PYTHONDONTWRITEBYTECODE: "1",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+        GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
+        ...(process.env.SYSTEMROOT ? { SYSTEMROOT: process.env.SYSTEMROOT } : {}),
+        ...(process.env.WINDIR ? { WINDIR: process.env.WINDIR } : {}),
+      },
       stdio: ["ignore", "pipe", "pipe"],
     })
     let stdout = ""
@@ -243,8 +300,13 @@ export default Plugin.define({
         source: "OpenCode V2 runtime catalog via local harness plugin + reviewed harness/opencode-model-overrides.json",
         models: normalized,
       }
+      // `enriched-inventory.json` is the activation-bound, immutable scored
+      // inventory copied by the provider activator.  The plugin must never
+      // refresh it: doing so changes the digest recorded in
+      // model-selections.json and makes an otherwise valid active binding
+      // fail closed.  Runtime discovery belongs only in the worktree-local
+      // raw/catalog files.
       await writeJsonAtomic(inventoryFile, inventoryPayload, root)
-      await writeJsonAtomic(enrichedInventoryFile, inventoryPayload, root)
       lastInventoryRefresh = ts
     }
 

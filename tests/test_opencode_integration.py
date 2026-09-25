@@ -1,12 +1,65 @@
 import json, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from harnesslib import provider_active_path, provider_enriched_inventory_path, runtime_root
+sys.path.insert(0,str(ROOT/'scripts'/'providers'))
+from harnesslib import provider_active_path, provider_enriched_inventory_path, provider_model_selections_path, provider_overlay_dir, read_provider_active, runtime_root
 from compile_harness import generated
+import opencode_activate_task
 
 class OpenCodeIntegrationTests(unittest.TestCase):
+    def test_invalid_binding_replacement_requires_matching_verified_backups_and_writes_receipt(self):
+        with tempfile.TemporaryDirectory(prefix='opencode-replacement-') as temp:
+            root = Path(temp)
+            task_id = 'T-replace-invalid'
+            overlay = root / '.harness' / 'overlays' / ('a' * 64) / 'opencode'
+            preserved = root / '.harness' / 'legacy-preserved' / task_id / 'opencode'
+            backup_names = {
+                'active-task.json': 'active-task.pre-round-21-20260925.json',
+                'model-selections.json': 'model-selections.pre-round-21-20260925.json',
+                'enriched-inventory.json': 'enriched-inventory.pre-round-21-20260925.json',
+            }
+            for name, backup_name in backup_names.items():
+                source = overlay / name
+                backup = preserved / backup_name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text(
+                    json.dumps({'task_id': task_id, 'file': name}), encoding='utf-8'
+                )
+                shutil.copyfile(source, backup)
+
+            receipt_payload = {}
+            def save_receipt(path, payload):
+                receipt_payload.update(payload)
+                return path
+
+            with patch.object(opencode_activate_task, 'ROOT', root), \
+                 patch.object(opencode_activate_task, 'provider_overlay_dir', return_value=overlay), \
+                 patch.object(opencode_activate_task, 'provider_active_path', return_value=overlay / 'active-task.json'), \
+                 patch.object(opencode_activate_task, 'read_provider_active', side_effect=ValueError('invalid binding')), \
+                 patch.object(opencode_activate_task, 'reject_legacy_provider_state'), \
+                 patch.object(opencode_activate_task, 'worktree_identity', return_value={'worktree_id': 'a' * 64}), \
+                 patch.object(opencode_activate_task, 'run_dir', return_value=root / '.harness' / 'runs' / task_id), \
+                 patch.object(opencode_activate_task, 'write_json_immutable', side_effect=save_receipt):
+                receipt_path = opencode_activate_task._authorize_invalid_binding_replacement(
+                    task_id, 'explicit-user-approval-2026-09-25'
+                )
+
+            self.assertEqual(receipt_payload['status'], 'AUTHORIZED_INVALID_BINDING_REPLACEMENT')
+            self.assertEqual(len(receipt_payload['backups']), 3)
+            self.assertTrue(receipt_payload['receipt_sha256'])
+            self.assertIn('state-replacements', str(receipt_path))
+            self.assertIn('opencode-', str(receipt_path))
+
+    def test_invalid_binding_replacement_refuses_missing_gate(self):
+        with self.assertRaisesRegex(ValueError, 'explicit --human-gate'):
+            opencode_activate_task._authorize_invalid_binding_replacement(
+                'T-replace-invalid', None
+            )
+
     def test_project_config_uses_harness_orchestrator_and_fail_safe_defaults(self):
         cfg=json.loads((ROOT/'opencode.json').read_text())
         self.assertEqual(cfg['default_agent'],'harness-orchestrator')
@@ -32,8 +85,16 @@ class OpenCodeIntegrationTests(unittest.TestCase):
 
     def test_plugin_has_native_catalog_agent_context_permission_and_shell_integration(self):
         text=(ROOT/'.opencode/plugins/harness/index.ts').read_text()
-        for needle in ('ctx.catalog.model.list()', 'ctx.agent.transform', 'ctx.session.hook("context"', 'ctx.permission.hook("evaluate"', 'ctx.shell.hook("create.before"'):
+        # The V2 plugin SDK (@opencode/plugin 2.0.7) defines the model domain as
+        # ctx.model (ModelDomain with list(); see the package's
+        # dist/promise/model.d.ts) and contains no `catalog` namespace anywhere
+        # in its published types. The plugin legitimately migrated
+        # ctx.catalog.model.list() -> ctx.model.list() for V2, so the needle
+        # here follows the migrated API.
+        for needle in ('ctx.model.list()', 'ctx.agent.transform', 'ctx.session.hook("context"', 'ctx.permission.hook("evaluate"', 'ctx.shell.hook("create.before"'):
             self.assertIn(needle,text)
+        # Lock the migration: the V1-era catalog namespace must stay gone.
+        self.assertNotIn('ctx.catalog.',text)
         self.assertNotIn('claude-sonnet',text.lower())
         self.assertNotIn('gpt-5',text.lower())
 
@@ -93,6 +154,19 @@ try {
         self.assertIn('await assertNoReparse(root, selectionFile)', text)
         self.assertIn('await assertNoReparse(root, inventoryFile)', text)
         self.assertGreaterEqual(text.count('await assertNoReparse(root, tmp)'), 2)
+
+    def test_plugin_never_refreshes_activation_bound_inventory(self):
+        text = (ROOT / '.opencode/plugins/harness/index.ts').read_text()
+        self.assertIn('activation-bound, immutable scored', text)
+        self.assertNotIn('writeJsonAtomic(enrichedInventoryFile, inventoryPayload, root)', text)
+        self.assertIn('await writeJsonAtomic(inventoryFile, inventoryPayload, root)', text)
+
+    def test_plugin_rejects_missing_or_reparse_backed_executables(self):
+        text = (ROOT / '.opencode/plugins/harness/index.ts').read_text()
+        self.assertIn('lstatSync(value)', text)
+        self.assertIn('realpathSync.native(value)', text)
+        self.assertIn('must be a regular non-reparse file', text)
+        self.assertIn('resolves through a reparse point', text)
 
     def test_orchestrator_has_narrow_control_plane_shell_permissions(self):
         text=(ROOT/'.opencode/agents/harness-orchestrator.md').read_text()
@@ -206,6 +280,21 @@ try {
                 local_path.unlink()
         held_active=active.read_bytes() if active.exists() else None
         active.unlink(missing_ok=True)
+        # The activation subprocess also rewrites the real overlay
+        # model-selections.json (task TEST-OPENCODE). Without a byte-exact
+        # restore here, the fixture leaves a selections file whose task_id no
+        # longer matches the restored active binding, which later fails
+        # read_provider_active() with 'provider model selections task
+        # mismatch' (seen as a full-suite failure of
+        # test_receipt_routing_and_consent).
+        selections=provider_model_selections_path('opencode')
+        held_selections=selections.read_bytes() if selections.exists() else None
+        selections.unlink(missing_ok=True)
+        # Activation now binds model selections to an immutable worktree-local
+        # inventory snapshot. Preserve that file too, otherwise restoring the
+        # old active binding and selections would leave an invalid digest.
+        overlay_inventory=provider_overlay_dir('opencode')/'enriched-inventory.json'
+        held_overlay_inventory=overlay_inventory.read_bytes() if overlay_inventory.exists() else None
         task.parent.mkdir(parents=True, exist_ok=True)
 
         task.write_text(json.dumps({
@@ -260,10 +349,25 @@ try {
                 data['task_snapshot_path'],
                 '.harness/runs/TEST-OPENCODE/task.json'
             )
+            validated = read_provider_active('opencode')
+            self.assertEqual(validated['task_id'], 'TEST-OPENCODE')
         finally:
             task.unlink(missing_ok=True)
             shutil.rmtree(runtime_root()/'.harness/runs/TEST-OPENCODE',ignore_errors=True)
             active.unlink(missing_ok=True)
+            # Restore the overlay selections byte-exactly, symmetric with the
+            # active binding restore below, so the fixture leaves the worktree
+            # provider overlay exactly as it found it.
+            if selections.exists():
+                selections.replace(quarantine_root/'model-selections.json')
+            if held_selections is not None:
+                selections.parent.mkdir(parents=True,exist_ok=True)
+                selections.write_bytes(held_selections)
+            if held_overlay_inventory is None:
+                overlay_inventory.unlink(missing_ok=True)
+            else:
+                overlay_inventory.parent.mkdir(parents=True,exist_ok=True)
+                overlay_inventory.write_bytes(held_overlay_inventory)
 
             # Preserve any diagnostic emitted during the subprocess in the
             # quarantine, then restore the exact pre-test legacy bytes. This

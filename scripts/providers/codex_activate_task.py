@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from harnesslib import (  # noqa: E402
     assert_overlay_writable, provider_active_path, provider_enriched_inventory_path, provider_model_selections_path,
     read_provider_active, run_dir, runtime_reference, runtime_root, safe_task_id,
     sha256_file, worktree_identity, write_json_atomic, write_json_immutable,
+    shared_migration_lock,
 )  # noqa: E402
 from task_router import route  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
@@ -71,7 +73,13 @@ def _select_inventory() -> tuple[dict | None, Path | None, dict]:
         available = {row["id"] for row in discover_provider("codex", cfg) if row.get("enabled", True)}
     except Exception as exc:
         status["availability_error"] = str(exc)
+        status["availability_verified"] = False
         available = set()
+        inventory = dict(inventory)
+        inventory["models"] = []
+        status["scored_models_after_filter"] = 0
+        return inventory, path, status
+    status["availability_verified"] = True
     if available:
         original = list(inventory.get("models", []))
         inventory = dict(inventory)
@@ -92,7 +100,7 @@ def _load_or_route(task: dict, route_path: Path) -> dict:
     return route(task)
 
 
-def activate(task_path: Path) -> dict:
+def _activate_unlocked(task_path: Path) -> dict:
     assert_overlay_writable("codex")
     task = json.loads(task_path.read_text(encoding="utf-8"))
     if task.get("request"):
@@ -169,20 +177,45 @@ def activate(task_path: Path) -> dict:
         "current_step": progress["current_step"],
         "selections": selections,
     }
+    if os.environ.get("HARNESS_TASK_CHECKS_OWNER"):
+        active["task_checks_owner"] = os.environ["HARNESS_TASK_CHECKS_OWNER"]
     write_json_atomic(ACTIVE, active)
     if compile_all(check=False) != 0:
         raise SystemExit("failed to regenerate provider adapters after Codex model activation")
     return active
 
 
-def clear() -> None:
+def activate(task_path: Path) -> dict:
+    with shared_migration_lock():
+        return _activate_unlocked(task_path)
+
+
+def _clear_unlocked(human_gate: str | None = None) -> dict:
+    from harnesslib import quarantine_provider_active
+    if not human_gate:
+        raise ValueError('--clear requires an explicit --human-gate approval token')
     assert_overlay_writable("codex")
-    ACTIVE.unlink(missing_ok=True)
+    receipt = quarantine_provider_active(
+        "codex",
+        reason="cleared via codex_activate_task.py --clear",
+        human_gate=human_gate,
+    )
     if compile_all(check=False) != 0:
         raise SystemExit("failed to restore inherited Codex agent configuration")
+    return {
+        "cleared": False,
+        "quarantined": receipt is not None,
+        "source_preserved": True,
+        "reason": "active binding preserved; atomic ownership of source removal is not proven",
+    }
 
 
-def refresh_active() -> dict:
+def clear(human_gate: str | None = None) -> dict:
+    with shared_migration_lock():
+        return _clear_unlocked(human_gate)
+
+
+def _refresh_active_unlocked() -> dict:
     """Reconcile an active Codex binding with the current local model catalog.
 
     Codex loads custom-agent TOMLs at session creation. A refresh therefore
@@ -221,15 +254,21 @@ def refresh_active() -> dict:
     return {"refreshed": True, "task_id": active["task_id"], "selections": selections}
 
 
+def refresh_active() -> dict:
+    with shared_migration_lock():
+        return _refresh_active_unlocked()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Activate one harness task for Codex dynamic per-agent routing.")
     ap.add_argument("task", nargs="?")
     ap.add_argument("--clear", action="store_true")
+    ap.add_argument("--human-gate", help="explicit approval token required with --clear")
     ap.add_argument("--refresh-active", action="store_true")
     args = ap.parse_args()
     if args.clear:
-        clear()
-        print(json.dumps({"cleared": True, "path": str(ACTIVE.relative_to(ROOT)), "codex_agents_restored": True}, indent=2))
+        result = clear(args.human_gate)
+        print(json.dumps({**result, "path": str(ACTIVE.relative_to(ROOT)), "codex_agents_restored": True}, indent=2))
         return 0
     if args.refresh_active:
         print(json.dumps(refresh_active(), indent=2, ensure_ascii=False))

@@ -59,65 +59,93 @@ class ReceiptRoutingAndConsentTests(unittest.TestCase):
         self.assertTrue(reused["granted"])
         self.assertFalse(other["granted"])
 
-    def test_dynamic_verifier_gets_independent_model_selection(self):
+    def _run_dynamic_verifier_flow(self):
+        """Run _ensure_dynamic_agent_models fully patched into a temp run dir."""
         import json
         import model_router
         import model_task_profile
 
-        with tempfile.TemporaryDirectory() as td:
-            temp_root = Path(td)
-            run = temp_root / ".harness" / "runs" / "TASK-1"
-            run.mkdir(parents=True)
-            (run / "task.json").write_text(json.dumps({"id": "TASK-1", "description": "change code"}), encoding="utf-8")
-            (run / "model-selections.json").write_text(json.dumps({
-                "provider": "opencode",
-                "inventory_path": None,
-                "selections": [{
-                    "agent": "implementer",
-                    "status": "selected",
-                    "action": "use",
-                    "model_id": "vendor/impl",
-                    "base_model_id": "vendor/impl",
-                    "model_family": "impl-family",
-                    "model_vendor": "vendor",
-                }],
-            }), encoding="utf-8")
-            route = self._route()
-            route["agents"].append("verifier")
-            captured = {}
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        temp_root = Path(td.name)
+        run = temp_root / ".harness" / "runs" / "TASK-1"
+        run.mkdir(parents=True)
+        (run / "task.json").write_text(json.dumps({"id": "TASK-1", "description": "change code"}), encoding="utf-8")
+        (run / "model-selections.json").write_text(json.dumps({
+            "provider": "opencode",
+            "inventory_path": None,
+            "selections": [{
+                "agent": "implementer",
+                "status": "selected",
+                "action": "use",
+                "model_id": "vendor/impl",
+                "base_model_id": "vendor/impl",
+                "model_family": "impl-family",
+                "model_vendor": "vendor",
+            }],
+        }), encoding="utf-8")
+        route = self._route()
+        route["agents"].append("verifier")
+        captured = {}
 
-            def fake_select_model(**kwargs):
-                captured.update(kwargs)
-                return {
-                    "agent": "verifier",
-                    "status": "selected",
-                    "action": "use",
-                    "model_id": "other/verifier",
-                    "base_model_id": "other/verifier",
-                    "model_family": "verify-family",
-                    "model_vendor": "other",
-                }
+        def fake_select_model(**kwargs):
+            captured.update(kwargs)
+            return {
+                "agent": "verifier",
+                "status": "selected",
+                "action": "use",
+                "model_id": "other/verifier",
+                "base_model_id": "other/verifier",
+                "model_family": "verify-family",
+                "model_vendor": "other",
+            }
 
-            manifest = {"agents": {"verifier": {"model_class": "reasoning"}}}
-            policy = {"independence": {"roles": {"verifier": {"avoid_agents": ["implementer"]}}}}
-            with patch.object(mod, "ROOT", temp_root), \
-                 patch.object(mod, "run_dir", return_value=run), \
-                 patch.object(mod, "_active_provider", return_value="opencode"), \
-                 patch.object(mod, "read_provider_active", return_value={"task_id": "TASK-1", "model_selections_path": "local"}), \
-                 patch.object(mod, "provider_model_selections_path", return_value=run / "model-selections.json"), \
-                 patch.object(mod, "load_manifest", return_value=manifest), \
-                 patch.object(model_router, "load_policy", return_value=policy), \
-                 patch.object(model_router, "select_model", side_effect=fake_select_model), \
-                 patch.object(model_task_profile, "profile_task", return_value={}), \
-                 patch.object(model_task_profile, "target_for_agent", return_value={}):
-                created = mod._ensure_dynamic_agent_models("TASK-1", route, ["verifier"])
+        manifest = {"agents": {"verifier": {"model_class": "reasoning"}}}
+        policy = {"independence": {"roles": {"verifier": {"avoid_agents": ["implementer"]}}}}
+        with patch.object(mod, "ROOT", temp_root), \
+             patch.object(mod, "run_dir", return_value=run), \
+             patch.object(mod, "_active_provider", return_value="opencode"), \
+             patch.object(mod, "read_provider_active", return_value={"task_id": "TASK-1", "model_selections_path": "local"}), \
+             patch.object(mod, "provider_active_path", return_value=run / "active-task.json"), \
+             patch.object(mod, "provider_model_selections_path", return_value=run / "model-selections.json"), \
+             patch.object(mod, "load_manifest", return_value=manifest), \
+             patch.object(model_router, "load_policy", return_value=policy), \
+             patch.object(model_router, "select_model", side_effect=fake_select_model), \
+             patch.object(model_task_profile, "profile_task", return_value={}), \
+             patch.object(model_task_profile, "target_for_agent", return_value={}):
+            created = mod._ensure_dynamic_agent_models("TASK-1", route, ["verifier"])
+        return created, captured, run
 
-            self.assertEqual(len(created), 1)
-            self.assertIn("vendor/impl", captured["avoid_models"])
-            self.assertIn("impl-family", captured["avoid_families"])
-            self.assertIn("vendor", captured["avoid_vendors"])
-            saved = json.loads((run / "model-selections.json").read_text(encoding="utf-8"))
-            self.assertEqual(saved["selections"][-1]["agent"], "verifier")
+    def test_dynamic_verifier_gets_independent_model_selection(self):
+        import json
+
+        created, captured, run = self._run_dynamic_verifier_flow()
+
+        self.assertEqual(len(created), 1)
+        self.assertIn("vendor/impl", captured["avoid_models"])
+        self.assertIn("impl-family", captured["avoid_families"])
+        self.assertIn("vendor", captured["avoid_vendors"])
+        saved = json.loads((run / "model-selections.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["selections"][-1]["agent"], "verifier")
+        binding = json.loads((run / "active-task.json").read_text(encoding="utf-8"))
+        self.assertEqual(binding["task_id"], "TASK-1")
+        self.assertEqual(binding["selections"], saved["selections"])
+        self.assertEqual(binding["model_selections_sha256"], mod.sha256_file(run / "model-selections.json"))
+
+    def test_dynamic_verifier_flow_does_not_touch_real_provider_binding(self):
+        import harnesslib
+
+        real_binding = harnesslib.provider_active_path("opencode")
+        if not real_binding.is_file():
+            self.skipTest("no real overlay opencode binding present")
+        real_bytes = real_binding.read_bytes()
+
+        created, _captured, _run = self._run_dynamic_verifier_flow()
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(real_binding.read_bytes(), real_bytes)
+        # The real binding must still be present and valid for this worktree.
+        harnesslib.read_provider_active("opencode")
 
 
 if __name__ == "__main__":

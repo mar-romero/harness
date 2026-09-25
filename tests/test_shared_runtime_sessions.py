@@ -172,10 +172,97 @@ class SharedRuntimeSessionTests(unittest.TestCase):
                               text=True, encoding="utf-8", errors="replace",
                               capture_output=True, check=True, timeout=30)
 
-    def python(self, root, code):
-        return subprocess.run([sys.executable, "-c", code], cwd=root, env=self.env,
-                              text=True, encoding="utf-8", errors="replace",
-                              capture_output=True, timeout=40)
+    def test_codex_refresh_active_uses_the_shared_migration_lock(self):
+        result = self.python(self.primary, '''
+import sys
+from contextlib import contextmanager
+from unittest.mock import patch
+sys.path.insert(0, "scripts")
+from providers import codex_activate_task as activation
+
+@contextmanager
+def lock_probe():
+    yield
+
+with patch.object(activation, "shared_migration_lock", lock_probe), \\
+     patch.object(activation, "_refresh_active_unlocked", return_value={"refreshed": True}) as refresh:
+    assert activation.refresh_active() == {"refreshed": True}
+    refresh.assert_called_once_with()
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_enriched_inventory_path_honors_an_alternate_repository_root(self):
+        result = self.python(self.primary, '''
+import sys
+from pathlib import Path
+sys.path.insert(0, "scripts")
+import harnesslib
+root = Path("alternate-root")
+expected = root.resolve() / "harness" / "model-inventories" / "codex.json"
+assert harnesslib.provider_enriched_inventory_path("codex", root) == expected
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def _terminate_tree(self, proc):
+        """Kill a fixture subprocess and any grandchildren it left behind.
+
+        On Windows, killing only the direct child leaves grandchildren (git)
+        holding the stdout/stderr pipes, so a later communicate() never sees
+        EOF and blocks forever. taskkill /T removes the whole tree.
+        """
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=15)
+            proc.kill()
+            proc.wait(timeout=15)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+    def _stop_workers(self, workers):
+        """Release fixture subprocesses with bounded waits in every path."""
+        for worker in workers:
+            if worker.poll() is None:
+                self._terminate_tree(worker)
+        for worker in workers:
+            try:
+                worker.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                self._terminate_tree(worker)
+                try:
+                    worker.communicate(timeout=15)
+                except (subprocess.TimeoutExpired, ValueError):
+                    pass
+
+    def python(self, root, code, timeout=40):
+        """Run fixture code with a hard, tree-scoped deadline: fail, never hang."""
+        worker = subprocess.Popen(
+            [sys.executable, "-c", code], cwd=root, env=self.env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            errors="replace",
+        )
+        try:
+            stdout, stderr = worker.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            self._terminate_tree(worker)
+            try:
+                worker.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                pass
+            partial = "".join(
+                part.decode("utf-8", errors="replace") if isinstance(part, bytes) else (part or "")
+                for part in (exc.stdout, exc.stderr)
+            )
+            self.fail(
+                f"fixture subprocess exceeded {timeout}s in {root} "
+                f"(runtime state unavailable or wedged); partial output: {partial[-2000:]}"
+            )
+        return subprocess.CompletedProcess(worker.args, worker.returncode, stdout, stderr)
 
     def test_real_linked_worktrees_share_identical_run_evidence(self):
         code = (
@@ -238,18 +325,18 @@ class SharedRuntimeSessionTests(unittest.TestCase):
             linked_active = Path(second["active_path"])
             linked_before = linked_active.read_bytes()
             cleared = subprocess.run(
-                [sys.executable, "scripts/providers/opencode_activate_task.py", "--clear"],
+                [sys.executable, "scripts/providers/opencode_activate_task.py", "--clear",
+                 "--human-gate", "approved-session-clear-001"],
                 cwd=self.primary, env=self.env, text=True, encoding="utf-8", errors="replace",
                 capture_output=True, timeout=40,
             )
-            self.assertEqual(cleared.returncode, 0, cleared.stderr)
-            self.assertFalse(Path(first["active_path"]).exists())
+            self.assertNotEqual(cleared.returncode, 0,
+                                "Windows clear must fail closed when atomic ownership cannot be proven")
+            self.assertIn("source preserved", cleared.stderr)
+            self.assertTrue(Path(first["active_path"]).exists())
             self.assertEqual(linked_active.read_bytes(), linked_before)
         finally:
-            for worker in workers:
-                if worker.poll() is None:
-                    worker.kill()
-                worker.communicate()
+            self._stop_workers(workers)
 
     def test_same_task_concurrent_activation_keeps_distinct_bindings(self):
         workers = []
@@ -276,10 +363,7 @@ class SharedRuntimeSessionTests(unittest.TestCase):
             second_id = json.loads(Path(results[1]["active_path"]).read_text())["overlay"]["worktree_id"]
             self.assertNotEqual(first_id, second_id)
         finally:
-            for worker in workers:
-                if worker.poll() is None:
-                    worker.kill()
-                worker.communicate()
+            self._stop_workers(workers)
 
     def test_concurrent_subscription_activation_keeps_local_sessions_and_inventories(self):
         workers = []
@@ -316,10 +400,7 @@ class SharedRuntimeSessionTests(unittest.TestCase):
                 self.assertEqual(inventory["provider"], "subscriptions")
                 self.assertTrue(Path(result["inventory_path"]).is_relative_to(root.resolve()))
         finally:
-            for worker in workers:
-                if worker.poll() is None:
-                    worker.kill()
-                worker.communicate()
+            self._stop_workers(workers)
 
     def test_provider_session_and_audit_paths_are_worktree_local(self):
         code = '''
@@ -376,9 +457,7 @@ print(json.dumps({
             self.assertEqual(worker.returncode, 0, stderr)
             result = json.loads(stdout.strip().splitlines()[-1])
         finally:
-            if worker.poll() is None:
-                worker.kill()
-                worker.communicate()
+            self._stop_workers([worker])
         source = Path(result["active_path"])
         identity = self.python(self.linked, 'import sys; sys.path.insert(0, "scripts"); import harnesslib; print(harnesslib.worktree_identity()["worktree_id"])')
         self.assertEqual(identity.returncode, 0, identity.stderr)
@@ -425,10 +504,7 @@ else:
             ) + "]")
             self.assertEqual({row["claim"] for row in rows}, {f"worker-{i}" for i in range(4)})
         finally:
-            for worker in workers:
-                if worker.poll() is None:
-                    worker.kill()
-                worker.communicate()
+            self._stop_workers(workers)
 
     def test_normal_clear_rejects_legacy_binding_without_mutation(self):
         legacy = self.primary / ".harness" / "opencode" / "active-task.json"
@@ -512,6 +588,7 @@ inventory = harnesslib.provider_enriched_inventory_path("codex")
 inventory.parent.mkdir(parents=True, exist_ok=True)
 inventory.write_text(json.dumps({"schema_version": 3, "provider": "codex", "models": []}), encoding="utf-8")
 selection = harnesslib.provider_model_selections_path("codex")
+selection.parent.mkdir(parents=True, exist_ok=True)
 payload = {"schema_version": 2, "task_id": "SESSION-A", "provider": "codex",
            "inventory_path": inventory.relative_to(Path.cwd()).as_posix(),
            "inventory_sha256": harnesslib.sha256_file(inventory), "selections": []}
@@ -543,14 +620,19 @@ else:
         barrier_b = self.base / "immutable-ready-b"
         worker_code = '''
 import sys
+import time
 from pathlib import Path
 sys.path.insert(0, "scripts")
 import harnesslib
 ready = Path(sys.argv[2])
 other = Path(sys.argv[4])
 ready.open("a").close()
+# Bounded barrier wait: never spin forever, never outlive the test parent.
+deadline = time.monotonic() + 30
 while not other.exists():
-    pass
+    if time.monotonic() > deadline:
+        sys.exit("fixture barrier timeout")
+    time.sleep(0.05)
 path = Path(sys.argv[1])
 try:
     harnesslib.write_json_immutable(path, {"writer": sys.argv[3]})
@@ -564,9 +646,15 @@ else:
                              cwd=root, env=self.env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             for i, root in enumerate((self.primary, self.linked))
         ]
-        for worker in workers:
-            stdout, stderr = worker.communicate(timeout=30)
-            self.assertEqual(worker.returncode, 0, stderr)
+        try:
+            for worker in workers:
+                # Bounded parent wait. The worker's own 30s barrier deadline
+                # exits first, so _stop_workers in finally guarantees no
+                # grandchild outlives the parent on any failure path.
+                stdout, stderr = worker.communicate(timeout=60)
+                self.assertEqual(worker.returncode, 0, stderr)
+        finally:
+            self._stop_workers(workers)
         self.assertIn(json.loads(target.read_text(encoding="utf-8"))["writer"], {"0", "1"})
         outcomes = {(self.base / "immutable-result-0").read_text(encoding="utf-8"), (self.base / "immutable-result-1").read_text(encoding="utf-8")}
         self.assertEqual(outcomes, {"won", "lost"})
@@ -647,13 +735,18 @@ else:
             self.assertNotEqual(results[0]["inventory_path"], results[1]["inventory_path"])
             self.assertNotEqual(results[0]["model_path"], results[1]["model_path"])
             self.assertNotEqual(results[0]["inventory_model"], results[1]["inventory_model"])
-            for result in results:
-                self.assertTrue(Path(result["inventory_path"]).is_relative_to(Path(result["active_path"]).parents[3]))
+            # The scored inventory is intentionally a fixed per-repo path
+            # (<checkout>/harness/model-inventories/<provider>.json), not an
+            # overlay artifact. Anchor locality to each checkout root instead
+            # of the overlay tree; distinctness across checkouts is asserted
+            # above and must not be weakened.
+            for root, result in zip((self.primary, self.linked), results):
+                self.assertTrue(
+                    Path(result["inventory_path"]).is_relative_to(Path(root).resolve()),
+                    result["inventory_path"],
+                )
         finally:
-            for worker in workers:
-                if worker.poll() is None:
-                    worker.kill()
-                worker.communicate()
+            self._stop_workers(workers)
 
 
 if __name__ == "__main__":

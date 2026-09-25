@@ -194,7 +194,32 @@ class SubscriptionBridgeTests(unittest.TestCase):
                     self.assertIn("--trust", argv)
 
     def test_inventory_can_feed_existing_cross_provider_model_router(self):
-        inventory = build_inventory(["codex", "claude", "copilot", "cursor", "grok", "gemini"], include_missing=True)
+        # Hermetic on purpose: the oracle here is inventory -> router plumbing,
+        # not host CLI health. Real probing (doctor_provider -> _run_status and
+        # provider_capabilities.probe) shells out to actual host CLIs, which is
+        # environment-dependent and can block (e.g. the Windows `copilot`
+        # bootstrapper shim prompts interactively). Stub only the CLI-doctor
+        # boundary; build_inventory itself still runs end-to-end.
+        def fake_doctor(provider):
+            return {
+                "provider": provider,
+                "installed": True,
+                "executable": f"fake-{provider}",
+                "auth_state": (
+                    "unknown-run-copilot-login-if-needed"
+                    if provider == "copilot"
+                    else "subscription"
+                ),
+                "direct_api_env_present": [],
+                "direct_api_env_will_be_removed": False,
+                "version_ok": True,
+                "version": f"{provider} fake 1.0",
+            }
+
+        with patch("subscription_bridge.doctor_provider", side_effect=fake_doctor), \
+             patch("subscription_bridge._discover_codex_models", return_value=[]), \
+             patch("subscription_bridge._discover_grok_models", return_value=[]):
+            inventory = build_inventory(["codex", "claude", "copilot", "cursor", "grok", "gemini"], include_missing=True)
         self.assertEqual(inventory["provider"], "subscriptions")
         self.assertTrue(any(m["id"].startswith("claude/") for m in inventory["models"]))
         self.assertTrue(any(m["id"].startswith("copilot/") for m in inventory["models"]))

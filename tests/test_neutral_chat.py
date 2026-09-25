@@ -150,6 +150,9 @@ class NeutralChatTests(unittest.TestCase):
 
     def test_subscription_binding_is_valid_for_deterministic_checks(self):
         task_id = "NEUTRAL-CHECKS-TEST"
+        task_definition = ROOT / 'tasks' / f'{task_id}.json'
+        old_task_definition = task_definition.read_bytes() if task_definition.exists() else None
+        write_json_atomic(task_definition, {"id": task_id, "description": "test", "files": []})
         run = run_dir(task_id)
         run.mkdir(parents=True, exist_ok=True)
         snapshot = run / "task.json"
@@ -200,6 +203,10 @@ class NeutralChatTests(unittest.TestCase):
                 active.write_bytes(old)
             model_path.unlink(missing_ok=True)
             shutil.rmtree(run, ignore_errors=True)
+            if old_task_definition is None:
+                task_definition.unlink(missing_ok=True)
+            else:
+                task_definition.write_bytes(old_task_definition)
 
     def test_receipt_consent_can_bind_to_neutral_subscription_session(self):
         task_id = "NEUTRAL-CONSENT-TEST"

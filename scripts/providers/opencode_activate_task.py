@@ -9,7 +9,9 @@ currently visible local OpenCode catalog, and routes using that local snapshot.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,8 +22,11 @@ sys.path.insert(0, str(SCRIPTS))
 
 from harnesslib import (  # noqa: E402
     assert_overlay_writable, provider_active_path, provider_enriched_inventory_path, provider_model_selections_path,
-    run_dir, runtime_root, safe_task_id, sha256_file, worktree_identity, write_json_atomic,
-    write_json_immutable,
+    provider_overlay_dir,
+    read_provider_active, reject_legacy_provider_state, run_dir, runtime_root, safe_task_id,
+    sha256_file, worktree_identity, write_json_atomic, write_json_immutable,
+    _reject_reparse_components,
+    shared_migration_lock,
 )
 from task_router import route  # noqa: E402
 from context_compiler import build as build_context  # noqa: E402
@@ -69,7 +74,13 @@ def _select_inventory() -> tuple[dict | None, Path | None, dict]:
         available = {row["id"] for row in discover_provider("opencode", cfg) if row.get("enabled", True)}
     except Exception as exc:
         status["availability_error"] = str(exc)
+        status["availability_verified"] = False
         available = set()
+        inventory = dict(inventory)
+        inventory["models"] = []
+        status["scored_models_after_filter"] = 0
+        return inventory, path, status
+    status["availability_verified"] = True
     if available:
         original = list(inventory.get("models", []))
         inventory = dict(inventory)
@@ -90,14 +101,92 @@ def _load_or_route(task: dict, route_path: Path) -> dict:
     return route(task)
 
 
-def activate(task_path: Path) -> dict:
+def _authorize_invalid_binding_replacement(task_id: str, human_gate: str | None) -> dict:
+    """Require verified backups and record an immutable gate receipt."""
+    if not human_gate or len(human_gate) < 8:
+        raise ValueError('--replace-invalid-active requires an explicit --human-gate token')
+    reject_legacy_provider_state('opencode')
+    active_path = provider_active_path('opencode')
+    try:
+        active = read_provider_active('opencode')
+    except ValueError as exc:
+        invalid_reason = str(exc)
+    else:
+        if active is None:
+            raise ValueError('there is no invalid active OpenCode binding to replace')
+        raise ValueError('refusing to replace a valid active OpenCode binding')
+    if not active_path.is_file():
+        raise ValueError('invalid active OpenCode binding disappeared during replacement')
+    try:
+        active_payload = json.loads(active_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError('invalid active OpenCode binding cannot be attributed safely') from exc
+    if not isinstance(active_payload, dict) or active_payload.get('task_id') != task_id:
+        raise ValueError('invalid active OpenCode binding belongs to a different task')
+
+    overlay = provider_overlay_dir('opencode')
+    # legacy-preserved is a sibling of overlays under .harness.
+    preserved = ROOT / '.harness' / 'legacy-preserved' / task_id / 'opencode'
+    names = {
+        'active-task.json': 'active-task.pre-round-21-20260925.json',
+        'model-selections.json': 'model-selections.pre-round-21-20260925.json',
+        'enriched-inventory.json': 'enriched-inventory.pre-round-21-20260925.json',
+    }
+    backups = []
+    for source_name, backup_name in names.items():
+        source = overlay / source_name
+        backup = preserved / backup_name
+        _reject_reparse_components(source)
+        _reject_reparse_components(backup)
+        if not source.is_file() or not backup.is_file():
+            raise ValueError(f'verified replacement backup missing for {source_name}')
+        source_digest = sha256_file(source)
+        backup_digest = sha256_file(backup)
+        if source_digest != backup_digest:
+            raise ValueError(f'active state changed since backup: {source_name}')
+        backups.append({
+            'source': str(source.relative_to(ROOT)),
+            'backup': str(backup.relative_to(ROOT)),
+            'sha256': source_digest,
+        })
+
+    body = {
+        'schema_version': 1,
+        'task_id': task_id,
+        'provider': 'opencode',
+        'status': 'AUTHORIZED_INVALID_BINDING_REPLACEMENT',
+        'reason': invalid_reason,
+        'worktree': str(ROOT),
+        'worktree_id': worktree_identity()['worktree_id'],
+        'human_gate': 'explicit user authorization recorded in task conversation',
+        'human_gate_sha256': hashlib.sha256(human_gate.encode('utf-8')).hexdigest(),
+        'backups': backups,
+    }
+    receipt = {
+        **body,
+        'receipt_sha256': hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        ).hexdigest(),
+    }
+    return write_json_immutable(
+        run_dir(task_id) / 'migration' / 'state-replacements' /
+        f'opencode-{worktree_identity()["worktree_id"]}-{receipt["receipt_sha256"][:16]}.json',
+        receipt,
+    )
+
+
+def _activate_unlocked(task_path: Path, replace_invalid_active: bool = False,
+                       human_gate: str | None = None) -> dict:
     # Fail before touching shared run evidence if an old global binding could
     # make this operation select or overwrite another checkout's state.
-    assert_overlay_writable("opencode")
     task = json.loads(task_path.read_text(encoding="utf-8"))
     if task.get("request"):
         task = normalize_task(task)
     task_id = safe_task_id(task.get("id", ""))
+    if replace_invalid_active:
+        _authorize_invalid_binding_replacement(task_id, human_gate)
+    else:
+        assert_overlay_writable("opencode")
     out_dir = run_dir(task_id)
     route_path = out_dir / "route.json"
     routed = _load_or_route(task, route_path)
@@ -132,12 +221,18 @@ def activate(task_path: Path) -> dict:
 
     inventory, inventory_path, inventory_status = _select_inventory()
     selections = selections_for_task(task, "opencode", inventory)
+    local_inventory_path = None
+    if inventory is not None:
+        # The OpenCode plugin validates that selections bind to the provider's
+        # per-worktree overlay, not to the shared scored-inventory source.
+        local_inventory_path = provider_overlay_dir("opencode") / "enriched-inventory.json"
+        write_json_atomic(local_inventory_path, inventory)
     model_payload = {
         "schema_version": 2,
         "task_id": task_id,
         "provider": "opencode",
-        "inventory_path": inventory_path.relative_to(ROOT).as_posix() if inventory_path else None,
-        "inventory_sha256": sha256_file(inventory_path) if inventory_path else None,
+        "inventory_path": local_inventory_path.relative_to(ROOT).as_posix() if local_inventory_path else None,
+        "inventory_sha256": sha256_file(local_inventory_path) if local_inventory_path else None,
         "inventory_status": inventory_status,
         "selections": selections,
     }
@@ -167,32 +262,63 @@ def activate(task_path: Path) -> dict:
         "current_step": progress["current_step"],
         "selections": selections,
     }
+    # Task checks temporarily release the shared migration lock while running
+    # the suite. Tag activations launched by that subprocess so cleanup can
+    # distinguish them from an unrelated concurrent writer.
+    if os.environ.get("HARNESS_TASK_CHECKS_OWNER"):
+        active["task_checks_owner"] = os.environ["HARNESS_TASK_CHECKS_OWNER"]
     write_json_atomic(ACTIVE, active)
     return active
+
+
+def activate(task_path: Path, replace_invalid_active: bool = False,
+             human_gate: str | None = None) -> dict:
+    with shared_migration_lock():
+        return _activate_unlocked(task_path, replace_invalid_active, human_gate)
+
+
+def clear(human_gate: str | None = None) -> dict:
+    from harnesslib import reject_legacy_provider_state, quarantine_provider_active
+    if not human_gate:
+        raise ValueError('--clear requires an explicit --human-gate approval token')
+    with shared_migration_lock():
+        reject_legacy_provider_state("opencode")
+        receipt = quarantine_provider_active(
+            "opencode",
+            reason="cleared via opencode_activate_task.py --clear",
+            human_gate=human_gate,
+        )
+        return {
+            "cleared": False,
+            "quarantined": receipt is not None,
+            "source_preserved": True,
+            "reason": "active binding preserved; atomic ownership of source removal is not proven",
+            "path": str(ACTIVE.relative_to(ROOT)),
+        }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Activate one harness task for the OpenCode runtime.")
     ap.add_argument("task", nargs="?", help="Task JSON path under the project")
     ap.add_argument("--clear", action="store_true", help="Clear the OpenCode active task/model mapping")
+    ap.add_argument("--human-gate", help="explicit approval token required with --clear")
+    ap.add_argument(
+        "--replace-invalid-active", action="store_true",
+        help="replace this task's invalid active binding after verified backups",
+    )
     args = ap.parse_args()
 
     if args.clear:
-        from harnesslib import reject_legacy_provider_state, quarantine_provider_active
-        reject_legacy_provider_state("opencode")
-        receipt = quarantine_provider_active("opencode", reason="cleared via opencode_activate_task.py --clear")
-        if receipt is None:
-            ACTIVE.unlink(missing_ok=True)
-        print(json.dumps({
-            "cleared": True,
-            "quarantined": receipt is not None,
-            "path": str(ACTIVE.relative_to(ROOT)),
-        }, indent=2))
+        print(json.dumps(clear(args.human_gate), indent=2))
         return 0
     if not args.task:
         ap.error("task is required unless --clear is used")
 
-    active = activate(resolve_task(args.task))
+    active = activate(
+        resolve_task(args.task),
+        replace_invalid_active=args.replace_invalid_active,
+        human_gate=args.human_gate,
+    )
     print(json.dumps(active, indent=2, ensure_ascii=False))
     blocked = [x for x in active["selections"] if x.get("action") == "block"]
     return 2 if blocked else 0

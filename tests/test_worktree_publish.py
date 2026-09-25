@@ -54,7 +54,12 @@ class WorktreePublishTests(unittest.TestCase):
                 result = worktree.publish(self.task, execute=True)
 
         self.assertEqual(result["status"], "PASS")
-        self.assertFalse(path.exists())
+        # Git unregistered the original worktree, but the test deliberately
+        # recreated the path with a different identity after unregistering.
+        # The migration must preserve that replacement rather than risk
+        # deleting an unrelated directory.
+        self.assertTrue(path.exists())
+        self.assertEqual((path / "residual.tmp").read_text(encoding="utf-8"), "cleanup residue\n")
         self.assertFalse(worktree.lock(self.task).exists())
 
         listed = subprocess.run(

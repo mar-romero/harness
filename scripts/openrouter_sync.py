@@ -100,6 +100,40 @@ def _project_env(name: str) -> str | None:
     return None
 
 
+def _trusted_executable(cfg: dict[str, Any], key: str, default_env: str) -> str | None:
+    """Resolve an operator-provided executable without PATH or reparse lookup."""
+    env_name = str(cfg.get("discovery", {}).get(key, default_env))
+    value = os.environ.get(env_name, "").strip()
+    if not value:
+        return None
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        return None
+    try:
+        harnesslib._reject_reparse_components(candidate)
+        resolved = candidate.resolve()
+        if resolved != candidate or not candidate.is_file():
+            return None
+    except (OSError, ValueError):
+        return None
+    return str(candidate)
+
+
+def _discovery_env(executable: str) -> dict[str, str]:
+    """Pass only non-secret process settings to provider discovery."""
+    allowed = {
+        key: os.environ[key]
+        for key in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG", "LC_ALL", "CI", "PATHEXT")
+        if os.environ.get(key)
+    }
+    allowed["PATH"] = str(Path(executable).parent)
+    allowed["PYTHONDONTWRITEBYTECODE"] = "1"
+    allowed["GIT_CONFIG_NOSYSTEM"] = "1"
+    allowed["GIT_CONFIG_GLOBAL"] = os.devnull
+    allowed["GIT_CONFIG_SYSTEM"] = os.devnull
+    return allowed
+
+
 def _load_json(path: Path, fallback: Any = None) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -371,32 +405,31 @@ def discover_opencode(
 
         run = None
 
-        if command:
-            executable = shutil.which(command[0])
+        executable = _trusted_executable(cfg, "executable_env", "HARNESS_OPENCODE_EXECUTABLE")
+        if command and executable:
+            resolved_command = [
+                executable,
+                *command[1:],
+            ]
 
-            if executable:
-                resolved_command = [
-                    executable,
-                    *command[1:],
-                ]
-
-                try:
-                    run = subprocess.run(
-                        resolved_command,
-                        cwd=ROOT,
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        timeout=30,
-                        shell=False,
-                        check=False,
-                    )
-                except (
-                    OSError,
-                    subprocess.TimeoutExpired,
-                ):
-                    run = None
+            try:
+                run = subprocess.run(
+                    resolved_command,
+                    cwd=ROOT,
+                    env=_discovery_env(executable),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                    shell=False,
+                    check=False,
+                )
+            except (
+                OSError,
+                subprocess.TimeoutExpired,
+            ):
+                run = None
 
         if run is not None and run.returncode == 0:
             models = []
@@ -625,13 +658,15 @@ def _codex_bundled_candidates(
         )
     ]
 
-    if not command or not shutil.which(command[0]):
+    executable = _trusted_executable(cfg, "bundled_executable_env", "HARNESS_CODEX_EXECUTABLE")
+    if not command or not executable:
         return []
 
     try:
         run = subprocess.run(
-            command,
+            [executable, *command[1:]],
             cwd=ROOT,
+            env=_discovery_env(executable),
             capture_output=True,
             text=True,
             encoding="utf-8",

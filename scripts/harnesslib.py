@@ -200,7 +200,8 @@ def provider_inventory_path(provider: str, root: Path | None = None) -> Path:
 
 def provider_enriched_inventory_path(provider: str, root: Path | None = None) -> Path:
     """Return the provider scored inventory used for activation (fixed per-repo path)."""
-    return ROOT / 'harness' / 'model-inventories' / f'{provider}.json'
+    base = (root or ROOT).resolve()
+    return base / 'harness' / 'model-inventories' / f'{provider}.json'
 
 
 def provider_model_selections_path(provider: str, root: Path | None = None) -> Path:
@@ -211,7 +212,9 @@ def provider_inventory_binding_path(provider: str, root: Path | None = None) -> 
     """Return the only inventory path a provider selection may bind to."""
     if provider == 'subscriptions':
         return provider_inventory_path(provider, root)
-    if provider in {'codex', 'opencode'}:
+    if provider == 'codex':
+        return provider_enriched_inventory_path(provider, root)
+    if provider == 'opencode':
         return provider_enriched_inventory_path(provider, root)
     raise ValueError('unsupported provider name')
 
@@ -261,10 +264,16 @@ def validate_provider_active(provider: str, active: dict, root: Path | None = No
     task_id = safe_task_id(active.get('task_id', ''))
     top, _ = _worktree_metadata(root)
     task_path = active.get('task_path')
-    expected_task_path = (top / 'tasks' / f'{task_id}.json').resolve()
     if not isinstance(task_path, str) or Path(task_path).is_absolute() or '..' in Path(task_path).parts:
         raise ValueError('provider active binding task_path is invalid')
-    if _contained(top / task_path, top) != expected_task_path:
+    task_ref = _contained(top / task_path, top)
+    if not task_ref.is_file():
+        raise ValueError('provider active binding task_path is missing')
+    try:
+        task_document = json.loads(task_ref.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError('provider active binding task_path is invalid') from exc
+    if task_document.get('id') != task_id:
         raise ValueError('provider active binding task_path does not match task_id')
     expected_shared = {
         'route_path': 'route.json',
@@ -327,7 +336,12 @@ def validate_model_selections(provider: str, task_id: str, path: Path | None = N
         raise ValueError('provider model selections are not a list')
     inventory_ref = payload.get('inventory_path')
     inventory_hash = payload.get('inventory_sha256')
+    # The scored inventory is the shared source used during activation. The
+    # OpenCode runtime then copies it into the worktree overlay and binds the
+    # active selection to that immutable local snapshot.
     expected_inventory = provider_inventory_binding_path(provider, root)
+    if provider == 'opencode':
+        expected_inventory = provider_overlay_dir(provider, root) / 'enriched-inventory.json'
     if provider == 'subscriptions' and not inventory_ref:
         raise ValueError('subscription model selections require a local inventory')
     if inventory_ref is None:
@@ -433,34 +447,92 @@ def assert_overlay_writable(provider: str, root: Path | None = None) -> Path:
 
 def quarantine_provider_active(provider: str, root: Path | None = None,
                                task_id: str = 'HARNESS-PLUGIN-BINDING-001',
-                               reason: str = 'invalid provider active binding') -> dict | None:
-    """Move an invalid overlay binding to legacy-preserved with a durable receipt."""
+                               reason: str = 'invalid provider active binding',
+                               human_gate: str | None = None) -> dict | None:
+    """Preserve an overlay binding with a reparse-safe, immutable receipt.
+
+    Windows uses an atomic rename, while POSIX keeps the source pathname and
+    creates a hard-link preservation copy because Python has no portable
+    compare-and-unlink primitive for an untrusted concurrent writer.
+    """
+    if not human_gate or len(str(human_gate)) < 8:
+        raise ValueError(
+            'provider active-state quarantine is destructive; an explicit '
+            'human gate of at least eight characters is required'
+        )
     path = provider_active_path(provider, root)
     if not path.is_file():
         return None
     top, _ = _worktree_metadata(root)
+    _reject_reparse_components(path)
+    task_id = safe_task_id(task_id)
     preserved_base = top / '.harness' / 'legacy-preserved'
     dest_dir = preserved_base / task_id / provider
+    # Validate before and after directory creation; never follow a junction or
+    # symlink supplied by a legacy state path.
+    _reject_reparse_components(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
+    _reject_reparse_components(dest_dir)
+    secure_path(dest_dir, top)
     dest = dest_dir / path.name
+    _reject_reparse_components(dest)
+    secure_path(dest, dest_dir)
     if dest.exists():
         raise ValueError(f'quarantine destination already exists: {dest}')
     payload = path.read_bytes()
+    source_stat = os.stat(path)
+    if hashlib.sha256(payload).hexdigest() != hashlib.sha256(path.read_bytes()).hexdigest():
+        raise ValueError('provider active binding changed during quarantine snapshot')
+    windows_atomic_refusal = os.name == 'nt'
     receipt = {
         'schema_version': 1,
         'task_id': task_id,
-        'status': 'PRESERVED_AND_REJECTED',
-        'reason': reason,
-        'entries': [{
+        'provider': provider,
+        'status': 'QUARANTINE_REJECTED' if windows_atomic_refusal else 'PRESERVED_AND_REJECTED',
+        'reason': (
+            'atomic source ownership cannot be proven; source preserved'
+            if windows_atomic_refusal else reason
+        ),
+        'human_gate': 'recorded',
+        'human_gate_sha256': hashlib.sha256(str(human_gate).encode('utf-8')).hexdigest(),
+        'worktree_root': str(top),
+        'source': str(path),
+        'destination': None if windows_atomic_refusal else str(dest),
+        'entries': [] if windows_atomic_refusal else [{
             'provider': provider,
             'original': str(path.relative_to(top)),
             'preserved': str(dest.relative_to(preserved_base)),
             'sha256': hashlib.sha256(payload).hexdigest(),
         }],
+        'source_identity': [source_stat.st_dev, source_stat.st_ino],
+        'removal': (
+            'not attempted; atomic source ownership cannot be proven'
+            if windows_atomic_refusal else 'hard-link preservation on POSIX'
+        ),
     }
-    (dest_dir / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
-    dest.write_bytes(payload)
-    path.unlink()
+    receipt['receipt_sha256'] = hashlib.sha256(
+        json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    ).hexdigest()
+    receipt_path = dest_dir / 'receipt.json'
+    _reject_reparse_components(receipt_path)
+    write_json_immutable(receipt_path, receipt)
+    if windows_atomic_refusal:
+        # A pathname-only Windows rename cannot prove that the bytes read
+        # above are still the bytes being removed.  Preserve the source and
+        # fail closed until a handle-relative no-follow primitive is available.
+        raise RuntimeError(
+            'provider active quarantine refused on Windows: atomic source '
+            'ownership cannot be proven; source preserved'
+        )
+    else:
+        os.link(path, dest)
+        current = os.stat(path)
+        if (current.st_dev, current.st_ino) != (source_stat.st_dev, source_stat.st_ino):
+            dest.unlink(missing_ok=True)
+            raise RuntimeError('provider active binding changed during quarantine')
+        if hashlib.sha256(dest.read_bytes()).hexdigest() != hashlib.sha256(payload).hexdigest():
+            dest.unlink(missing_ok=True)
+            raise RuntimeError('provider active binding content changed during quarantine')
     return receipt
 
 
@@ -513,7 +585,9 @@ def write_json_immutable(path: Path, data):
 def _artifact_lock(path: Path):
     """Serialize immutable shared-artifact creation across linked worktrees."""
     lock_path = path.parent / '.artifact-write.lock'
+    _reject_reparse_components(lock_path)
     with lock_path.open('a+b') as handle:
+        _reject_reparse_components(lock_path)
         handle.seek(0, os.SEEK_END)
         if handle.tell() == 0:
             handle.write(b'\0')
@@ -560,6 +634,36 @@ def write_json_exclusive(path: Path, data):
         except OSError:
             pass
         raise
+
+
+def ensure_exclusive_lock(path: Path) -> Path:
+    """Create a shared lock anchor without replacement, then revalidate it."""
+    _reject_reparse_components(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, 'O_BINARY'):
+        flags |= os.O_BINARY
+    try:
+        fd = os.open(path, flags, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        try:
+            os.write(fd, b'\0')
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    _reject_reparse_components(path)
+    return path
+
+
+@contextmanager
+def shared_migration_lock(task_id: str = 'HARNESS-WORKTREE-MIGRATION-001'):
+    """Serialize provider activation with migration and task-check cleanup."""
+    anchor = run_dir(task_id) / 'migration' / 'migration.lock.json'
+    ensure_exclusive_lock(anchor)
+    with _artifact_lock(anchor):
+        yield
 
 def git(*args, cwd=None, check=True):
     return subprocess.run(

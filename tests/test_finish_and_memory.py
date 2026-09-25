@@ -262,10 +262,16 @@ class RealR3FinishIntegrationTests(unittest.TestCase):
         active = []
         for provider in ('codex', 'opencode', 'subscriptions'):
             try:
-                if read_provider_active(provider) is not None:
-                    active.append(provider)
+                binding = read_provider_active(provider)
             except ValueError:
-                pass
+                # An unreadable/invalid binding is not a binding for this task.
+                continue
+            # attest.make_payload requires exactly one binding whose task_id
+            # equals TASK; counting unrelated active bindings (e.g. the task
+            # currently under check) makes this guard pass while attest.create
+            # still fails closed. Mirror that exact requirement here.
+            if binding is not None and binding.get('task_id') == self.TASK:
+                active.append(provider)
         if len(active) != 1:
             self.skipTest('requires exactly one active provider binding for the durable fixture')
         backup = Path(tempfile.mkdtemp(prefix='harness-r3-finish-backup-')) / self.TASK

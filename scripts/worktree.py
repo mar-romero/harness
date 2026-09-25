@@ -9,8 +9,9 @@ from pathlib import Path, PurePosixPath
 import shutil
 
 from harnesslib import (
-    ROOT, git, load_json, read_provider_active, resolved_git_identity, run_dir,
+    ROOT, git, load_json, provider_active_path, read_provider_active, resolved_git_identity, run_dir,
     runtime_root, safe_task_id, scope_expansion_digest, secure_path, write_json_atomic,
+    shared_migration_lock,
 )
 
 
@@ -607,7 +608,22 @@ def _publication_preconditions(task):
     # matters belongs to the task's linked checkout.  Never inspect a global
     # direct-path legacy binding as a substitute.
     binding_root = _safe_worktree(task) if _safe_worktree(task).is_dir() else ROOT
-    binding = read_provider_active('codex', binding_root)
+    try:
+        binding = read_provider_active('codex', binding_root)
+    except ValueError as exc:
+        # A malformed binding is still live state. Inspect only its task id so
+        # publication cannot treat an invalid active file as permission to
+        # proceed or silently overwrite it.
+        active_path = provider_active_path('codex', binding_root)
+        try:
+            raw_binding = json.loads(active_path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            raise
+        if isinstance(raw_binding, dict) and raw_binding.get('task_id') == task:
+            raise ValueError(
+                'Codex task binding is still active; clear the task-scoped model overlay before publication'
+            ) from exc
+        raise
     if binding is not None and binding.get('task_id') == task:
         raise ValueError(
             'Codex task binding is still active; clear the task-scoped model overlay before publication'
@@ -641,11 +657,26 @@ def _root_untracked_overlap(changed):
 
 
 def _cleanup_published_worktree(task, meta):
+    # Publication cleanup mutates a worktree path shared with provider/runtime
+    # operations. Serialize it with migration and bind residual deletion to the
+    # directory identity observed before Git unregisters the worktree.
+    with shared_migration_lock():
+        return _cleanup_published_worktree_locked(task, meta)
+
+
+def _cleanup_published_worktree_locked(task, meta):
     path = _safe_worktree(task)
     branch = meta["branch"]
     cleanup_warning = None
 
     registered = _worktree_registered(path)
+    original_path_identity = None
+    if registered and path.exists():
+        try:
+            stat = path.stat()
+            original_path_identity = (stat.st_dev, stat.st_ino)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot bind worktree cleanup identity: {exc}") from exc
 
     if registered:
         if path.exists():
@@ -676,8 +707,17 @@ def _cleanup_published_worktree(task, meta):
     # integrated publication.
     if not _worktree_registered(path) and path.exists():
         try:
-            shutil.rmtree(path)
-        except OSError as exc:
+            secure_path(path, _common_repo_root())
+            current = path.stat()
+            current_identity = (current.st_dev, current.st_ino)
+            if original_path_identity is not None and current_identity != original_path_identity:
+                cleanup_warning = (
+                    "residual worktree path identity changed after Git unregister; "
+                    "preserved without deletion"
+                )
+            else:
+                shutil.rmtree(path)
+        except (OSError, ValueError) as exc:
             residue_warning = (
                 f"residual worktree directory could not be removed: {exc}"
             )
