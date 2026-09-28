@@ -8,6 +8,7 @@ import re
 import stat
 from pathlib import Path
 from harnesslib import ROOT, load_json, safe_task_id, write_json_atomic, run_dir
+from codegraph_bridge import explore as codegraph_explore
 from context_graph import build_graph, build_graph_document, neighborhood, _excluded, _integer, _relative_path
 from memory import search as search_memory
 from symbol_index import index_file, index_source
@@ -221,6 +222,48 @@ def _structured_retrieval_needed(task, route):
     risk = str((route or {}).get('risk') or task.get('risk') or 'R1')
     return risk in {'R2', 'R3'}, risk
 
+
+def _codegraph_context_paths(query, policy):
+    """Return bounded, repository-relative CodeGraph paths without provider text."""
+    requested = policy.get('graph_backend', 'auto')
+    if requested == 'lexical':
+        return set(), {'status': 'skipped', 'reason': 'lexical-policy'}
+
+    try:
+        max_files = _integer(policy.get('codegraph_max_files', 8), 'codegraph_max_files', 1, 20)
+        max_tokens = _integer(policy.get('codegraph_max_tokens', 7000), 'codegraph_max_tokens', 1, 1000000)
+        result = codegraph_explore(
+            query,
+            max_files=max_files,
+            max_chars=max_tokens * 4,
+        )
+    except Exception:
+        # The provider boundary is untrusted; preserve only a fixed reason code.
+        return set(), {'status': 'fallback', 'reason': 'provider-error'}
+
+    if not isinstance(result, dict) or not result.get('ok'):
+        return set(), {'status': 'fallback', 'reason': 'unavailable'}
+
+    raw_paths = result.get('paths')
+    if not isinstance(raw_paths, list):
+        return set(), {'status': 'fallback', 'reason': 'invalid-output'}
+
+    paths = []
+    seen = set()
+    for raw_path in raw_paths:
+        if not isinstance(raw_path, str):
+            continue
+        normalized = raw_path.replace('\\', '/')
+        if not _relative_path(normalized) or normalized in seen:
+            continue
+        seen.add(normalized)
+        paths.append(normalized)
+        if len(paths) >= max_files:
+            break
+    if not paths:
+        return set(), {'status': 'fallback', 'reason': 'no-paths'}
+    return set(paths), {'status': 'ready', 'reason': None}
+
 def build(task,route=None):
     policy = context_policy()
     task_id = safe_task_id(task['id'])
@@ -230,8 +273,12 @@ def build(task,route=None):
     explicit = {value for value in task.get('files', []) if _relative_path(value)}
     root = ROOT.resolve()
     document = build_graph_document()
+    codegraph_paths, codegraph_status = _codegraph_context_paths(query, policy)
     files = candidate_files(root, policy, explicit)
     explicit &= files.keys()
+    codegraph_paths &= files.keys()
+    if codegraph_status['status'] == 'ready' and not codegraph_paths:
+        codegraph_status = {'status': 'fallback', 'reason': 'no-candidate-paths'}
     adjacency = {}
     for edge in document['edges']:
         if edge['source'] in files and edge['target'] in files:
@@ -266,6 +313,7 @@ def build(task,route=None):
         else:
             for applies, bonus, reason in (
                 (path in neighbors, policy['graph_neighbor_bonus'], 'dependency-graph-neighbor'),
+                (path in codegraph_paths, policy.get('codegraph_file_bonus', 0), 'codegraph'),
                 (path in related, policy['related_test_bonus'], 'related-test'),
                 (bool(remembered & tokens(path)), policy['memory_bonus'], 'memory'),
             ):
@@ -356,9 +404,9 @@ def build(task,route=None):
     retrieval = {
         'needed': retrieval_needed,
         'requested_backend': policy.get('graph_backend', 'auto'),
-        'backend': 'builtin',
-        'status': 'skipped' if not retrieval_needed else 'fallback',
-        'reason': None if not retrieval_needed else 'bounded lexical graph and safe symbol fallback',
+        'backend': 'codegraph' if codegraph_status['status'] == 'ready' else 'builtin',
+        'status': 'skipped' if not retrieval_needed else ('ready' if codegraph_status['status'] == 'ready' else 'fallback'),
+        'reason': None if codegraph_status['status'] == 'ready' else ('not-required' if not retrieval_needed else 'bounded lexical graph and safe symbol fallback'),
     }
     if retrieval_needed:
         selected_paths = [record['path'] for record in selected]
@@ -389,6 +437,7 @@ def build(task,route=None):
     return {'task_id': task_id, 'policy_version': policy['version'], 'route': route or {},
             'files': selected, 'memory': memories, 'graph_neighbors': sorted(neighbors),
             'graph_backend': document['backend'], 'retrieval': retrieval,
+            'codegraph': codegraph_status,
             'structured_context': structured_context,
             'candidate_full_file_tokens': candidate_full_file_tokens,
             'total_bytes': total, 'estimated_tokens': output_tokens,

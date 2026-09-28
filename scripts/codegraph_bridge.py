@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +65,21 @@ def _safe_index_dir() -> tuple[bool, str | None]:
     return True, None
 
 
+def _read_bounded(stream, max_chars: int, overflow: threading.Event) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = stream.read(min(4096, max_chars + 1 - total))
+        if not chunk:
+            return b''.join(chunks)
+        if total < max_chars:
+            chunks.append(chunk[:max_chars - total])
+        total += len(chunk)
+        if total > max_chars:
+            overflow.set()
+            return b''.join(chunks)
+
+
 def _run(args: list[str], *, timeout: int = 45, max_chars: int = 32000) -> dict[str, Any]:
     prefix = _command_prefix()
     if not prefix:
@@ -74,36 +91,81 @@ def _run(args: list[str], *, timeout: int = 45, max_chars: int = 32000) -> dict[
         }
     env = os.environ.copy()
     env.setdefault("PATH", os.defpath)
+    limit = max(1, int(max_chars))
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [*prefix, *args],
             cwd=ROOT,
             env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             shell=False,
-            timeout=max(1, int(timeout)),
-            check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except OSError as exc:
         return {
             "ok": False,
             "status": "failed",
             "reason": str(exc),
             "argv": args,
         }
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
-    truncated = len(stdout) > max_chars or len(stderr) > max_chars
+
+    overflow = threading.Event()
+    captured: dict[str, bytes] = {}
+    readers = []
+    for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+        reader = threading.Thread(
+            target=lambda key=name, source=stream: captured.__setitem__(
+                key, _read_bounded(source, limit, overflow)
+            ),
+            daemon=True,
+        )
+        reader.start()
+        readers.append(reader)
+
+    deadline = time.monotonic() + max(1, int(timeout))
+    timed_out = False
+    while process.poll() is None:
+        if overflow.is_set():
+            process.kill()
+            break
+        if time.monotonic() >= deadline:
+            process.kill()
+            timed_out = True
+            break
+        time.sleep(0.01)
+    returncode = process.wait()
+    for reader in readers:
+        reader.join(timeout=1)
+
+    stdout = captured.get("stdout", b"").decode("utf-8", errors="replace")
+    stderr = captured.get("stderr", b"").decode("utf-8", errors="replace")
+    if timed_out:
+        return {
+            "ok": False,
+            "status": "failed",
+            "reason": "process timeout",
+            "stdout": stdout,
+            "stderr": stderr,
+            "truncated": False,
+            "argv": args,
+        }
+    if overflow.is_set():
+        return {
+            "ok": False,
+            "status": "failed",
+            "reason": "process output limit exceeded",
+            "stdout": stdout,
+            "stderr": stderr,
+            "truncated": True,
+            "argv": args,
+        }
     return {
-        "ok": completed.returncode == 0,
-        "status": "ready" if completed.returncode == 0 else "failed",
-        "exit_code": completed.returncode,
-        "stdout": stdout[:max_chars],
-        "stderr": stderr[:max_chars],
-        "truncated": truncated,
+        "ok": returncode == 0,
+        "status": "ready" if returncode == 0 else "failed",
+        "exit_code": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "truncated": False,
         "argv": args,
     }
 

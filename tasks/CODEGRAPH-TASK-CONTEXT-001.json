@@ -1,0 +1,39 @@
+{
+  "id": "CODEGRAPH-TASK-CONTEXT-001",
+  "description": "Use the optional CodeGraph bridge automatically during task context compilation, while preserving bounded lexical fallback and validating all provider paths.",
+  "acceptance_criteria": [
+    "Task context compilation queries CodeGraph when graph_backend is auto or codegraph.",
+    "Validated CodeGraph paths influence context ranking without bypassing repository exclusions or byte/token/file limits.",
+    "Missing, failing, malformed or unsafe CodeGraph output falls back to the existing lexical context path without leaking provider output.",
+    "Deterministic tests cover ready, unavailable, malformed and unsafe provider results.",
+    "Existing context graph and context compiler contracts remain compatible."
+  ],
+  "risk": "R2",
+  "risk_factors": {
+    "touches_auth": false,
+    "touches_production": false,
+    "uses_secrets": false,
+    "destructive_operation": false,
+    "irreversible_change": false,
+    "security_boundary": true,
+    "schema_change": false,
+    "database_change": false,
+    "concurrency": false,
+    "financial": false,
+    "external_contract": true,
+    "migration": false,
+    "persistence": true,
+    "important_calculation": false,
+    "bug_fix": true
+  },
+  "files": [
+    "scripts/context_compiler.py",
+    "scripts/codegraph_bridge.py",
+    "scripts/context_graph.py",
+    "tests/test_context.py",
+    "tests/test_context_efficiency.py",
+    "tests/test_context_graph.py",
+    "codegraph.md"
+  ],
+  "tags": ["codegraph", "context", "retrieval", "security"]
+}

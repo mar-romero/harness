@@ -1,8 +1,9 @@
 # Repository graph contract
 
 `scripts/context_graph.py` builds an offline file graph. The normalized v1 artifact
-is defined by `harness/schema/context-graph.schema.json`. Symbol retrieval, call
-graphs, ranking changes, and a concrete CodeGraph provider are separate work.
+is defined by `harness/schema/context-graph.schema.json`. Task-context ranking can
+also consume the optional CodeGraph bridge; the normalized artifact remains
+lexical unless a trusted in-process backend is explicitly supplied.
 
 ## APIs and artifact
 
@@ -106,11 +107,38 @@ returns an empty list. The result is sorted, excludes seeds, and never exceeds
 `graph_max_results`. Depth and result limits bound neighborhood expansion; the
 separate file, byte, and edge budgets bound graph construction.
 
-## Optional local backend
+## Automatic task-context integration
 
-No CodeGraph provider is configured, discovered on `PATH`, dynamically imported,
-installed, or contacted. Normal CLI and task activation therefore use lexical
-fallback in `auto` and `codegraph` modes.
+Task context compilation uses `graph_backend: "auto"` by default. During every
+context build, `scripts/context_compiler.py` queries the bounded
+`scripts/codegraph_bridge.py` surface when the external CodeGraph CLI and a
+local `.codegraph/` index are available. Only validated repository-relative
+paths are used to boost context ranking; provider text, absolute paths and
+untrusted metadata are not persisted.
+
+The bridge applies a hard per-stream output cap and terminates a provider that
+exceeds it; that task then records a fixed fallback reason.
+
+The bridge is optional and never downloads a third-party executable. Operators
+can inspect readiness with:
+
+```powershell
+python scripts/codegraph_bridge.py status
+```
+
+When CodeGraph is unavailable, task context compilation keeps the existing
+lexical graph and symbol fallback. The generated context records whether the
+CodeGraph path was `ready` or used a fixed fallback reason, so the selection is
+observable without making provider availability a correctness prerequisite.
+
+## Optional in-process backend
+
+`scripts/codegraph_backend.py` remains a separate in-process adapter seam for
+trusted hosts that explicitly pass a local callable to `build_graph_document`.
+It does not discover or install providers. The task-context integration above
+uses the safe external bridge for bounded path ranking; the normalized graph
+artifact still retains the lexical graph unless an in-process backend is
+explicitly supplied.
 
 An explicitly supplied trusted in-process callable can be exercised through
 `build_graph_document(backend=callable)`. This is the local adapter seam in
