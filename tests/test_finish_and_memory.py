@@ -262,12 +262,13 @@ class RealR3FinishIntegrationTests(unittest.TestCase):
         active = []
         for provider in ('codex', 'opencode', 'subscriptions'):
             try:
-                if read_provider_active(provider) is not None:
-                    active.append(provider)
+                binding = read_provider_active(provider)
             except ValueError:
-                pass
+                continue
+            if binding is not None and binding.get('task_id') == self.TASK:
+                active.append(provider)
         if len(active) != 1:
-            self.skipTest('requires exactly one active provider binding for the durable fixture')
+            self.skipTest('requires exactly one active provider binding for the durable fixture task')
         backup = Path(tempfile.mkdtemp(prefix='harness-r3-finish-backup-')) / self.TASK
         shutil.copytree(rd, backup)
         target = ROOT / '.opencode/plugins/harness/index.ts'

@@ -51,6 +51,9 @@ def run_dir(task_id: str) -> Path:
 
 
 _PROVIDER = re.compile(r'[a-z][a-z0-9-]{0,31}')
+# Hosts whose task bindings select from a scored inventory under harness/model-inventories/.
+NATIVE_PROVIDERS = ('codex', 'opencode', 'cursor')
+BINDING_PROVIDERS = (*NATIVE_PROVIDERS, 'subscriptions')
 _OVERLAY_SCHEMA = 1
 
 
@@ -211,7 +214,7 @@ def provider_inventory_binding_path(provider: str, root: Path | None = None) -> 
     """Return the only inventory path a provider selection may bind to."""
     if provider == 'subscriptions':
         return provider_inventory_path(provider, root)
-    if provider in {'codex', 'opencode'}:
+    if provider in NATIVE_PROVIDERS:
         return provider_enriched_inventory_path(provider, root)
     raise ValueError('unsupported provider name')
 

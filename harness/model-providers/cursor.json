@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "provider": "cursor",
+  "description": "Cursor host adapter. The model IDs the Cursor agent can pass to subagents are authoritative; OpenRouter only enriches them. Cursor exposes no model-list API to the IDE agent, so the orchestrator records its host catalog with cursor_activate_task.py --host-models.",
+  "runtime_catalog": ".harness/overlays/{worktree_id}/cursor/catalog-snapshot.json",
+  "enriched_inventory": "harness/model-inventories/cursor.json",
+  "openrouter_catalog": ".harness/openrouter/model-inventory.json",
+  "discovery": {
+    "allowlist_env": "HARNESS_CURSOR_MODELS",
+    "strip_prefixes": ["cursor-"],
+    "effort_tokens": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+    "variant_tokens": ["thinking", "fast"],
+    "vendor_prefixes": {
+      "claude-": "anthropic",
+      "gpt-": "openai",
+      "gemini-": "google",
+      "grok-": "x-ai",
+      "muse-": "meta",
+      "kimi-": "moonshotai",
+      "composer-": "cursor"
+    }
+  },
+  "openrouter_aliases": {
+    "claude-fable-5-1": "anthropic/claude-fable-5.1",
+    "claude-opus-4-8": "anthropic/claude-opus-4.8",
+    "claude-opus-5-5": "anthropic/claude-opus-5.5",
+    "claude-sonnet-5-5": "anthropic/claude-sonnet-5.5",
+    "composer-2.5": null
+  },
+  "openrouter": {
+    "benchmark_source": "artificial-analysis",
+    "fetch_endpoint_health": true,
+    "refresh_mode": "manual",
+    "activation_network_calls": false
+  },
+  "effort": {
+    "mode": "fixed-in-model-id",
+    "unknown_model_supported": []
+  }
+}

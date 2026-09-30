@@ -16,7 +16,7 @@ from pathlib import Path
 from evidence import append as append_evidence
 from evidence import validate as validate_evidence
 from harnesslib import (
-    ROOT, read_provider_active, run_dir, runtime_reference, runtime_root,
+    BINDING_PROVIDERS, ROOT, read_provider_active, run_dir, runtime_reference, runtime_root,
     safe_task_id,
     write_json_atomic,
 )
@@ -24,7 +24,7 @@ from worktree import status as worktree_status, wt as worktree_path
 from receipt_review import candidate_snapshot
 
 
-PROVIDERS = ("codex", "opencode", "subscriptions")
+PROVIDERS = BINDING_PROVIDERS
 
 
 def _load_active_task(task_id: str) -> tuple[dict, Path]:
@@ -35,7 +35,7 @@ def _load_active_task(task_id: str) -> tuple[dict, Path]:
             bindings.append((provider, active))
 
     if not bindings:
-        raise ValueError("no active Codex, OpenCode, or subscription task binding matches this task")
+        raise ValueError("no active Codex, OpenCode, Cursor, or subscription task binding matches this task")
     if len(bindings) != 1:
         providers = ", ".join(provider for provider, _ in bindings)
         raise ValueError(f"ambiguous active task binding for {task_id}: {providers}")

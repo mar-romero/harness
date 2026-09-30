@@ -9,7 +9,8 @@
     "candidate_receipt_still_required_per_candidate": true,
     "providers_with_native_session_capture": [
       "codex",
-      "opencode"
+      "opencode",
+      "cursor"
     ]
   },
   "assessment": {

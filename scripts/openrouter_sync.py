@@ -744,6 +744,83 @@ def discover_codex(
     return candidates
 
 
+CURSOR_CATALOG_MISSING = (
+    "Cursor host catalog missing; record it with "
+    "python scripts/providers/cursor_activate_task.py --host-models <ids>"
+)
+
+
+def parse_cursor_model_id(model_id: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Split a Cursor host model ID into base model, reasoning effort and variants.
+
+    Cursor encodes the runtime variant in the ID itself, for example
+    ``claude-opus-5-thinking-high`` or ``cursor-grok-4.6-high-fast``.
+    """
+    discovery = cfg.get("discovery", {})
+    efforts = set(discovery.get("effort_tokens", []))
+    variant_tokens = set(discovery.get("variant_tokens", []))
+    base = model_id.strip()
+    for prefix in discovery.get("strip_prefixes", []):
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+    parts = base.split("-")
+    effort = None
+    variants: list[str] = []
+    while len(parts) > 1 and (parts[-1] in efforts or parts[-1] in variant_tokens):
+        token = parts.pop()
+        if token in efforts and effort is None:
+            effort = token
+        elif token in variant_tokens:
+            variants.insert(0, token)
+    base = "-".join(parts)
+    vendor = next(
+        (v for p, v in discovery.get("vendor_prefixes", {}).items() if base.startswith(p)),
+        None,
+    )
+    return {"base": base, "effort": effort, "variants": variants, "vendor": vendor}
+
+
+def _cursor_host_catalog(cfg: dict[str, Any]) -> tuple[list[str], str, str | None]:
+    allow_env = str(cfg.get("discovery", {}).get("allowlist_env", "HARNESS_CURSOR_MODELS"))
+    raw = (_project_env(allow_env) or "").strip()
+    if raw:
+        return [x.strip() for x in raw.split(",") if x.strip()], "cursor-allowlist-env", _now()
+    snapshot = _load_json(provider_catalog_path("cursor"), {})
+    models = snapshot.get("models") if isinstance(snapshot, dict) else None
+    if not isinstance(models, list):
+        return [], "cursor-host-catalog", None
+    return [str(x) for x in models if str(x).strip()], "cursor-host-catalog", snapshot.get("captured_at")
+
+
+def discover_cursor(
+    cfg: dict[str, Any],
+) -> list[dict[str, Any]]:
+    ids, source, captured_at = _cursor_host_catalog(cfg)
+    out = []
+    for native in dict.fromkeys(ids):
+        parsed = parse_cursor_model_id(native, cfg)
+        out.append(
+            {
+                "id": native,
+                "match_id": parsed["base"],
+                "openrouter_id": None,
+                "openrouter_match": "unmatched",
+                "native": True,
+                "enabled": True,
+                "vendor": parsed["vendor"],
+                "family": f"{parsed['vendor']}/{parsed['base']}" if parsed["vendor"] else parsed["base"],
+                "context_window": 0,
+                "supports_tools": True,
+                "supports_reasoning": True,
+                "supported_efforts": [parsed["effort"]] if parsed["effort"] else [],
+                "variants": parsed["variants"],
+                "availability_source": source,
+                "availability_generated_at": captured_at,
+            }
+        )
+    return out
+
+
 def discover_provider(
     provider: str,
     cfg: dict[str, Any],
@@ -753,6 +830,9 @@ def discover_provider(
 
     if provider == "codex":
         return discover_codex(cfg)
+
+    if provider == "cursor":
+        return discover_cursor(cfg)
 
     raise ValueError(
         f"unsupported provider for v2 sync: {provider}"
@@ -2153,7 +2233,7 @@ def _resolve_provider_candidates(
     # _resolve_openrouter_id only needs an ID-index; score rows are enough.
     for candidate in candidates:
         oid, match_type = _resolve_openrouter_id(
-            candidate["id"],
+            candidate.get("match_id") or candidate["id"],
             aliases,
             score_idx,
         )
@@ -2171,6 +2251,8 @@ def build_provider_inventory_from_scores(
     """Build a provider inventory using only the persisted shared scores."""
     cfg = load_provider_config(provider)
     candidates = candidates if candidates is not None else discover_provider(provider, cfg)
+    if provider == "cursor" and not candidates:
+        raise ValueError(CURSOR_CATALOG_MISSING)
     raw_inventory_path = _write_raw_provider_inventory(provider, cfg, candidates)
     score_idx = _central_score_index(scores_payload)
     candidates = _resolve_provider_candidates(provider, candidates, score_idx)
@@ -2402,7 +2484,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--provider",
-        choices=["opencode", "codex", "all"],
+        choices=["opencode", "codex", "cursor", "all"],
         default="all",
         help=(
             "Provider inventory to build. Provider-specific runs are cache-only; "
@@ -2441,7 +2523,7 @@ def main() -> int:
     args = ap.parse_args()
 
     selected = "all" if args.all else args.provider
-    providers = ["opencode", "codex"] if selected == "all" else [selected]
+    providers = ["opencode", "codex", "cursor"] if selected == "all" else [selected]
     api_key = _project_env("OPENROUTER_API_KEY")
 
     if args.openrouter_only and args.cache_only:
@@ -2515,6 +2597,13 @@ def main() -> int:
     for provider in providers:
         try:
             payload, dest = build_provider_inventory_from_scores(provider, scores_payload)
+        except ValueError as exc:
+            if selected == "all" and str(exc) == CURSOR_CATALOG_MISSING:
+                print(json.dumps({"provider": provider, "ok": True, "skipped": str(exc)}, ensure_ascii=False))
+                continue
+            print(json.dumps({"provider": provider, "ok": False, "error": str(exc)}, ensure_ascii=False))
+            rc = 1
+            continue
         except Exception as exc:
             print(json.dumps({"provider": provider, "ok": False, "error": str(exc)}, ensure_ascii=False))
             rc = 1

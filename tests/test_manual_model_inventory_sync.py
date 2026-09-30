@@ -25,7 +25,8 @@ class ManualModelInventorySyncTests(unittest.TestCase):
         self.assertEqual(result["action"], "block")
 
     def test_task_activators_do_not_refresh_openrouter(self):
-        for rel in ("scripts/providers/opencode_activate_task.py", "scripts/providers/codex_activate_task.py"):
+        for rel in ("scripts/providers/opencode_activate_task.py", "scripts/providers/codex_activate_task.py",
+                    "scripts/providers/cursor_activate_task.py"):
             text = (ROOT / rel).read_text()
             self.assertNotIn("refresh_provider_inventory", text)
             self.assertIn("network_refresh", text)
