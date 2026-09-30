@@ -26,7 +26,7 @@ from harnesslib import (  # noqa: E402
     assert_overlay_writable, load_manifest, provider_active_path, provider_inventory_path,
     provider_model_selections_path, read_provider_active, run_dir, runtime_reference,
     runtime_root, safe_task_id, sha256_file, worktree_identity, write_json_atomic,
-    write_json_immutable,
+    write_json_immutable, adopt_json_immutable,
 )
 from task_router import route  # noqa: E402
 from request_normalizer import normalize_task  # noqa: E402
@@ -312,10 +312,10 @@ def activate(task_path: Path, providers: list[str] | None = None, *, create_work
     write_json_immutable(out_dir / "route.json", routed)
     progress = init_progress(task_id, routed)
     context = build_context(task, routed)
-    write_json_immutable(out_dir / "context.json", context)
+    context = adopt_json_immutable(out_dir / "context.json", context)
     capture_impact_baseline(task_id)
     impact = build_impact_plan(task, routed, context)
-    write_json_immutable(out_dir / "impact.json", impact)
+    impact = adopt_json_immutable(out_dir / "impact.json", impact)
     agent_budget = init_agent_budget(task, routed)
 
     provider_scope = _provider_scope_for_refresh(providers)

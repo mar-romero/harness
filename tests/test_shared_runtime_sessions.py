@@ -512,6 +512,7 @@ inventory = harnesslib.provider_enriched_inventory_path("codex")
 inventory.parent.mkdir(parents=True, exist_ok=True)
 inventory.write_text(json.dumps({"schema_version": 3, "provider": "codex", "models": []}), encoding="utf-8")
 selection = harnesslib.provider_model_selections_path("codex")
+selection.parent.mkdir(parents=True, exist_ok=True)
 payload = {"schema_version": 2, "task_id": "SESSION-A", "provider": "codex",
            "inventory_path": inventory.relative_to(Path.cwd()).as_posix(),
            "inventory_sha256": harnesslib.sha256_file(inventory), "selections": []}
@@ -648,7 +649,8 @@ else:
             self.assertNotEqual(results[0]["model_path"], results[1]["model_path"])
             self.assertNotEqual(results[0]["inventory_model"], results[1]["inventory_model"])
             for result in results:
-                self.assertTrue(Path(result["inventory_path"]).is_relative_to(Path(result["active_path"]).parents[3]))
+                checkout = Path(result["active_path"]).parents[4]
+                self.assertEqual(Path(result["inventory_path"]), checkout / "harness" / "model-inventories" / "codex.json")
         finally:
             for worker in workers:
                 if worker.poll() is None:

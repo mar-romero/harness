@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path, PurePosixPath
-import fnmatch, hashlib, json, os, re, subprocess, sys, tempfile
+import fnmatch, hashlib, json, os, re, subprocess, sys, tempfile, uuid
 from contextlib import contextmanager
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -512,6 +512,20 @@ def write_json_immutable(path: Path, data):
         return path
 
 
+def adopt_json_immutable(path: Path, data):
+    """Create a shared artifact, or return the value a concurrent writer already froze."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _artifact_lock(path):
+        _reject_reparse_components(path)
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(f'immutable artifact is unreadable: {path}') from exc
+        write_json_exclusive(path, data)
+        return data
+
+
 @contextmanager
 def _artifact_lock(path: Path):
     """Serialize immutable shared-artifact creation across linked worktrees."""
@@ -544,12 +558,40 @@ def _artifact_lock(path: Path):
 
 
 def write_json_exclusive(path: Path, data):
-    """Create one JSON artifact without replacing an existing file."""
+    """Create one JSON artifact without replacing an existing file.
+
+    Readers that do not take the artifact lock must never observe a partially
+    written file, so the content is written to a temporary sibling and published
+    with a hard link, which fails when the destination already exists.
+    """
     _reject_reparse_components(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, 'O_BINARY'):
         flags |= os.O_BINARY
+    tmp = path.with_name(f'.{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp')
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.write('\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            raise
+        except OSError:
+            # Filesystems without hard links: fall back to exclusive creation.
+            _write_json_exclusive_direct(path, data, flags)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _write_json_exclusive_direct(path: Path, data, flags: int):
     fd = os.open(path, flags, 0o600)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as handle:
