@@ -8,6 +8,7 @@ This folder adapts the harness to Cursor.
 - `hooks/`: gate bridge for commands and writes.
 - `hooks.json`: Cursor hook event configuration.
 - `mcp.json`: ACI MCP server configuration.
+- `permissions.json`: MCP tool allowlist for the ACI server.
 - `README.md`: explains this adapter boundary.
 
 The source of changes is `.agents/` plus `harness/manifest.yaml`.
@@ -17,7 +18,12 @@ The source of changes is `.agents/` plus `harness/manifest.yaml`.
 - Hooks read the payload as UTF-8 bytes because Cursor on Windows prefixes it
   with a BOM. An unreadable payload is denied with an explicit reason.
 - Enable `harness-aci` once under Customize → MCP; project servers do not load
-  until approved. For the headless CLI run `cursor-agent mcp enable harness-aci`.
+  until approved. For the headless CLI run `agent mcp enable harness-aci`
+  (older installs name the binary `cursor-agent`).
+- `permissions.json` allowlists every `harness-aci` tool, so its calls run
+  without per-call approval under the Auto-review or Allowlist run modes. Other
+  MCP servers still ask. The ACI is bounded by `harness/aci-policy.json`; shell
+  and writes remain gated by `hooks.json`.
 - Hooks also record the chat `conversation_id` as the Cursor provider session,
   so review consent (`receipt_review.py consent`) is scoped to the current chat.
 - Run a task with `/harness-task tasks/<TASK>.json`. The orchestrator rule drives
