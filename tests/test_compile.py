@@ -50,7 +50,9 @@ class CompileTests(unittest.TestCase):
     def test_all_provider_agent_pairs_and_claude_wrappers_generated(self):
         m=load_manifest(); out=generated()
         agents=len(m['agents']); providers=len(m['providers']); skills=len([p for p in (Path(__file__).resolve().parents[1]/'.agents/skills').iterdir() if p.is_dir()])
-        self.assertEqual(len(out),agents*providers+skills+4)
+        self.assertEqual(len(out),agents*providers+skills+6)
+        self.assertIn(Path('.cursor/rules/harness-orchestrator.mdc'), out)
+        self.assertIn(Path('.cursor/commands/harness-task.md'), out)
         self.assertTrue(any(p.as_posix().endswith('.codex/agents/implementer.toml') for p in out))
         self.assertIn(Path('.codex/agents/harness-orchestrator.toml'), out)
         self.assertIn(Path('.codex/agents/default.toml'), out)

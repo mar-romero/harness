@@ -138,6 +138,10 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def main() -> int:
+    # Windows defaults to the ANSI code page; MCP clients (Cursor) send UTF-8,
+    # sometimes with a leading BOM.
+    sys.stdin.reconfigure(encoding="utf-8-sig", errors="strict")
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:

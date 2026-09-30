@@ -15,6 +15,31 @@ CODEX_DEFAULT_AGENT = Path(".codex/agents/default.toml")
 CODEX_HOOKS = Path(".codex/hooks.json")
 CODEX_ACI_ENTRY = Path(".codex/aci_mcp_entry.py")
 ORCHESTRATOR_ROLE = ROOT / ".agents" / "roles" / "harness-orchestrator.md"
+CURSOR_ORCHESTRATOR_RULE = Path(".cursor/rules/harness-orchestrator.mdc")
+CURSOR_TASK_COMMAND = Path(".cursor/commands/harness-task.md")
+CURSOR_ORCHESTRATOR_REPLACEMENTS = (
+    ("You are the primary Codex orchestrator", "You are the primary Cursor orchestrator"),
+    ("scripts/providers/codex_activate_task.py", "scripts/providers/cursor_activate_task.py"),
+    ("a Codex worktree task", "a Cursor worktree task"),
+    ("Codex support for provider-neutral", "Cursor support for provider-neutral"),
+)
+CURSOR_ORCHESTRATOR_HOST = """
+## Cursor host specifics
+
+Cursor exposes no model-list API to the agent. The model IDs offered by the Task tool's `model` parameter are the authoritative host catalog. Before the first activation in a chat, or whenever that list changes, record every listed ID except `inherit`:
+
+`python scripts/providers/cursor_activate_task.py --host-models <id1,id2,...>`
+
+If `harness/model-inventories/cursor.json` is missing or the catalog changed, rebuild it from the local score cache with `python scripts/openrouter_sync.py --provider cursor --cache-only`. Activation never contacts OpenRouter; a network refresh (`python scripts/openrouter_sync.py --all`, with `OPENROUTER_API_KEY` for benchmarks) is operator-triggered only.
+
+Activation prints a `delegation` plan with one entry per routed role. For each delegated stage, launch the Task tool with `subagent_type` set to the role and `model` set to that role's `delegation[].model`; omit `model` only when the plan says `inherit`. If any entry has action `block`, stop and report it. Do not swap in another model to save cost or gain quality: the router already selected the least-resource model that meets the role's capability target, and it prefers a different model, family or vendor for reviewers. When a reviewer's independence is `same_model_fallback`, say so explicitly in the stage report.
+
+Each typed subagent must end with exactly one JSON handoff. Write it unchanged to `.harness/runs/<TASK>/incoming/<role>.json` before `orchestrator.py commit`. Only the implementer writes source files, and only inside the task worktree created at `WORKTREE`.
+
+Prefer the `harness-aci` MCP tools for search, bounded reads, Git state and named checks when the server is enabled; otherwise use Cursor's read-only tools. Shell commands and file writes stay subject to the `.cursor/hooks.json` gates; a hook denial is a policy result, not an obstacle to route around. CodeGraph evidence is used automatically by the context compiler when `python scripts/codegraph_bridge.py status` reports an indexed graph.
+
+Review consent is scoped to the Cursor chat: the hooks record the current `conversation_id` as the provider session, so `python scripts/receipt_review.py consent status <TASK>` resolves it without extra flags.
+"""
 
 
 def _codex_hook_command(script: str) -> str:
@@ -25,6 +50,15 @@ def _codex_hook_command(script: str) -> str:
     drive, or checkout path into the generated adapter.
     """
     return f"python scripts/{script}"
+
+
+def cursor_orchestrator_body(canonical: str) -> str:
+    body = canonical
+    for old, new in CURSOR_ORCHESTRATOR_REPLACEMENTS:
+        if old not in body:
+            raise ValueError(f"canonical orchestrator no longer contains {old!r}; update the Cursor adapter")
+        body = body.replace(old, new)
+    return body.rstrip() + "\n" + CURSOR_ORCHESTRATOR_HOST
 
 
 def _codex_binding(name):
@@ -146,6 +180,31 @@ def generated():
         'developer_instructions = """\n'
         + orchestrator_body
         + '\n"""\n'
+    )
+    # Cursor has no primary-agent adapter; the orchestrator is an agent-requested
+    # project rule plus a /harness-task command that invokes it.
+    out[CURSOR_ORCHESTRATOR_RULE] = (
+        '---\n'
+        'description: Harness orchestrator for executing or delegating a durable tasks/*.json task: '
+        'activation, per-role model routing, typed handoffs, TDD/RDD gates and evidence-backed closure.\n'
+        'globs:\n'
+        'alwaysApply: false\n'
+        '---\n\n'
+        + cursor_orchestrator_body(orchestrator_body)
+    )
+    out[CURSOR_TASK_COMMAND] = (
+        '# Harness task\n\n'
+        'Run the durable harness task named after this command (a path under `tasks/`, or a task ID) '
+        'as the primary Cursor orchestrator.\n\n'
+        '1. Read and follow `.cursor/rules/harness-orchestrator.mdc` for the whole lifecycle.\n'
+        '2. Record the Task tool model IDs available in this chat with '
+        '`python scripts/providers/cursor_activate_task.py --host-models <ids>`.\n'
+        '3. Activate with `python scripts/providers/cursor_activate_task.py <task-path>` and use its '
+        '`delegation` plan to pick `subagent_type` and `model` for every stage.\n'
+        '4. Follow `progress.json.current_step` until the finish gate allows closure, '
+        'and report the exact blocker otherwise.\n\n'
+        'If no task file exists yet, first turn the request into one with the `harness-request` skill '
+        '(or `idea-to-work` for a broad product idea) and stop for approval when it has blocking questions.\n'
     )
     # Codex gives a project custom agent precedence when its name matches a
     # built-in agent. `default` is the primary fallback agent, so bind it to

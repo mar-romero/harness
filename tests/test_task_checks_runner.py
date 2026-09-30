@@ -73,7 +73,8 @@ class TaskChecksRunnerTests(unittest.TestCase):
                 'task_id': 'T',
                 'task_snapshot_path': '.harness/runs/T/task.json',
             }
-            with patch.object(task_checks, 'read_provider_active', side_effect=[active, None, None]), \
+            with patch.object(task_checks, 'read_provider_active',
+                              side_effect=[active] + [None] * (len(task_checks.PROVIDERS) - 1)), \
                  patch.object(task_checks, 'runtime_reference', return_value=snapshot):
                 task, path = task_checks._load_active_task('T')
         self.assertEqual(task['id'], 'T')

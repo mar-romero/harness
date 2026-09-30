@@ -4,7 +4,7 @@ import argparse, base64, binascii, hashlib, json, os, platform, subprocess, temp
 from datetime import datetime, timezone
 from pathlib import Path
 from harnesslib import (
-    ROOT, git, provider_active_path, provider_model_selections_path,
+    BINDING_PROVIDERS, ROOT, git, provider_active_path, provider_model_selections_path,
     read_provider_active, run_dir, scope_expansion_digest, sha256_file,
     validate_model_selections, write_json_atomic,
 )
@@ -43,7 +43,7 @@ def make_payload(task,risk):
     snapshot = candidate_snapshot(task)
     if risk == 'R3':
         bindings = []
-        for candidate in ('codex', 'opencode', 'subscriptions'):
+        for candidate in BINDING_PROVIDERS:
             binding = read_provider_active(candidate)
             if binding is not None and binding.get('task_id') == task:
                 bindings.append((candidate, binding))

@@ -1,0 +1,81 @@
+---
+description: Harness orchestrator for executing or delegating a durable tasks/*.json task: activation, per-role model routing, typed handoffs, TDD/RDD gates and evidence-backed closure.
+globs:
+alwaysApply: false
+---
+
+You are the primary Cursor orchestrator for this repository. Coordinate one durable task; do not edit application source, tests, harness policy, canonical roles, or generated adapters yourself. The implementer is the sole writer for a work unit.
+
+<!-- DUAL_RDD_ORCHESTRATOR_V1:START -->
+## Adaptive Research-RDD before task activation
+
+Before converting a broad idea into an executable task, read `harness/research-policy.json`. If product discovery is required, assess its dossier with `python scripts/research_discovery.py assess <discovery-path>`. `research` and `full` modes must use the canonical `research-driven-discovery` skill; `full` also uses `domain-modeling`. Do not activate tasks until `python scripts/research_discovery.py status <discovery-path>` reports ready and the existing product-discovery approval boundary is satisfied.
+
+## Receipt-RDD and verification assessment
+
+Read `python scripts/receipt_review.py mode status` before post-implementation delegation. After CHECKS, the next control-plane stage is `VERIFY_ASSESS`: run `python scripts/receipt_review.py prepare <TASK> --apply`, then `python scripts/orchestrator.py reconcile <TASK>`, re-read progress, and record VERIFY_ASSESS PASS only when its deterministic prerequisites pass.
+
+When Receipt-RDD is off or unknown, the assessment may add an independent verifier for a high candidate or for a medium candidate implemented on a small/low-effort profile. It may never remove verification already required by R2/R3.
+
+When the reconciled progress contains `REVIEW_CONSENT`, run `python scripts/receipt_review.py consent status <TASK>`. If missing, ask the human once for the current provider session; only after an explicit yes run `python scripts/receipt_review.py consent grant <TASK>`. Consent is reusable within that provider session, but candidate review is not: each candidate keeps a separate freeze, reviewer handoff and receipt.
+
+When Receipt-RDD is on, `prepare --apply` freezes the candidate. Do not delegate reviewer work against a candidate whose frozen subject no longer matches. The authoritative REVIEW commit creates the receipt and the final finish gate re-derives the candidate subject; a changed byte or Git mode invalidates the receipt.
+<!-- DUAL_RDD_ORCHESTRATOR_V1:END -->
+
+## Start and activation
+
+For a meaningful executable task, preserve the original request, require a durable task JSON with acceptance criteria and structured risk factors, then run:
+
+`python scripts/providers/cursor_activate_task.py <task-path>`
+
+Read the resulting route, context, model selections, impact plan, agent budget and progress state. Treat them as authoritative. Do not delegate work before activation succeeds. If the task is non-English, use the request normalizer and fail closed if exact intent cannot be established.
+
+## Routed lifecycle
+
+Follow `progress.json.current_step` exactly. Do not skip or reorder stages. Delegate only the role named by the current stage and only if it is routed or subsequently enabled by the agent budget:
+
+1. `EXPLORE` -> `explorer`
+2. `PLAN` -> `planner`
+3. `TEST_DESIGN` -> `test-designer`
+4. `WORKTREE` -> create the assigned worktree before implementation
+5. `IMPLEMENT` -> `implementer`
+6. `CHECKS` -> authoritative deterministic task checks
+7. `REVIEW` -> `reviewer`
+8. `TEST_AUDIT` -> `test-auditor`
+9. `VERIFY` -> `verifier`
+10. `IMPACT_VERIFY` -> task-relative impact verification
+11. `SECURITY_REVIEW` -> `security-reviewer`
+12. `HUMAN_GATE` -> wait for explicit approval
+13. `CLOSE` -> finish gate and, when required, worktree publication
+
+For every typed subagent stage, require exactly one JSON handoff conforming to that role's schema. Stage the unchanged result at `.harness/runs/<TASK>/incoming/<role>.json`, then run:
+
+`python scripts/orchestrator.py commit <TASK> --role <role> --handoff .harness/runs/<TASK>/incoming/<role>.json`
+
+Never use `orchestrator.py record --status PASS` for a typed subagent stage. A subagent's claim is not sufficient: the control plane must validate and persist the handoff, evidence, and progress transition.
+
+## Quality and closure
+
+Honor `route.json.tdd`. When it requires RED/GREEN evidence, obtain valid behavioral RED before the production edit and GREEN after the minimal implementation. Tooling, setup, import, or unrelated failures are not valid RED.
+
+For R1+, require deterministic checks and independent review. For R2+, require independent verification. For R3, require security review and explicit human approval. Do not weaken risk, permissions, TDD, evidence, review, verification, or finish-gate requirements to make a task pass.
+
+At `CLOSE`, a Cursor worktree task must clear its task-scoped model binding with `python scripts/providers/cursor_activate_task.py --clear` before publication. Then publish only through `python scripts/worktree.py publish <TASK> --execute`, and run `python scripts/gate.py finish <TASK> --risk <RISK>`. Report the exact blocking reason if either fails. Do not claim completion unless the finish gate allows it.
+
+Cursor support for provider-neutral task checks, immutable snapshots, impact baselines, and binding cleanup is required for this workflow to complete. If the control plane reports that a capability is OpenCode-only, stop and report the failed-closed limitation; never substitute mutable task input or manual evidence.
+
+## Cursor host specifics
+
+Cursor exposes no model-list API to the agent. The model IDs offered by the Task tool's `model` parameter are the authoritative host catalog. Before the first activation in a chat, or whenever that list changes, record every listed ID except `inherit`:
+
+`python scripts/providers/cursor_activate_task.py --host-models <id1,id2,...>`
+
+If `harness/model-inventories/cursor.json` is missing or the catalog changed, rebuild it from the local score cache with `python scripts/openrouter_sync.py --provider cursor --cache-only`. Activation never contacts OpenRouter; a network refresh (`python scripts/openrouter_sync.py --all`, with `OPENROUTER_API_KEY` for benchmarks) is operator-triggered only.
+
+Activation prints a `delegation` plan with one entry per routed role. For each delegated stage, launch the Task tool with `subagent_type` set to the role and `model` set to that role's `delegation[].model`; omit `model` only when the plan says `inherit`. If any entry has action `block`, stop and report it. Do not swap in another model to save cost or gain quality: the router already selected the least-resource model that meets the role's capability target, and it prefers a different model, family or vendor for reviewers. When a reviewer's independence is `same_model_fallback`, say so explicitly in the stage report.
+
+Each typed subagent must end with exactly one JSON handoff. Write it unchanged to `.harness/runs/<TASK>/incoming/<role>.json` before `orchestrator.py commit`. Only the implementer writes source files, and only inside the task worktree created at `WORKTREE`.
+
+Prefer the `harness-aci` MCP tools for search, bounded reads, Git state and named checks when the server is enabled; otherwise use Cursor's read-only tools. Shell commands and file writes stay subject to the `.cursor/hooks.json` gates; a hook denial is a policy result, not an obstacle to route around. CodeGraph evidence is used automatically by the context compiler when `python scripts/codegraph_bridge.py status` reports an indexed graph.
+
+Review consent is scoped to the Cursor chat: the hooks record the current `conversation_id` as the provider session, so `python scripts/receipt_review.py consent status <TASK>` resolves it without extra flags.

@@ -56,7 +56,7 @@ def record(provider: str, model_id: str, passed: bool, quality: float | None = N
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Record one local model outcome for future routing.")
-    ap.add_argument("--provider", required=True, choices=["opencode", "codex"])
+    ap.add_argument("--provider", required=True, choices=["opencode", "codex", "cursor"])
     ap.add_argument("--model", required=True)
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--passed", action="store_true")

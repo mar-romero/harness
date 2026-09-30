@@ -119,7 +119,7 @@ Notas:
 - Codex debe quedar autenticado con **ChatGPT**, no con API key, si querés usar la cuota del plan de ChatGPT.
 - Claude Code debe autenticarse con la cuenta **Claude.ai Pro/Max**. El bridge remueve `ANTHROPIC_API_KEY` al lanzar Claude para evitar que una variable de entorno cambie el billing a API PAYG.
 - Copilot usa su flujo OAuth oficial (`copilot login`).
-- Cursor usa browser login (`cursor-agent login`).
+- Cursor usa browser login (`cursor-agent login`). En modo headless el CLI no carga servidores MCP sin aprobación; aprobá sólo el ACI del proyecto una vez con `cursor-agent mcp enable harness-aci`. No se usa `--approve-mcps` porque aprobaría también cualquier servidor global de `~/.cursor/mcp.json` para roles read-only.
 - Grok usa `grok login` / browser auth.
 - Gemini se inicia con `gemini`; usá `/auth` y "Sign in with Google" si es necesario.
 

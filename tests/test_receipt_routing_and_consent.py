@@ -105,6 +105,7 @@ class ReceiptRoutingAndConsentTests(unittest.TestCase):
                  patch.object(mod, "_active_provider", return_value="opencode"), \
                  patch.object(mod, "read_provider_active", return_value={"task_id": "TASK-1", "model_selections_path": "local"}), \
                  patch.object(mod, "provider_model_selections_path", return_value=run / "model-selections.json"), \
+                 patch.object(mod, "provider_active_path", return_value=run / "active-task.json"), \
                  patch.object(mod, "load_manifest", return_value=manifest), \
                  patch.object(model_router, "load_policy", return_value=policy), \
                  patch.object(model_router, "select_model", side_effect=fake_select_model), \
