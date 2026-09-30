@@ -19,7 +19,7 @@ ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
 from harnesslib import (  # noqa: E402
-    assert_overlay_writable, provider_active_path, provider_enriched_inventory_path, provider_model_selections_path,
+    adopt_json_immutable, assert_overlay_writable, provider_active_path, provider_enriched_inventory_path, provider_model_selections_path,
     run_dir, runtime_root, safe_task_id, sha256_file, worktree_identity, write_json_atomic,
     write_json_immutable,
 )
@@ -115,7 +115,7 @@ def activate(task_path: Path) -> dict:
         if context_path.exists()
         else build_context(task, routed)
     )
-    write_json_immutable(context_path, context)
+    context = adopt_json_immutable(context_path, context)
 
     # HARNESS_IMPACT_BUDGET_ACTIVATION
     baseline = capture_impact_baseline(task_id)
@@ -126,7 +126,7 @@ def activate(task_path: Path) -> dict:
         if impact_path.exists()
         else build_impact_plan(task, routed, context)
     )
-    write_json_immutable(impact_path, impact)
+    impact = adopt_json_immutable(impact_path, impact)
     agent_budget = init_agent_budget(task, routed)
     budget_path = out_dir / "agent-budget.json"
 

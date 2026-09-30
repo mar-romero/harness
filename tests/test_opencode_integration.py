@@ -32,7 +32,7 @@ class OpenCodeIntegrationTests(unittest.TestCase):
 
     def test_plugin_has_native_catalog_agent_context_permission_and_shell_integration(self):
         text=(ROOT/'.opencode/plugins/harness/index.ts').read_text()
-        for needle in ('ctx.catalog.model.list()', 'ctx.agent.transform', 'ctx.session.hook("context"', 'ctx.permission.hook("evaluate"', 'ctx.shell.hook("create.before"'):
+        for needle in ('ctx.model.list()', 'ctx.agent.transform', 'ctx.session.hook("context"', 'ctx.permission.hook("evaluate"', 'ctx.shell.hook("create.before"'):
             self.assertIn(needle,text)
         self.assertNotIn('claude-sonnet',text.lower())
         self.assertNotIn('gpt-5',text.lower())
