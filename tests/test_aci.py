@@ -457,6 +457,28 @@ class ACIMCPProtocolTests(unittest.TestCase):
         self.assertEqual(responses[1]["result"]["cacheScope"], "private")
         self.assertEqual(len(responses[1]["result"]["tools"]), 11)
 
+    def test_python_server_accepts_utf8_bom_and_non_ascii(self):
+        messages = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "ñandú", "version": "1"}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "repo_read_range", "arguments": {"path": "AGENTS.md", "start_line": 1, "end_line": 1}}},
+        ]
+        raw = b"\xef\xbb\xbf" + "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in messages).encode("utf-8")
+        proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "aci_mcp.py")], input=raw, capture_output=True, cwd=ROOT, timeout=30)
+        responses = [json.loads(line) for line in proc.stdout.decode("utf-8").splitlines()]
+        self.assertEqual(responses[0]["id"], 1)
+        self.assertIn("result", responses[0])
+        self.assertTrue(responses[1]["result"]["structuredContent"]["ok"])
+
+
+class ACIExclusionTests(unittest.TestCase):
+    def test_dot_directories_are_excluded(self):
+        for rel in (".git/config", ".worktrees/T/a.py", "./.venv/x.py", ".harness/runs/T/progress.json"):
+            self.assertTrue(aci_core._excluded_rel(rel), rel)
+
+    def test_regular_paths_are_not_excluded(self):
+        for rel in ("scripts/aci_core.py", "./scripts/aci_core.py", ".agents/roles/reviewer.md"):
+            self.assertFalse(aci_core._excluded_rel(rel), rel)
+
 
 if __name__ == "__main__":
     unittest.main()

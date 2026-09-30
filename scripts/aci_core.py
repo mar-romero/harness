@@ -88,7 +88,10 @@ def _resolve_repo_path(value: str | None, *, must_exist: bool = True) -> Path:
 
 
 def _excluded_rel(rel: str) -> bool:
-    rel = rel.replace("\\", "/").lstrip("./")
+    rel = rel.replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    rel = rel.lstrip("/")
     parts = rel.split("/") if rel else []
     for excluded in POLICY.get("exclude_dirs", []):
         ex = str(excluded).strip("/")
@@ -163,7 +166,7 @@ def repo_search(query: str, path: str = ".", regex: bool = False, max_results: i
             scanned += 1
             try:
                 lines = _read_text(file_path).splitlines()
-            except ACIError:
+            except (ACIError, OSError):
                 continue
             for line_no, line in enumerate(lines, 1):
                 matched = bool(matcher.search(line)) if matcher else query.casefold() in line.casefold()
