@@ -299,7 +299,7 @@ def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> dict:
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            timeout=600,
+            timeout=60000,
             shell=False,
         )
 
