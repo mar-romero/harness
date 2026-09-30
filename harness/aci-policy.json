@@ -6,7 +6,7 @@
   "max_read_lines": 400,
   "max_search_results": 80,
   "max_output_chars": 30000,
-  "command_timeout_seconds": 180,
+  "command_timeout_seconds": 600,
   "exclude_dirs": [
     ".git",
     ".worktrees",

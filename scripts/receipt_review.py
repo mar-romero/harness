@@ -215,6 +215,19 @@ def _changed_paths_commit(base: str, commit: str) -> list[str]:
     return sorted({x.strip().replace("\\", "/") for x in lines if x.strip()})
 
 
+def _is_disposable_neutral_fixture(cwd: Path, rel: str) -> bool:
+    """Recognize only the exact test residue that must remain untracked."""
+    if rel.replace("\\", "/") != "tasks/NEUTRAL-CHECKS-TEST.json":
+        return False
+    path = cwd / rel
+    try:
+        return path.is_file() and json.loads(path.read_text(encoding="utf-8")) == {
+            "id": "NEUTRAL-CHECKS-TEST", "description": "test", "files": []
+        }
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+
+
 def _worktree_entry(cwd: Path, rel: str) -> dict:
     p = cwd / rel
     try:
@@ -297,6 +310,8 @@ def candidate_snapshot(task: str) -> dict:
     task = safe_task_id(task)
     base, commit, worktree = _lock_or_publish(task)
     paths = _changed_paths_commit(base, commit) if commit else _changed_paths_worktree(base, worktree)
+    if worktree:
+        paths = [rel for rel in paths if not _is_disposable_neutral_fixture(worktree, rel)]
     if commit:
         entries = [_commit_entry(commit, rel) for rel in paths]
     else:

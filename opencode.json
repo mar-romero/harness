@@ -83,8 +83,9 @@
         "cwd": ".",
         "codemode": false,
         "timeout": {
-          "catalog": 30000,
-          "execution": 180000
+          "startup": 60000,
+          "catalog": 120000,
+          "execution": 900000
         }
       }
     }

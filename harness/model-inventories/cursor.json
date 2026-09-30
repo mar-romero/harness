@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
   "provider": "cursor",
-  "generated_at": "2026-09-30T01:19:49.201412Z",
+  "generated_at": "2026-09-30T02:31:00Z",
   "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-  "source": "runtime availability + shared OpenRouter score catalog + per-field local harness fallback",
+  "source": "runtime availability + shared OpenRouter score catalog + targeted web benchmark completion + per-field evidence-backed estimation",
   "openrouter_scores_path": ".harness/openrouter/model-scores.json",
   "openrouter_scores_generated_at": "2026-09-21T17:44:01.036982Z",
-  "openrouter_benchmark_as_of": "2026-09-20T00:01:26.088Z",
+  "openrouter_benchmark_as_of": "2026-09-30T02:31:00Z",
   "openrouter_fetch_error": null,
   "raw_inventory_path": null,
   "models": [
@@ -27,10 +27,10 @@
         "reasoning": 4.956,
         "coding": 4.986,
         "tool_use": 4.986,
-        "reliability": 0.0
+        "reliability": 4.848
       },
       "cost": 1.157,
-      "latency": 0.0,
+      "latency": 1.645,
       "context_window": 1000000,
       "raw_metrics": {
         "benchmark_model_id": "anthropic/claude-fable-5.1-20260831",
@@ -38,8 +38,8 @@
         "coding_index": 81.6,
         "agentic_index": 57.9,
         "average_token_price": 3e-05,
-        "latency_p50": null,
-        "uptime_1d": null,
+        "latency_p50": 3780.0,
+        "uptime_1d": 99.81,
         "tool_parameter_supported": true
       },
       "provenance": {
@@ -47,10 +47,10 @@
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
         "quality": "OpenRouter /api/v1/benchmarks artificial-analysis",
         "pricing": "OpenRouter /api/v1/models",
-        "endpoint_health": null,
+        "endpoint_health": "OpenRouter model page (24h availability; P50 best-provider latency)",
         "score_catalog": ".harness/openrouter/model-scores.json",
         "unmatched_override_catalog": null,
-        "confidence": 0.667
+        "confidence": 1.0
       },
       "score_override": null,
       "local_evidence": {},
@@ -60,8 +60,8 @@
     {
       "id": "claude-opus-5-5-medium",
       "openrouter_id": "anthropic/claude-opus-5.5",
-      "openrouter_benchmark_id": null,
-      "openrouter_benchmark_match": "unmatched",
+      "openrouter_benchmark_id": "anthropic/claude-opus-5.5-20260921",
+      "openrouter_benchmark_match": "unique-versioned",
       "openrouter_match": "explicit-alias",
       "enabled": true,
       "native": true,
@@ -71,31 +71,43 @@
         "medium"
       ],
       "capabilities": {
-        "reasoning": 0.0,
-        "coding": 0.0,
+        "reasoning": 5.0,
+        "coding": 4.995,
         "tool_use": 3.0,
-        "reliability": 0.0
+        "reliability": 4.808
       },
-      "cost": 0.0,
-      "latency": 0.0,
-      "context_window": 0,
+      "cost": 1.361,
+      "latency": 2.901,
+      "context_window": 1000000,
       "raw_metrics": {
+        "benchmark_model_id": "anthropic/claude-opus-5.5-20260921",
+        "intelligence_index": 57.6,
+        "coding_index": null,
+        "agentic_index": null,
+        "average_token_price": 1.2e-05,
+        "latency_p50": 2420.0,
+        "uptime_1d": 99.76,
         "tool_parameter_supported": true
       },
       "provenance": {
         "availability": "cursor-host-catalog",
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-        "quality": null,
-        "pricing": null,
-        "endpoint_health": null,
+        "quality": "OpenRouter / Artificial Analysis (Intelligence Index); coding capability locally estimated because AA Coding Index is not yet published",
+        "pricing": "OpenRouter model pricing",
+        "endpoint_health": "OpenRouter model page (24h availability; P50 best-provider latency)",
         "score_catalog": null,
         "unmatched_override_catalog": null,
-        "confidence": 0.167
+        "confidence": 0.9
       },
       "score_override": null,
-      "local_evidence": {},
-      "local_fallback_used": false,
-      "local_fallback_fields": []
+      "local_evidence": {
+        "coding_proxy": "AA Coding Index not published as of 2026-09-29; capability estimate uses SciCode 66.9 plus adjacent Anthropic models with published Coding Index.",
+        "reasoning_source": "Artificial Analysis Intelligence Index 57.6 (max-effort headline model benchmark)."
+      },
+      "local_fallback_used": true,
+      "local_fallback_fields": [
+        "capabilities.coding"
+      ]
     },
     {
       "id": "claude-opus-5-thinking-high",
@@ -114,10 +126,10 @@
         "reasoning": 4.846,
         "coding": 4.959,
         "tool_use": 4.958,
-        "reliability": 0.0
+        "reliability": 4.888
       },
       "cost": 1.258,
-      "latency": 0.0,
+      "latency": 3.492,
       "context_window": 1000000,
       "raw_metrics": {
         "benchmark_model_id": "anthropic/claude-opus-5-20260723",
@@ -125,8 +137,8 @@
         "coding_index": 78.0,
         "agentic_index": 56.5,
         "average_token_price": 1.5e-05,
-        "latency_p50": null,
-        "uptime_1d": null,
+        "latency_p50": 1780.0,
+        "uptime_1d": 99.86,
         "tool_parameter_supported": true
       },
       "provenance": {
@@ -134,10 +146,10 @@
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
         "quality": "OpenRouter /api/v1/benchmarks artificial-analysis",
         "pricing": "OpenRouter /api/v1/models",
-        "endpoint_health": null,
+        "endpoint_health": "OpenRouter model page (24h availability; P50 best-provider latency)",
         "score_catalog": ".harness/openrouter/model-scores.json",
         "unmatched_override_catalog": null,
-        "confidence": 0.667
+        "confidence": 1.0
       },
       "score_override": null,
       "local_evidence": {},
@@ -147,8 +159,8 @@
     {
       "id": "claude-sonnet-5-5-high",
       "openrouter_id": "anthropic/claude-sonnet-5.5",
-      "openrouter_benchmark_id": null,
-      "openrouter_benchmark_match": "unmatched",
+      "openrouter_benchmark_id": "anthropic/claude-sonnet-5.5-20260928",
+      "openrouter_benchmark_match": "unique-versioned",
       "openrouter_match": "explicit-alias",
       "enabled": true,
       "native": true,
@@ -158,31 +170,43 @@
         "high"
       ],
       "capabilities": {
-        "reasoning": 0.0,
-        "coding": 0.0,
+        "reasoning": 5.0,
+        "coding": 4.981,
         "tool_use": 3.0,
-        "reliability": 0.0
+        "reliability": 4.784
       },
-      "cost": 0.0,
-      "latency": 0.0,
-      "context_window": 0,
+      "cost": 1.682,
+      "latency": 4.834,
+      "context_window": 1000000,
       "raw_metrics": {
+        "benchmark_model_id": "anthropic/claude-sonnet-5.5-20260928",
+        "intelligence_index": 56.0,
+        "coding_index": null,
+        "agentic_index": null,
+        "average_token_price": 6e-06,
+        "latency_p50": 960.0,
+        "uptime_1d": 99.73,
         "tool_parameter_supported": true
       },
       "provenance": {
         "availability": "cursor-host-catalog",
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-        "quality": null,
-        "pricing": null,
-        "endpoint_health": null,
+        "quality": "OpenRouter / Artificial Analysis (Intelligence Index); coding capability locally estimated because AA Coding Index is not yet published",
+        "pricing": "OpenRouter model pricing",
+        "endpoint_health": "OpenRouter model page (24h availability; P50 best-provider latency)",
         "score_catalog": null,
         "unmatched_override_catalog": null,
-        "confidence": 0.167
+        "confidence": 0.9
       },
       "score_override": null,
-      "local_evidence": {},
-      "local_fallback_used": false,
-      "local_fallback_fields": []
+      "local_evidence": {
+        "coding_proxy": "AA Coding Index not published as of 2026-09-29; capability estimate uses SciCode 61.0 plus adjacent Anthropic models with published Coding Index.",
+        "reasoning_source": "Artificial Analysis Intelligence Index 56.0 (max-effort headline model benchmark)."
+      },
+      "local_fallback_used": true,
+      "local_fallback_fields": [
+        "capabilities.coding"
+      ]
     },
     {
       "id": "composer-2.5-fast",
@@ -196,31 +220,48 @@
       "family": "cursor/composer-2.5",
       "supported_efforts": [],
       "capabilities": {
-        "reasoning": 0.0,
-        "coding": 0.0,
+        "reasoning": 4.45,
+        "coding": 4.82,
         "tool_use": 3.0,
-        "reliability": 0.0
+        "reliability": 4.5
       },
-      "cost": 0.0,
-      "latency": 0.0,
-      "context_window": 0,
+      "cost": 1.494,
+      "latency": 4.6,
+      "context_window": 200000,
       "raw_metrics": {
+        "benchmark_model_id": null,
+        "intelligence_index": null,
+        "coding_index": null,
+        "agentic_index": null,
+        "average_token_price": 9e-06,
+        "latency_p50": null,
+        "uptime_1d": null,
         "tool_parameter_supported": true
       },
       "provenance": {
         "availability": "cursor-host-catalog",
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-        "quality": null,
-        "pricing": null,
+        "quality": "CursorBench + SWE-Bench Multilingual + Terminal-Bench + Artificial Analysis Coding Agent Index proxy",
+        "pricing": "Cursor Composer 2.5 docs (Fast: $3/M input, $15/M output)",
         "endpoint_health": null,
         "score_catalog": null,
         "unmatched_override_catalog": null,
-        "confidence": 0.167
+        "confidence": 0.6
       },
       "score_override": null,
-      "local_evidence": {},
-      "local_fallback_used": false,
-      "local_fallback_fields": []
+      "local_evidence": {
+        "coding_proxy": "Artificial Analysis Coding Agent Index 62; CursorBench v3.1 63.2%; SWE-Bench Multilingual 79.8%; Terminal-Bench 2.0 69.3%. Not directly interchangeable with AA model Coding Index.",
+        "reasoning_proxy": "No directly comparable Artificial Analysis Intelligence Index for Composer 2.5; estimated conservatively from public agentic/coding benchmarks and model-family evidence.",
+        "latency_proxy": "Fast variant is reported roughly 30-32% faster on task wall time than standard Composer 2.5; no comparable OpenRouter-style P50 model latency is public.",
+        "reliability_proxy": "No public per-model 24h availability metric comparable to OpenRouter; conservative operational estimate."
+      },
+      "local_fallback_used": true,
+      "local_fallback_fields": [
+        "capabilities.reasoning",
+        "capabilities.coding",
+        "capabilities.reliability",
+        "latency"
+      ]
     },
     {
       "id": "cursor-grok-4.6-high-fast",
@@ -286,10 +327,10 @@
         "reasoning": 4.407,
         "coding": 4.797,
         "tool_use": 4.398,
-        "reliability": 0.0
+        "reliability": 4.032
       },
       "cost": 2.327,
-      "latency": 0.0,
+      "latency": 3.815,
       "context_window": 1048576,
       "raw_metrics": {
         "benchmark_model_id": "google/gemini-3.8-flash-20260902",
@@ -297,8 +338,8 @@
         "coding_index": 76.3,
         "agentic_index": 40.2,
         "average_token_price": 2.25e-06,
-        "latency_p50": null,
-        "uptime_1d": null,
+        "latency_p50": 1430.0,
+        "uptime_1d": 98.79,
         "tool_parameter_supported": true
       },
       "provenance": {
@@ -306,10 +347,10 @@
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
         "quality": "OpenRouter /api/v1/benchmarks artificial-analysis",
         "pricing": "OpenRouter /api/v1/models",
-        "endpoint_health": null,
+        "endpoint_health": "OpenRouter model page (24h availability; P50 best-provider latency)",
         "score_catalog": ".harness/openrouter/model-scores.json",
         "unmatched_override_catalog": null,
-        "confidence": 0.667
+        "confidence": 1.0
       },
       "score_override": null,
       "local_evidence": {},
@@ -366,8 +407,8 @@
     {
       "id": "grok-4.7-medium-fast",
       "openrouter_id": "x-ai/grok-4.7",
-      "openrouter_benchmark_id": null,
-      "openrouter_benchmark_match": "unmatched",
+      "openrouter_benchmark_id": "x-ai/grok-4.7-20260916",
+      "openrouter_benchmark_match": "unique-versioned",
       "openrouter_match": "auto-exact-normalized",
       "enabled": true,
       "native": true,
@@ -377,8 +418,8 @@
         "medium"
       ],
       "capabilities": {
-        "reasoning": 0.0,
-        "coding": 0.0,
+        "reasoning": 4.735,
+        "coding": 4.95,
         "tool_use": 3.0,
         "reliability": 4.866
       },
@@ -386,8 +427,8 @@
       "latency": 4.294,
       "context_window": 500000,
       "raw_metrics": {
-        "benchmark_model_id": null,
-        "intelligence_index": null,
+        "benchmark_model_id": "x-ai/grok-4.7-20260916",
+        "intelligence_index": 46.4,
         "coding_index": null,
         "agentic_index": null,
         "average_token_price": 3.2e-06,
@@ -398,23 +439,28 @@
       "provenance": {
         "availability": "cursor-host-catalog",
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-        "quality": null,
+        "quality": "OpenRouter / Artificial Analysis (Intelligence Index) + local coding proxy from SciCode and public software-engineering benchmarks",
         "pricing": "OpenRouter /api/v1/models",
         "endpoint_health": "OpenRouter model endpoints",
         "score_catalog": ".harness/openrouter/model-scores.json",
         "unmatched_override_catalog": null,
-        "confidence": 0.667
+        "confidence": 0.85
       },
       "score_override": null,
-      "local_evidence": {},
-      "local_fallback_used": false,
-      "local_fallback_fields": []
+      "local_evidence": {
+        "coding_proxy": "AA Coding Index not published; estimate uses SciCode 57.4 plus Grok 4.7 public CursorBench/DeepSWE/Terminal-Bench improvements over Grok 4.6.",
+        "reasoning_source": "Artificial Analysis Intelligence Index 46.4 (xhigh)."
+      },
+      "local_fallback_used": true,
+      "local_fallback_fields": [
+        "capabilities.coding"
+      ]
     },
     {
       "id": "muse-spark-1.3-high",
       "openrouter_id": "meta/muse-spark-1.3",
-      "openrouter_benchmark_id": null,
-      "openrouter_benchmark_match": "unmatched",
+      "openrouter_benchmark_id": "meta/muse-spark-1.3-20260902",
+      "openrouter_benchmark_match": "unique-versioned",
       "openrouter_match": "auto-exact-normalized",
       "enabled": true,
       "native": true,
@@ -424,8 +470,8 @@
         "high"
       ],
       "capabilities": {
-        "reasoning": 0.0,
-        "coding": 0.0,
+        "reasoning": 4.789,
+        "coding": 4.696,
         "tool_use": 3.0,
         "reliability": 4.996
       },
@@ -433,10 +479,10 @@
       "latency": 1.471,
       "context_window": 1048576,
       "raw_metrics": {
-        "benchmark_model_id": null,
-        "intelligence_index": null,
-        "coding_index": null,
-        "agentic_index": null,
+        "benchmark_model_id": "meta/muse-spark-1.3-20260902",
+        "intelligence_index": 48.2,
+        "coding_index": 75.8,
+        "agentic_index": 55.7,
         "average_token_price": 2.75e-06,
         "latency_p50": 3969.0,
         "uptime_1d": 99.99461340059189,
@@ -445,15 +491,17 @@
       "provenance": {
         "availability": "cursor-host-catalog",
         "availability_generated_at": "2026-09-30T01:19:47.933039Z",
-        "quality": null,
+        "quality": "Artificial Analysis benchmark data (via indexed model mirrors) + OpenRouter Design Arena/model metadata",
         "pricing": "OpenRouter /api/v1/models",
         "endpoint_health": "OpenRouter model endpoints",
         "score_catalog": ".harness/openrouter/model-scores.json",
         "unmatched_override_catalog": null,
-        "confidence": 0.667
+        "confidence": 0.9
       },
       "score_override": null,
-      "local_evidence": {},
+      "local_evidence": {
+        "benchmark_note": "OpenRouter currently surfaces Design Arena for this model; indexed Artificial Analysis mirrors report Intelligence 48.2, Coding 75.8, Agentic 55.7."
+      },
       "local_fallback_used": false,
       "local_fallback_fields": []
     }
